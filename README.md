@@ -116,6 +116,10 @@ kubectl proxy --address=0.0.0.0 --accept-hosts='.*'
 <img src="https://i.sstatic.net/YGIVx.png" alt="Set Public Port" width="50%">
 
 5. Get the client.crt and client.key from ```/home/vscode/.minikube/profiles/minikube``` .
+```
+cp /home/vscode/.minikube/profiles/minikube/client.crt /workspaces/k8s-grader/k8s/minikube/downloaded_files
+cp /home/vscode/.minikube/profiles/minikube/client.key /workspaces/k8s-grader/k8s/minikube/downloaded_files
+```
 
 
 ## Minikube dashboard

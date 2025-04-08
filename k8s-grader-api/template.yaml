@@ -20,12 +20,16 @@ Parameters:
     Type: String
     Description: "Sheet ID for NCP Background"
     Default: "1VdQsc9qslvd-gGhydN5dEZEX6Q5uliBQqRguJyHBZM4"
+  PythonVersion:
+    Type: String
+    Description: "Python version for the Lambda functions"
+    Default: "python3.13"
 Globals:
   Function:
     Timeout: 29
     MemorySize: 512
     Handler: app.lambda_handler
-    Runtime: python3.11
+    Runtime: !Ref PythonVersion
     Architectures:
       - x86_64
   Api:
@@ -215,7 +219,7 @@ Resources:
       ContentUri: layer
       RetentionPolicy: Delete
       CompatibleRuntimes:
-        - python3.11    
+        - !Ref PythonVersion
     Metadata:
       BuildMethod: makefile # Required to have AWS SAM build this layer
 
@@ -227,16 +231,45 @@ Resources:
       ContentUri: common-layer/
       RetentionPolicy: Delete
       CompatibleRuntimes:
-        - python3.11
+       - !Ref PythonVersion  
       LicenseInfo: "Apache License 2.0"
     Metadata:
-      BuildMethod: python3.11
+      BuildMethod: !Ref PythonVersion
 
   GameTaskFunction:
     Type: AWS::Serverless::Function 
     Properties:
       CodeUri: game_task/
-      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AccountTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ApiKeyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TestRecordTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcLockTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcBackgroundTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameSourceTable
+        - S3CrudPolicy:
+            BucketName: !Ref TestResultBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
       Layers:
         - !Ref LibLayer
         - !Ref CommonLayer
@@ -278,7 +311,36 @@ Resources:
     Type: AWS::Serverless::Function 
     Properties:
       CodeUri: grader/
-      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AccountTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ApiKeyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TestRecordTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcLockTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcBackgroundTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameSourceTable
+        - S3CrudPolicy:
+            BucketName: !Ref TestResultBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
       Layers:
         - !Ref LibLayer
         - !Ref CommonLayer
@@ -320,7 +382,34 @@ Resources:
     Type: AWS::Serverless::Function 
     Properties:
       CodeUri: save-k8s-account/
-      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AccountTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ApiKeyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TestRecordTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcLockTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcBackgroundTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameSourceTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
       Layers:
         - !Ref LibLayer
         - !Ref CommonLayer
@@ -361,7 +450,46 @@ Resources:
     Type: AWS::Serverless::Function 
     Properties:
       CodeUri: keygen/
-      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AccountTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ApiKeyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TestRecordTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcLockTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcBackgroundTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameSourceTable
+        - Statement:
+          - Effect: "Allow"
+            Action:
+              - "apigateway:POST"
+              - "apigateway:GET"
+            Resource:
+              - !Sub "arn:aws:apigateway:${AWS::Region}::/apikeys"             
+              - !Sub "arn:aws:apigateway:${AWS::Region}::/apikeys/*"
+              - !Sub "arn:aws:apigateway:${AWS::Region}::/usageplans"
+              - !Sub "arn:aws:apigateway:${AWS::Region}::/usageplans/*/keys" 
+              - !Sub "arn:aws:apigateway:${AWS::Region}::/restapis"
+              - !Sub "arn:aws:apigateway:${AWS::Region}::/restapis/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
       Layers:
         - !Ref CommonLayer
       Environment:
@@ -396,7 +524,34 @@ Resources:
     Properties:
       Timeout: 120
       CodeUri: post_deployment/
-      Role: !Sub arn:aws:iam::${AWS::AccountId}:role/LabRole
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AccountTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SessionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ApiKeyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TestRecordTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcTaskTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcLockTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcBackgroundTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameSourceTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
       Layers:
         - !Ref CommonLayer
       Environment:
