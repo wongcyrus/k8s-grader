@@ -54,12 +54,13 @@ export AWS_DEFAULT_REGION=us-east-1
 ## Deploy the SAM 
 Generate a secret hash.
 ```
+source venv/bin/activate
 cd tools
 python genkey.py
 ```
 Deploy the SAM stack with the generated secret hash:
 ```
-./deploy.sh "SecretHash"
+./deploy.sh "WGvZuUEBVlb_6nGqN05bDHcsC-ZyjSas7h8mLxrqtCY="
 ```
 If you do not set the secret hash, the default one will be used.
 
@@ -107,18 +108,25 @@ aws cloudformation delete-stack --stack-name minikube-stack
 ```
 minikube start --apiserver-ips=0.0.0.0 --driver=docker --force
 ```
-3. Start proxy
+
+3. Open a new terminal and ensure the command runs continuously.
+```
+minikube dashboard --url
+```
+
+4. Start proxy
 ```
 kubectl proxy --address=0.0.0.0 --accept-hosts='.*'
 ```
-4. **VERY IMPORTANT** Make port 8081 public
+5. **VERY IMPORTANT** Make port 46757 of dashboard public
 
 <img src="https://i.sstatic.net/YGIVx.png" alt="Set Public Port" width="50%">
 
-5. Get the client.crt and client.key from ```/home/vscode/.minikube/profiles/minikube``` .
+6. Get the client.crt and client.key from ```/home/vscode/.minikube/profiles/minikube``` .
 ```
-cp /home/vscode/.minikube/profiles/minikube/client.crt /workspaces/k8s-grader/k8s/minikube/downloaded_files
-cp /home/vscode/.minikube/profiles/minikube/client.key /workspaces/k8s-grader/k8s/minikube/downloaded_files
+mkdir /workspaces/k8s-grader/k8s/minikube/downloaded_files/
+cp /home/vscode/.minikube/profiles/minikube/client.crt /workspaces/k8s-grader/k8s/minikube/downloaded_files/client.crt
+cp /home/vscode/.minikube/profiles/minikube/client.key /workspaces/k8s-grader/k8s/minikube/downloaded_files/client.key
 ```
 
 

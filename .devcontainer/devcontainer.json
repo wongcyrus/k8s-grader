@@ -2,7 +2,9 @@
 	"image": "mcr.microsoft.com/devcontainers/python:3.13",
 	"features": {
 		"ghcr.io/devcontainers/features/aws-cli:1": {},
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {
+			"moby": false
+		},
 		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {}
 	},
 	"hostRequirements": {
@@ -35,7 +37,10 @@
 						"source.organizeImports": "explicit"
 					}
 				},
-				"isort.args":["--profile", "black"]
+				"isort.args": [
+					"--profile",
+					"black"
+				]
 			},
 			// Add the IDs of extensions you want installed when the container is created.
 			"extensions": [
