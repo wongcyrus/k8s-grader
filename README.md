@@ -37,6 +37,8 @@ Create Python Virtural environment and install dependances.
 ```
 ./create_virtural_env.sh
 ```
+Configure it as the default Python Interpreter.
+
 ### Configure AWS Credentials 
 Method 1: Set the token with CLI (Prefered)
 ```
@@ -56,6 +58,7 @@ Generate a secret hash.
 ```
 cd tools
 python genkey.py
+cd ..
 ```
 Deploy the SAM stack with the generated secret hash:
 ```
@@ -116,6 +119,11 @@ kubectl proxy --address=0.0.0.0 --accept-hosts='.*'
 <img src="https://i.sstatic.net/YGIVx.png" alt="Set Public Port" width="50%">
 
 5. Get the client.crt and client.key from ```/home/vscode/.minikube/profiles/minikube``` .
+```
+mkdir /workspaces/k8s-grader/k8s/minikube/downloaded_files/
+cp /home/vscode/.minikube/profiles/minikube/client.crt /workspaces/k8s-grader/k8s/minikube/downloaded_files/client.crt
+cp /home/vscode/.minikube/profiles/minikube/client.key /workspaces/k8s-grader/k8s/minikube/downloaded_files/client.key
+```
 
 
 ## Minikube dashboard
