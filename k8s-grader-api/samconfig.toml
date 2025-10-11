@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "k8s-grader-api"
+stack_name = "k8s-grader-api-demo"
 
 [default.build.parameters]
 cached = true
@@ -15,7 +15,7 @@ lint = true
 [default.deploy.parameters]
 confirm_changeset = false
 resolve_s3 = true
-s3_prefix = "k8s-grader-api"
+s3_prefix = "k8s-grader-api-demo"
 region = "us-east-1"
 image_repositories = []
 

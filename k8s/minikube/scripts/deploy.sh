@@ -1,6 +1,8 @@
 #!/bin/bash
 
-AMIID="ami-06b21ccaeff8cd686" # Amazon Linux 2023 AMI
+# Get the latest Amazon Linux 2023 AMI from SSM Parameter Store
+AMIID=$(aws ssm get-parameters --names /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64 --region us-east-1 --query 'Parameters[0].Value' --output text)
+echo "Using AMI: $AMIID"
 INSTANCE_TYPE="t3.medium"
 USER_DATA_FILE="userdata.sh"
 EBS_SIZE=10

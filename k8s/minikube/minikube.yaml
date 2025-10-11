@@ -6,6 +6,11 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     Default: vockey
     Description: Name of an existing EC2 KeyPair to enable SSH access
+  
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64
+    Description: Latest Amazon Linux 2023 AMI from SSM Parameter Store
 
 Resources:
   MinikubeSecurityGroup:
@@ -23,7 +28,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: t3.medium
-      ImageId: ami-06b21ccaeff8cd686
+      ImageId: !Ref LatestAmiId
       KeyName: !Ref KeyName
       SecurityGroupIds:
         - !Ref MinikubeSecurityGroup

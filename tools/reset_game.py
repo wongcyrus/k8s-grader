@@ -56,7 +56,7 @@ def delete_all_items(dynamodb_resource, table_names):
 
 if __name__ == "__main__":
 
-    output_values = get_stack_outputs("k8s-grader-api")
+    output_values = get_stack_outputs("k8s-grader-api-demo")
 
     game_task_table = output_values["GameTaskTable"]
     session_table = output_values["SessionTable"]
