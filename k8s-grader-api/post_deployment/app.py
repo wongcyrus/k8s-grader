@@ -1,13 +1,14 @@
 import os
 import uuid
 from time import sleep
+from typing import Any, Dict
 
 import cfnresponse
 from common.database import save_game_source, save_npc_background
 from common.google_spreadsheet import get_npc_background_google_spreadsheet
 
 
-def lambda_handler(event, context):
+def lambda_handler(event: Dict[str, Any], context: Any) -> None:
 
     print(event)
     response_url = event.get("ResponseURL", "")
@@ -47,7 +48,7 @@ def lambda_handler(event, context):
                 "game01",
                 "https://github.com/practical-bootcamp/k8s-game-rule/archive/refs/heads/main.zip",
             )
-        except Exception as e:  # pylint: disable=broad-except
+        except (KeyError, ValueError, IOError) as e:
             reason = f"Failed: {str(e)}"
             response["Reason"] = reason
             cfnresponse.send(

@@ -1,6 +1,7 @@
 import logging
 import random
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 from common.database import (
     delete_game_session,
@@ -37,7 +38,7 @@ logger.setLevel(logging.INFO)
 setup_paths()
 
 
-def get_game_phrase(event) -> GamePhrase:
+def get_game_phrase(event: Dict[str, Any]) -> Optional[GamePhrase]:
     query_params = event.get("queryStringParameters")
     if not query_params:
         return None
@@ -49,7 +50,7 @@ def get_game_phrase(event) -> GamePhrase:
     }.get(phrase)
 
 
-def lambda_handler(event, context):  # pylint: disable=W0613
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # pylint: disable=W0613
 
     game_phrase = get_game_phrase(event)
     if not game_phrase:
@@ -63,7 +64,7 @@ def lambda_handler(event, context):  # pylint: disable=W0613
 
     npc_background = get_npc_background(npc)
     if not npc_background:
-        return error_response(f"NPC {npc} not found in the bachground database")
+        return error_response(f"NPC {npc} not found in the background database")
 
     if get_npc_lock(email, game, npc):
         return error_response(f"{npc} does not have any task for you!")
@@ -84,7 +85,7 @@ def lambda_handler(event, context):  # pylint: disable=W0613
     client_certificate, client_key, endpoint = extract_k8s_credentials(user_data)
 
     if not all([client_certificate, client_key, endpoint]):
-        return error_response("K8s confdential is missing.")
+        return error_response("K8s credentials are missing.")
 
     clear_tmp_directory()
     write_user_files(client_certificate, client_key)

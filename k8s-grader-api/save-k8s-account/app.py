@@ -1,5 +1,6 @@
 import base64
 import logging
+from typing import Any, Dict, Optional
 
 from common.database import is_endpoint_exist, save_account
 from common.handler import (
@@ -14,12 +15,12 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def read_html_file(file_path):
+def read_html_file(file_path: str) -> str:
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
 
 
-def decode_post_data(event):
+def decode_post_data(event: Dict[str, Any]) -> bytes:
     return (
         base64.b64decode(event["body"])
         if event.get("isBase64Encoded")
@@ -27,7 +28,7 @@ def decode_post_data(event):
     )
 
 
-def parse_multipart_data(post_data, content_type):
+def parse_multipart_data(post_data: bytes, content_type: str) -> Dict[str, Any]:
     multipart_data = decoder.MultipartDecoder(post_data, content_type)
     fs = {}
     for part in multipart_data.parts:
@@ -37,17 +38,19 @@ def parse_multipart_data(post_data, content_type):
     return fs
 
 
-def validate_input(email, endpoint, client_certificate, client_key):
+def validate_input(email: str, endpoint: str, client_certificate: str, client_key: str) -> Optional[str]:
     if not client_certificate or not client_key:
         return "Missing client-certificate or client-key"
-    if "@" not in email or "." not in email.split("@")[-1]:
+    if not email or "@" not in email or "." not in email.split("@")[-1]:
         return "Invalid email format"
-    if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
+    if not endpoint or (not endpoint.startswith("http://") and not endpoint.startswith("https://")):
         return "Invalid endpoint format"
+    if len(client_certificate) < 100 or len(client_key) < 100:
+        return "Invalid certificate or key length"
     return None
 
 
-def lambda_handler(event, context):  # pylint: disable=W0613
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # pylint: disable=W0613
     if event["httpMethod"] == "GET":
         html_content = read_html_file("save-account.html")
         return html_response(html_content)

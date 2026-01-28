@@ -1,6 +1,7 @@
 import logging
 import random
 from datetime import datetime
+from typing import Any, Dict
 
 from common.database import (
     get_ai_instruction_template,
@@ -41,7 +42,7 @@ logger.setLevel(logging.INFO)
 setup_paths()
 
 
-def lambda_handler(event, context):  # pylint: disable=W0613
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # pylint: disable=W0613
 
     email, game, npc = get_email_game_and_npc_from_event(event)
     if not email or not game or not npc:
@@ -59,7 +60,7 @@ def lambda_handler(event, context):  # pylint: disable=W0613
     main_background = get_npc_background("main_character")
     if not npc_background or not main_background:
         return error_response(
-            f"NPC {npc} or main character not found in the bachground database"
+            f"NPC {npc} or main character not found in the background database"
         )
 
     if random.random() < 0.3:
@@ -81,7 +82,7 @@ def lambda_handler(event, context):  # pylint: disable=W0613
     client_certificate, client_key, endpoint = extract_k8s_credentials(user_data)
 
     if not all([client_certificate, client_key, endpoint]):
-        return error_response("K8s confdential is missing.")
+        return error_response("K8s credentials are missing.")
 
     clear_tmp_directory()
     write_user_files(client_certificate, client_key)

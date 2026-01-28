@@ -3,11 +3,14 @@ import os
 import shutil
 import threading
 import urllib.request
+from typing import Dict, List, Optional, Tuple
 
 import pytest
 from common.database import get_game_source
 from common.status import GamePhrase, TestResult
 from jinja2 import Environment
+
+PYTEST_TIMEOUT_SECONDS = 30
 
 MAPPING = {
     GamePhrase.SETUP: "01_setup",
@@ -35,12 +38,13 @@ def get_test_base_path(game: str) -> str:
     return f"/tmp/{game}/tests"
 
 
-def run_tests(test_phase: GamePhrase, game: str, task: str):
+def run_tests(test_phase: GamePhrase, game: str, task: str) -> TestResult:
     get_tests(game)
+    retcode = TestResult.OK.value
+    result_container = [retcode]
 
     def run_pytest():
-        nonlocal retcode
-        retcode = pytest.main(
+        result_container[0] = pytest.main(
             [
                 f"--rootdir={get_root_path(game)}",
                 "--import-mode=importlib",
@@ -51,19 +55,18 @@ def run_tests(test_phase: GamePhrase, game: str, task: str):
             ]
         )
 
-    retcode = TestResult.OK.value
     thread = threading.Thread(target=run_pytest)
     thread.start()
-    thread.join(timeout=25)
+    thread.join(timeout=PYTEST_TIMEOUT_SECONDS)
 
     if thread.is_alive():
-        retcode = TestResult.TIME_OUT.value
-    return TestResult(retcode)
+        return TestResult.TIME_OUT
+    return TestResult(result_container[0])
 
 
-def get_repo_branch(game: str) -> tuple[str, str]:
+def get_repo_branch(game: str) -> Tuple[Optional[str], Optional[str]]:
     source = get_game_source(game)
-    if source.startswith("https://github.com/"):
+    if source and source.startswith("https://github.com/"):
         parts = source.split("/")
         repo = parts[-5]
         branch = parts[-1].replace(".zip", "").split("/")[-1]
@@ -71,24 +74,33 @@ def get_repo_branch(game: str) -> tuple[str, str]:
     return None, None
 
 
-def get_tests(game: str):
+def get_tests(game: str) -> None:
     source = get_game_source(game)
+    if not source:
+        raise ValueError(f"Game source not found for {game}")
+    
     distination = f"/tmp/{game}.zip"
     if not os.path.exists(distination):
-        urllib.request.urlretrieve(source, distination)
-        shutil.unpack_archive(distination, "/tmp/")
-        repo, branch = get_repo_branch(game)
-        source_folder = repo + "-" + branch
-        shutil.move(f"/tmp/{source_folder}", get_root_path(game))
+        try:
+            urllib.request.urlretrieve(source, distination)
+            shutil.unpack_archive(distination, "/tmp/")
+            repo, branch = get_repo_branch(game)
+            if not repo or not branch:
+                raise ValueError(f"Invalid repository format for {game}")
+            
+            source_folder = repo + "-" + branch
+            shutil.move(f"/tmp/{source_folder}", get_root_path(game))
 
-        if os.path.exists(f"/tmp/{source_folder}/{source_folder}"):
-            shutil.move(
-                f"/tmp/{source_folder}/{source_folder}", f"/tmp/{source_folder}/"
-            )
-            shutil.rmtree(f"/tmp/{source_folder}/{source_folder}")
+            if os.path.exists(f"/tmp/{source_folder}/{source_folder}"):
+                shutil.move(
+                    f"/tmp/{source_folder}/{source_folder}", f"/tmp/{source_folder}/"
+                )
+                shutil.rmtree(f"/tmp/{source_folder}/{source_folder}")
+        except (IOError, OSError, shutil.Error) as e:
+            raise RuntimeError(f"Failed to download or extract tests: {e}") from e
 
 
-def get_tasks(game: str):
+def get_tasks(game: str) -> List[str]:
     get_tests(game)
     folder = f"{get_test_base_path(game)}/{game}/"
     tasks = []
@@ -98,7 +110,7 @@ def get_tasks(game: str):
     return tasks
 
 
-def get_session_template(game: str, task: str):
+def get_session_template(game: str, task: str) -> Dict[str, any]:
     get_tests(game)
     session = {}
     game_session_file = f"{get_test_base_path(game)}/{game}/session.json"
@@ -115,7 +127,7 @@ def get_session_template(game: str, task: str):
     return session
 
 
-def get_current_task(game: str, finished_tasks):
+def get_current_task(game: str, finished_tasks: List[str]) -> Optional[str]:
     all_tasks = get_tasks(game)
     current_task = None
     for task in all_tasks:
@@ -125,14 +137,14 @@ def get_current_task(game: str, finished_tasks):
     return current_task
 
 
-def render(template, session):
+def render(template: str, session: Dict[str, any]) -> str:
     env = Environment()
     jinja_template = env.from_string(template)
     template_string = jinja_template.render(session)
     return template_string
 
 
-def get_instruction(game: str, task: str, session: dict):
+def get_instruction(game: str, task: str, session: Dict[str, any]) -> Optional[str]:
     get_tests(game)
     instructions_file = f"{get_test_base_path(game)}/{game}/{task}/instruction.md"
 
@@ -143,11 +155,11 @@ def get_instruction(game: str, task: str, session: dict):
     return None
 
 
-def get_ai_instruction(instruction: str, session: dict):
+def get_ai_instruction(instruction: str, session: Dict[str, any]) -> str:
     return render(instruction, session)
 
 
-def get_next_game_phrase(game: str, task: str, current_game_phrase: GamePhrase):
+def get_next_game_phrase(game: str, task: str, current_game_phrase: GamePhrase) -> Optional[GamePhrase]:
     get_tests(game)
 
     current_index = GAME_PHRASE_ORDER.index(current_game_phrase)

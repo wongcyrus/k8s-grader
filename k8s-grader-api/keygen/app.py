@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from typing import Any, Dict, Optional
 
 import boto3
 from common.database import get_api_key, save_api_key
@@ -18,7 +19,7 @@ STAGE_NAME = os.getenv("StageName")
 client = boto3.client("apigateway")
 
 
-def lambda_handler(event, context):  # pylint: disable=W0613
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # pylint: disable=W0613
     query_params = event.get("queryStringParameters")
     if not query_params:
         return text_response("Secret and email parameter is missing.")
@@ -60,7 +61,7 @@ def lambda_handler(event, context):  # pylint: disable=W0613
     return text_response(api_key_value)
 
 
-def get_rest_api_id(api_name):
+def get_rest_api_id(api_name: str) -> Optional[str]:
     rest_apis = client.get_rest_apis().get("items", [])
     for api in rest_apis:
         if api.get("name") == api_name:
@@ -68,12 +69,12 @@ def get_rest_api_id(api_name):
     return None
 
 
-def generate_token(secret, email):
+def generate_token(secret: str, email: str) -> str:
     fernet = Fernet(secret)
     return fernet.encrypt(email.encode()).decode()
 
 
-def create_api_key(name, value, rest_api_id):
+def create_api_key(name: str, value: str, rest_api_id: str) -> Optional[str]:
     try:
         response = client.create_api_key(
             name=name,
@@ -87,7 +88,7 @@ def create_api_key(name, value, rest_api_id):
         return None
 
 
-def get_usage_plan_id(plan_name):
+def get_usage_plan_id(plan_name: str) -> Optional[str]:
     usage_plans = client.get_usage_plans().get("items", [])
     for plan in usage_plans:
         if plan.get("name") == plan_name:
@@ -95,17 +96,21 @@ def get_usage_plan_id(plan_name):
     return None
 
 
-def associate_api_key_with_usage_plan(api_key, usage_plan_id):
+def associate_api_key_with_usage_plan(api_key: str, usage_plan_id: str) -> bool:
     try:
         client.create_usage_plan_key(
             usagePlanId=usage_plan_id, keyId=api_key, keyType="API_KEY"
         )
+        logger.info(f"Successfully associated API key {api_key} with usage plan {usage_plan_id}")
+        return True
+    except client.exceptions.ConflictException:
+        logger.warning(f"API key {api_key} already associated with usage plan {usage_plan_id}")
         return True
     except client.exceptions.ClientError as e:
         logger.error("Error associating API key with usage plan: %s", e, exc_info=True)
         return False
 
 
-def get_api_key_value(api_key):
+def get_api_key_value(api_key: str) -> Optional[str]:
     response = client.get_api_key(apiKey=api_key, includeValue=True)
     return response.get("value")
