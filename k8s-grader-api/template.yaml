@@ -27,7 +27,7 @@ Parameters:
   PythonVersion:
     Type: String
     Description: "Python version for the Lambda functions"
-    Default: "python3.14"
+    Default: "python3.13"
     AllowedValues:
       - python3.11
       - python3.12
