@@ -7,11 +7,15 @@ Parameters:
   SecretHash:
     Type: String
     Description: "Secret hash for secure operations"
-    Default: "hyKOuny4vy94RUiYe3pB6CCwtaJeW6B_fOtqbK1PXrQ="
+    NoEcho: true
   StageName:
     Type: String
     Description: "Stage name for the API"
     Default: "Prod"
+    AllowedValues:
+      - Dev
+      - Staging
+      - Prod
   EasterEggSheetId:
     Type: String
     Description: "Sheet ID for Easter Egg"
@@ -23,7 +27,12 @@ Parameters:
   PythonVersion:
     Type: String
     Description: "Python version for the Lambda functions"
-    Default: "python3.13"
+    Default: "python3.14"
+    AllowedValues:
+      - python3.11
+      - python3.12
+      - python3.13
+      - python3.14
 Globals:
   Function:
     Timeout: 29
@@ -32,11 +41,33 @@ Globals:
     Runtime: !Ref PythonVersion
     Architectures:
       - x86_64
+    Tracing: Active
+    Environment:
+      Variables:
+        POWERTOOLS_SERVICE_NAME: k8s-grader
+        LOG_LEVEL: INFO
   Api:
     TracingEnabled: true
 Resources:
   TestResultBucket:
     Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldTestResults
+            Status: Enabled
+            ExpirationInDays: 90
 
   ApiKeyTable:
     Type: AWS::DynamoDB::Table
@@ -48,6 +79,10 @@ Resources:
       KeySchema:
         - AttributeName: "email"
           KeyType: "HASH"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
 
   AccountTable:
     Type: AWS::DynamoDB::Table
@@ -70,6 +105,10 @@ Resources:
             ProjectionType: "INCLUDE"
             NonKeyAttributes:
               - "email"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
 
   GameTaskTable:
     Type: AWS::DynamoDB::Table
@@ -85,6 +124,10 @@ Resources:
           KeyType: "HASH"
         - AttributeName: "game"
           KeyType: "RANGE"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
 
   SessionTable:
     Type: AWS::DynamoDB::Table
@@ -100,6 +143,10 @@ Resources:
           KeyType: "HASH"
         - AttributeName: "game"
           KeyType: "RANGE"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
 
   TestRecordTable:
     Type: AWS::DynamoDB::Table
@@ -115,6 +162,10 @@ Resources:
           KeyType: "HASH"
         - AttributeName: "gameTime"
           KeyType: "RANGE"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
   
   NpcTaskTable:
     Type: AWS::DynamoDB::Table
@@ -130,6 +181,10 @@ Resources:
           KeyType: "HASH"
         - AttributeName: "game"
           KeyType: "RANGE"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
 
   NpcLockTable:
     Type: AWS::DynamoDB::Table
@@ -148,6 +203,10 @@ Resources:
       TimeToLiveSpecification:
         AttributeName: "ttl"
         Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
   
   NpcBackgroundTable:
     Type: AWS::DynamoDB::Table
@@ -159,6 +218,10 @@ Resources:
       KeySchema:
         - AttributeName: "name"
           KeyType: "HASH"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
 
   ConversationTable:
     Type: AWS::DynamoDB::Table
@@ -170,6 +233,10 @@ Resources:
       KeySchema:
         - AttributeName: "key"
           KeyType: "HASH"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
 
   GameSourceTable:
     Type: AWS::DynamoDB::Table
@@ -181,6 +248,10 @@ Resources:
       KeySchema:
         - AttributeName: "game"
           KeyType: "HASH"
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
 
 # Handle CORS https://github.com/aws/serverless-application-model/issues/1786
   ApiGatewayApi:
@@ -220,11 +291,12 @@ Resources:
 
   APIUsagePlan:
     Type: 'AWS::ApiGateway::UsagePlan'
+    DependsOn: ApiGatewayApiProdStage
     Properties:
       ApiStages:
         - ApiId: !Ref ApiGatewayApi
-          Stage: !Ref ApiGatewayApi.Stage
-      Description: To usage plan and api key in REST API.
+          Stage: !Ref StageName
+      Description: Usage plan and api key for REST API
       Quota:
         Limit: 2880
         Period: DAY
@@ -291,6 +363,11 @@ Resources:
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+            - Effect: Allow
+              Action:
+                - xray:PutTraceSegments
+                - xray:PutTelemetryRecords
               Resource: "*"
       Layers:
         - !Ref LibLayer
@@ -362,6 +439,11 @@ Resources:
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${GraderFunction}:*"
+            - Effect: Allow
+              Action:
+                - xray:PutTraceSegments
+                - xray:PutTelemetryRecords
               Resource: "*"
       Layers:
         - !Ref LibLayer
@@ -431,6 +513,11 @@ Resources:
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${SaveK8sAccountFunction}:*"
+            - Effect: Allow
+              Action:
+                - xray:PutTraceSegments
+                - xray:PutTelemetryRecords
               Resource: "*"
       Layers:
         - !Ref LibLayer
@@ -511,6 +598,11 @@ Resources:
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${KeygenFunction}:*"
+            - Effect: Allow
+              Action:
+                - xray:PutTraceSegments
+                - xray:PutTelemetryRecords
               Resource: "*"
       Layers:
         - !Ref CommonLayer
@@ -573,6 +665,11 @@ Resources:
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
+              Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${PostDeploymentFunction}:*"
+            - Effect: Allow
+              Action:
+                - xray:PutTraceSegments
+                - xray:PutTelemetryRecords
               Resource: "*"
       Layers:
         - !Ref CommonLayer
