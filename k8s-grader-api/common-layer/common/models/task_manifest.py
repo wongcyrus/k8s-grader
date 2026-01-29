@@ -21,16 +21,72 @@ class TaskManifest:
     
     @classmethod
     def load(cls, game: str, task_id: str) -> 'TaskManifest':
-        """Load manifest from task directory"""
+        """
+        Load manifest from task directory.
+        If manifest.json doesn't exist, auto-generate from test files.
+        """
         path = f"/tmp/{game}/tests/{game}/{task_id}/manifest.json"
         
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"Manifest not found: {path}")
+        if os.path.exists(path):
+            # Load from manifest.json
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return cls.from_dict(data)
+        else:
+            # Auto-generate from test files
+            return cls._auto_generate(game, task_id)
+    
+    @classmethod
+    def _auto_generate(cls, game: str, task_id: str) -> 'TaskManifest':
+        """
+        Auto-generate manifest by discovering test files.
+        Provides backward compatibility with old system.
+        """
+        task_dir = f"/tmp/{game}/tests/{game}/{task_id}"
         
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        # Discover test files
+        phase_mapping = {
+            'test_01_setup.py': ('setup', 'Setup', 0),
+            'test_02_ready.py': ('ready', 'Ready', 5),
+            'test_03_answer.py': ('answer', 'Answer', 10),
+            'test_04_challenge.py': ('challenge', 'Challenge', 15),
+            'test_05_check.py': ('check', 'Check', 20),
+            'test_06_cleanup.py': ('cleanup', 'Cleanup', 0),
+        }
         
-        return cls.from_dict(data)
+        phases = []
+        for test_file, (phase_id, phase_name, points) in phase_mapping.items():
+            test_path = os.path.join(task_dir, test_file)
+            if os.path.exists(test_path):
+                phases.append(PhaseConfig(
+                    id=phase_id,
+                    name=phase_name,
+                    description=f"Auto-generated {phase_name} phase",
+                    test_file=test_file,
+                    required=(phase_id != 'cleanup'),
+                    auto_run=(phase_id == 'cleanup'),
+                    timeout_seconds=30,
+                    max_attempts=3,
+                    points=points
+                ))
+        
+        if not phases:
+            raise FileNotFoundError(f"No test files found in {task_dir}")
+        
+        # Generate basic metadata
+        title = task_id.replace('_', ' ').title()
+        
+        return cls(
+            task_id=task_id,
+            title=title,
+            description=f"Auto-generated manifest for {title}",
+            difficulty='beginner',
+            estimated_minutes=15,
+            phases=phases,
+            prerequisites=[],
+            tags=['auto-generated'],
+            hints=[]
+        )
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TaskManifest':

@@ -137,21 +137,6 @@ Resources:
         - AttributeName: "game"
           KeyType: "HASH"
 
-  SessionTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: "email"
-          AttributeType: "S"
-        - AttributeName: "game"
-          AttributeType: "S"
-      KeySchema:
-        - AttributeName: "email"
-          KeyType: "HASH"
-        - AttributeName: "game"
-          KeyType: "RANGE"
-
   # New refactored tables
   TaskStateTable:
     Type: AWS::DynamoDB::Table
@@ -280,8 +265,6 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref ApiKeyTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref SessionTable
-        - DynamoDBCrudPolicy:
             TableName: !Ref TestRecordTable
         - DynamoDBCrudPolicy:
             TableName: !Ref NpcLockTable
@@ -305,7 +288,6 @@ Resources:
         Variables:
           AccountTable: !Ref AccountTable
           ApiKeyTable: !Ref ApiKeyTable
-          SessionTable: !Ref SessionTable
           SecretHash: !Ref SecretHash
           TestRecordTable: !Ref TestRecordTable
           NpcLockTable: !Ref NpcLockTable
@@ -563,9 +545,6 @@ Outputs:
   GameSourceTable:
     Description: "Name of the GameSourceTable"
     Value: !Ref GameSourceTable
-  SessionTable:
-    Description: "Name of the SessionTable (stores K8s credentials)"
-    Value: !Ref SessionTable
   TaskStateTable:
     Description: "Name of the TaskStateTable (refactored)"
     Value: !Ref TaskStateTable

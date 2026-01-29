@@ -62,10 +62,43 @@ Or manually:
 venv/bin/python -m pytest tests/ -v --cov=common
 ```
 
-## 📖 Key Concepts
+## 🎯 Key Concepts
+
+### Session Data & Personalization
+
+Each user gets **unique, personalized task parameters** to prevent cheating:
+
+**How it works:**
+1. When a user starts a task, the system generates unique session data using:
+   - `random_name()` - generates random names seeded by student ID
+   - `random_number(from, to)` - generates random numbers seeded by student ID  
+   - `student_id()` - extracts from email (e.g., "john" from "john@example.com")
+   - `base64_encode()` - encodes values
+
+2. Session data is stored in `TaskState.session_data` (in TaskStateTable)
+
+3. When tests run, session data is passed to pytest via `/tmp/json_input.json`
+
+**Example session.json template:**
+```json
+{
+  "namespace": "{{random_name()}}{{student_id()}}"
+}
+```
+
+**Generated for user john@example.com:**
+```json
+{
+  "namespace": "happy_dolphin_john"
+}
+```
+
+This ensures each user has different resource names, preventing copy-paste cheating!
+
+**Note:** Session data is stored directly in TaskState (in TaskStateTable), not in a separate table. This provides better data locality and simplifies the architecture.
 
 ### Task Manifest (manifest.json)
-Each task has a declarative configuration file:
+Each task has a declarative configuration file (optional):
 
 ```json
 {
@@ -92,6 +125,20 @@ Each task has a declarative configuration file:
     }
   ]
 }
+```
+
+**Note:** manifest.json is **optional**! If not present, the system auto-generates a manifest by discovering test files (test_01_setup.py, test_04_challenge.py, etc.). This provides 100% backward compatibility with the old system.
+
+**Generate manifests automatically:**
+```bash
+# Generate for all tasks in game01
+python k8s-game-rule/tools/generate_manifests.py game01
+
+# Generate for specific task
+python k8s-game-rule/tools/generate_manifests.py game01 --task 01_default_namespace
+
+# Preview without writing files
+python k8s-game-rule/tools/generate_manifests.py game01 --dry-run
 ```
 
 See [MANIFEST_GUIDE.md](MANIFEST_GUIDE.md) for complete documentation.
@@ -195,9 +242,8 @@ curl -X POST http://localhost:3000/task \
   - SaveK8sAccount (account registration)
   - PostDeployment (setup automation)
 - **DynamoDB Tables**:
-  - TaskStateTable (task progress tracking)
+  - TaskStateTable (task progress tracking, includes session data)
   - NpcAssignmentTable (NPC locks and assignments)
-  - SessionTable (K8s cluster credentials for test execution)
   - AccountTable, ApiKeyTable, TestRecordTable, etc. (supporting tables)
 - **S3 Bucket**: Test reports storage
 - **Secrets Manager**: Sensitive configuration

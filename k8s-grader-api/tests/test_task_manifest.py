@@ -113,3 +113,59 @@ class TestTaskManifest:
         assert manifest.title == sample_manifest.title
         assert len(manifest.phases) == len(sample_manifest.phases)
         assert manifest.get_total_points() == sample_manifest.get_total_points()
+
+    def test_auto_generate_manifest(self, tmp_path):
+        """Test auto-generating manifest from test files"""
+        import os
+        
+        # Create mock task directory structure
+        game = "game01"
+        task_id = "99_auto_test"
+        task_dir = tmp_path / game / "tests" / game / task_id
+        task_dir.mkdir(parents=True)
+        
+        # Create test files
+        (task_dir / "test_01_setup.py").write_text("# setup test")
+        (task_dir / "test_04_challenge.py").write_text("# challenge test")
+        (task_dir / "test_05_check.py").write_text("# check test")
+        (task_dir / "test_06_cleanup.py").write_text("# cleanup test")
+        
+        # Mock /tmp path
+        import common.models.task_manifest as tm_module
+        original_path = tm_module.os.path.exists
+        
+        def mock_exists(path):
+            if "/tmp/" in path:
+                # Convert /tmp path to tmp_path
+                mock_path = path.replace("/tmp/", str(tmp_path) + "/")
+                return os.path.exists(mock_path)
+            return original_path(path)
+        
+        tm_module.os.path.exists = mock_exists
+        tm_module.os.path.join = os.path.join
+        
+        try:
+            # Auto-generate manifest
+            manifest = TaskManifest._auto_generate(str(tmp_path / game), task_id)
+            
+            # Verify auto-generated manifest
+            assert manifest.task_id == task_id
+            assert manifest.title == "99 Auto Test"
+            assert manifest.difficulty == "beginner"
+            assert len(manifest.phases) == 4
+            assert "auto-generated" in manifest.tags
+            
+            # Verify phases
+            phase_ids = [p.id for p in manifest.phases]
+            assert "setup" in phase_ids
+            assert "challenge" in phase_ids
+            assert "check" in phase_ids
+            assert "cleanup" in phase_ids
+            
+            # Verify cleanup is auto_run
+            cleanup = manifest.get_phase("cleanup")
+            assert cleanup.auto_run is True
+            assert cleanup.points == 0
+            
+        finally:
+            tm_module.os.path.exists = original_path

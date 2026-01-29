@@ -2,11 +2,13 @@
 
 ## Overview
 
-The `manifest.json` file is a declarative configuration that defines a Kubernetes learning task. It replaces the old implicit file-based discovery system with an explicit, self-documenting format.
+The `manifest.json` file is a **declarative configuration** that defines a Kubernetes learning task. It replaces the old implicit file-based discovery system with an explicit, self-documenting format.
+
+**Note:** manifest.json is **optional**! If not present, the system will auto-generate a manifest by discovering test files in the task directory. However, creating a manifest.json is **highly recommended** for better control over task metadata, points, timeouts, and descriptions.
 
 ## Location
 
-Each task directory must contain a `manifest.json` file:
+Each task directory can optionally contain a `manifest.json` file:
 
 ```
 k8s-game-rule/tests/game01/
@@ -301,6 +303,206 @@ Must be one of:
 // Complex tasks (more attempts)
 "max_attempts": 5
 ```
+
+## Session Data & Personalization
+
+### Overview
+
+Each user gets **unique, personalized task parameters** to prevent cheating. Session data is generated when a task starts and stored with the task state.
+
+### How It Works
+
+1. **Session Template** (`session.json` in task directory):
+```json
+{
+  "namespace": "{{random_name()}}{{student_id()}}",
+  "pod_name": "nginx-{{random_number(1, 100)}}",
+  "label_value": "{{base64_encode(student_id())}}"
+}
+```
+
+2. **Available Functions**:
+   - `{{student_id()}}` - Extracts from email (e.g., "john" from "john@example.com")
+   - `{{random_name()}}` - Generates random name seeded by student ID (e.g., "happy_dolphin")
+   - `{{random_number(from, to)}}` - Generates random number seeded by student ID
+   - `{{base64_encode(value)}}` - Base64 encodes a value
+
+3. **Generated for user john@example.com**:
+```json
+{
+  "namespace": "happy_dolphin_john",
+  "pod_name": "nginx-42",
+  "label_value": "am9obg=="
+}
+```
+
+4. **Storage**: Session data is stored in `TaskState.session_data` in TaskStateTable
+
+5. **Usage**: Tests access session data via `json_input` fixture in conftest.py
+
+### Example Task with Session Data
+
+**Directory structure:**
+```
+01_create_namespace/
+├── manifest.json
+├── session.json          ← Session template
+├── instruction.md
+├── test_01_setup.py
+├── test_04_challenge.py
+└── test_05_check.py
+```
+
+**session.json:**
+```json
+{
+  "namespace": "ns-{{random_name()}}{{random_number(1,99)}}"
+}
+```
+
+**test_05_check.py:**
+```python
+def test_namespace_exists(json_input):
+    """Check if user created the namespace"""
+    namespace = json_input['namespace']  # e.g., "ns-happy_dolphin42"
+    
+    # Verify namespace exists
+    result = subprocess.run(
+        ['kubectl', 'get', 'namespace', namespace],
+        capture_output=True
+    )
+    assert result.returncode == 0, f"Namespace {namespace} not found"
+```
+
+### Benefits
+
+- **Prevents cheating**: Each user has different resource names
+- **Deterministic**: Same user always gets same values (seeded by student ID)
+- **Flexible**: Support any Jinja2 template expressions
+- **Isolated**: Users can't interfere with each other's resources
+
+### Backward Compatibility
+
+The refactored system stores session data in TaskState.session_data (in TaskStateTable) for better data locality. The old SessionTable has been removed.
+
+## Auto-Generation (Optional Manifest)
+
+### Overview
+
+If `manifest.json` is **not present**, the system automatically generates a manifest by discovering test files in the task directory. This provides **100% backward compatibility** with the old system.
+
+### How Auto-Generation Works
+
+1. **Scans for test files** in task directory:
+   - `test_01_setup.py` → setup phase (0 points)
+   - `test_02_ready.py` → ready phase (5 points)
+   - `test_03_answer.py` → answer phase (10 points)
+   - `test_04_challenge.py` → challenge phase (15 points)
+   - `test_05_check.py` → check phase (20 points)
+   - `test_06_cleanup.py` → cleanup phase (0 points, auto-run)
+
+2. **Generates default configuration**:
+   - Title: Derived from task_id (e.g., "01_test_task" → "01 Test Task")
+   - Difficulty: "beginner"
+   - Estimated time: 15 minutes
+   - Timeout: 30 seconds per phase
+   - Max attempts: 3 per phase
+
+3. **Creates phases** for each discovered test file
+
+### Example: Task Without Manifest
+
+**Directory structure:**
+```
+02_create_namespace/
+├── test_01_setup.py
+├── test_04_challenge.py
+├── test_05_check.py
+├── test_06_cleanup.py
+├── session.json
+└── instruction.md
+```
+
+**Auto-generated manifest (in memory):**
+```json
+{
+  "task_id": "02_create_namespace",
+  "title": "02 Create Namespace",
+  "description": "Auto-generated manifest for 02 Create Namespace",
+  "difficulty": "beginner",
+  "estimated_minutes": 15,
+  "phases": [
+    {
+      "id": "setup",
+      "name": "Setup",
+      "test_file": "test_01_setup.py",
+      "points": 0,
+      "timeout_seconds": 30,
+      "max_attempts": 3
+    },
+    {
+      "id": "challenge",
+      "name": "Challenge",
+      "test_file": "test_04_challenge.py",
+      "points": 15,
+      "timeout_seconds": 30,
+      "max_attempts": 3
+    },
+    {
+      "id": "check",
+      "name": "Check",
+      "test_file": "test_05_check.py",
+      "points": 20,
+      "timeout_seconds": 30,
+      "max_attempts": 3
+    },
+    {
+      "id": "cleanup",
+      "name": "Cleanup",
+      "test_file": "test_06_cleanup.py",
+      "points": 0,
+      "auto_run": true,
+      "timeout_seconds": 30,
+      "max_attempts": 1
+    }
+  ],
+  "tags": ["auto-generated"]
+}
+```
+
+### When to Create manifest.json
+
+**Use auto-generation (no manifest.json) when:**
+- ✅ Migrating from old system
+- ✅ Simple tasks with standard phases
+- ✅ Default timeouts and points are acceptable
+- ✅ Quick prototyping
+
+**Create manifest.json when:**
+- ✅ Custom phase names or descriptions needed
+- ✅ Non-standard timeouts required
+- ✅ Custom points distribution
+- ✅ Prerequisites or tags needed
+- ✅ Specific difficulty level
+- ✅ Custom hints for users
+- ✅ Better documentation desired
+
+### Migration Strategy
+
+**Phase 1: No Changes Required**
+- Existing tasks work immediately with auto-generation
+- No manifest.json needed
+- 100% backward compatible
+
+**Phase 2: Gradual Enhancement**
+- Add manifest.json to important tasks
+- Customize metadata, points, timeouts
+- Improve user experience incrementally
+
+**Phase 3: Full Migration**
+- All tasks have manifest.json
+- Rich metadata and documentation
+- Optimal configuration
 
 ## Migration from Old System
 
