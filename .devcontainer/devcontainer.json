@@ -1,15 +1,23 @@
 {
-	"image": "mcr.microsoft.com/devcontainers/python:3.14",
+	"build": {
+		"dockerfile": "Dockerfile"
+	},
 	"features": {
 		"ghcr.io/devcontainers/features/aws-cli:1": {},
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {
-			"moby": false
-		},
 		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {}
 	},
+	"mounts": [
+		"source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+	],
+	"containerEnv": {
+		"DOCKER_HOST": "unix:///var/run/docker.sock"
+	},
+	"runArgs": ["--group-add=docker"],
 	"hostRequirements": {
 		"cpus": 4
 	},
+	"postCreateCommand": "bash aws_sam_setup.sh && bash create_virtural_env.sh",
+	"remoteUser": "vscode",
 	"customizations": {
 		"codespaces": {
 			"openFiles": []
@@ -18,7 +26,6 @@
 			"settings": {
 				"python.defaultInterpreterPath": "/workspaces/k8s-grader/venv/bin/python",
 				"python.linting.enabled": true,
-				"python.linting.flake8Path": "/usr/local/py-utils/bin/flake8",
 				"python.linting.flake8Enabled": true,
 				"flake8.args": [
 					"--max-line-length=120"
@@ -42,16 +49,10 @@
 					"black"
 				]
 			},
-			// Add the IDs of extensions you want installed when the container is created.
 			"extensions": [
 				"ms-python.python",
 				"ms-python.vscode-pylance",
-				"ms-python.black-formatter",
-				"ms-python.flake8",
-				"ms-python.pylint",
-				"ms-python.isort",
-				"ms-toolsai.jupyter",
-				"GitHub.copilot"
+				"ms-toolsai.jupyter"
 			]
 		}
 	}
