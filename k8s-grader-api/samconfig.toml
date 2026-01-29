@@ -3,7 +3,7 @@
 version = 0.1
 
 [default.global.parameters]
-stack_name = "k8s-grader-api-demo"
+stack_name = "k8s-grader-api-dev"
 
 [default.build.parameters]
 cached = true
@@ -13,20 +13,40 @@ parallel = true
 lint = true
 
 [default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
 confirm_changeset = false
 resolve_s3 = true
-s3_prefix = "k8s-grader-api-demo"
+s3_prefix = "k8s-grader-api-dev"
 region = "us-east-1"
 image_repositories = []
+parameter_overrides = []
+tags = "Project=\"k8s-grader\" Environment=\"dev\""
+disable_rollback = false
 
 [default.package.parameters]
 resolve_s3 = true
 
 [default.sync.parameters]
 watch = true
+dependency_layer = true
 
 [default.local_start_api.parameters]
 warm_containers = "EAGER"
 
 [default.local_start_lambda.parameters]
 warm_containers = "EAGER"
+
+# Production environment configuration
+[prod.global.parameters]
+stack_name = "k8s-grader-api-prod"
+
+[prod.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+s3_prefix = "k8s-grader-api-prod"
+region = "us-east-1"
+parameter_overrides = []
+tags = "Project=\"k8s-grader\" Environment=\"production\""
+disable_rollback = false
+fail_on_empty_changeset = false
