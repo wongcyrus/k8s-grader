@@ -71,36 +71,6 @@ Resources:
             NonKeyAttributes:
               - "email"
 
-  GameTaskTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: "email"
-          AttributeType: "S"
-        - AttributeName: "game"
-          AttributeType: "S"
-      KeySchema:
-        - AttributeName: "email"
-          KeyType: "HASH"
-        - AttributeName: "game"
-          KeyType: "RANGE"
-
-  SessionTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: "email"
-          AttributeType: "S"
-        - AttributeName: "game"
-          AttributeType: "S"
-      KeySchema:
-        - AttributeName: "email"
-          KeyType: "HASH"
-        - AttributeName: "game"
-          KeyType: "RANGE"
-
   TestRecordTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -114,21 +84,6 @@ Resources:
         - AttributeName: "email"
           KeyType: "HASH"
         - AttributeName: "gameTime"
-          KeyType: "RANGE"
-  
-  NpcTaskTable:
-    Type: AWS::DynamoDB::Table
-    Properties:
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: "email"
-          AttributeType: "S"
-        - AttributeName: "game"
-          AttributeType: "S"
-      KeySchema:
-        - AttributeName: "email"
-          KeyType: "HASH"
-        - AttributeName: "game"
           KeyType: "RANGE"
 
   NpcLockTable:
@@ -300,148 +255,6 @@ Resources:
     Metadata:
       BuildMethod: !Ref PythonVersion
 
-  GameTaskFunction:
-    Type: AWS::Serverless::Function 
-    Properties:
-      CodeUri: game_task/
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref AccountTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SessionTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref GameTaskTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ApiKeyTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref TestRecordTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NpcTaskTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NpcLockTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NpcBackgroundTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ConversationTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref GameSourceTable
-        - S3CrudPolicy:
-            BucketName: !Ref TestResultBucket
-        - Statement:
-            - Effect: Allow
-              Action:
-                - logs:CreateLogGroup
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-              Resource: "*"
-      Layers:
-        - !Ref LibLayer
-        - !Ref CommonLayer
-      Environment:
-        Variables:
-          AccountTable: !Ref AccountTable
-          SessionTable: !Ref SessionTable
-          GameTaskTable: !Ref GameTaskTable
-          ApiKeyTable: !Ref ApiKeyTable
-          TestResultBucket: !Ref TestResultBucket
-          SecretHash: !Ref SecretHash
-          TestRecordTable: !Ref TestRecordTable
-          NpcTaskTable: !Ref NpcTaskTable
-          NpcLockTable: !Ref NpcLockTable
-          NpcBackgroundTable: !Ref NpcBackgroundTable
-          ConversationTable: !Ref ConversationTable
-          EasterEggSheetId: !Ref EasterEggSheetId
-          GameSourceTable: !Ref GameSourceTable
-      Events:
-        GameTask:
-          Type: Api 
-          Properties:
-            Path: /game-task
-            Method: get
-            RestApiId:
-              Ref: ApiGatewayApi
-            Auth:
-              ApiKeyRequired: true
-        ProxyApiCors:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGatewayApi
-            Path: /game-task
-            Method: options
-            Auth:
-              ApiKeyRequired: false
-
-  GraderFunction:
-    Type: AWS::Serverless::Function 
-    Properties:
-      CodeUri: grader/
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref AccountTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SessionTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref GameTaskTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ApiKeyTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref TestRecordTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NpcTaskTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NpcLockTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NpcBackgroundTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ConversationTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref GameSourceTable
-        - S3CrudPolicy:
-            BucketName: !Ref TestResultBucket
-        - Statement:
-            - Effect: Allow
-              Action:
-                - logs:CreateLogGroup
-                - logs:CreateLogStream
-                - logs:PutLogEvents
-              Resource: "*"
-      Layers:
-        - !Ref LibLayer
-        - !Ref CommonLayer
-      Environment:
-        Variables:
-          AccountTable: !Ref AccountTable
-          SessionTable: !Ref SessionTable
-          GameTaskTable: !Ref GameTaskTable
-          ApiKeyTable: !Ref ApiKeyTable
-          TestResultBucket: !Ref TestResultBucket
-          SecretHash: !Ref SecretHash
-          TestRecordTable: !Ref TestRecordTable
-          NpcTaskTable: !Ref NpcTaskTable
-          NpcLockTable: !Ref NpcLockTable
-          NpcBackgroundTable: !Ref NpcBackgroundTable
-          ConversationTable: !Ref ConversationTable
-          EasterEggSheetId: !Ref EasterEggSheetId
-          GameSourceTable: !Ref GameSourceTable
-      Events:
-        GameTask:
-          Type: Api 
-          Properties:
-            Path: /grader
-            Method: get
-            RestApiId:
-              Ref: ApiGatewayApi
-            Auth:
-              ApiKeyRequired: true
-        ProxyApiCors:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGatewayApi
-            Path: /grader
-            Method: options
-            Auth:
-              ApiKeyRequired: false
-              
   SaveK8sAccountFunction:
     Type: AWS::Serverless::Function 
     Properties:
@@ -450,15 +263,9 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref AccountTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref SessionTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref GameTaskTable
-        - DynamoDBCrudPolicy:
             TableName: !Ref ApiKeyTable
         - DynamoDBCrudPolicy:
             TableName: !Ref TestRecordTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NpcTaskTable
         - DynamoDBCrudPolicy:
             TableName: !Ref NpcLockTable
         - DynamoDBCrudPolicy:
@@ -480,12 +287,9 @@ Resources:
       Environment:
         Variables:
           AccountTable: !Ref AccountTable
-          SessionTable: !Ref SessionTable
-          GameTaskTable: !Ref GameTaskTable
           ApiKeyTable: !Ref ApiKeyTable
           SecretHash: !Ref SecretHash
           TestRecordTable: !Ref TestRecordTable
-          NpcTaskTable: !Ref NpcTaskTable
           NpcLockTable: !Ref NpcLockTable
           NpcBackgroundTable: !Ref NpcBackgroundTable
           ConversationTable: !Ref ConversationTable
@@ -518,15 +322,9 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref AccountTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref SessionTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref GameTaskTable
-        - DynamoDBCrudPolicy:
             TableName: !Ref ApiKeyTable
         - DynamoDBCrudPolicy:
             TableName: !Ref TestRecordTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NpcTaskTable
         - DynamoDBCrudPolicy:
             TableName: !Ref NpcLockTable
         - DynamoDBCrudPolicy:
@@ -563,11 +361,8 @@ Resources:
           ApiGateWayName: !Sub "${AWS::StackName}-api"
           UsagePlanName: !Sub "${AWS::StackName}-usage-plan"
           AccountTable: !Ref AccountTable
-          SessionTable: !Ref SessionTable
-          GameTaskTable: !Ref GameTaskTable
           ApiKeyTable: !Ref ApiKeyTable
           TestRecordTable: !Ref TestRecordTable
-          NpcTaskTable: !Ref NpcTaskTable
           NpcLockTable: !Ref NpcLockTable
           NpcBackgroundTable: !Ref NpcBackgroundTable
           ConversationTable: !Ref ConversationTable
@@ -592,15 +387,9 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref AccountTable
         - DynamoDBCrudPolicy:
-            TableName: !Ref SessionTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref GameTaskTable
-        - DynamoDBCrudPolicy:
             TableName: !Ref ApiKeyTable
         - DynamoDBCrudPolicy:
             TableName: !Ref TestRecordTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref NpcTaskTable
         - DynamoDBCrudPolicy:
             TableName: !Ref NpcLockTable
         - DynamoDBCrudPolicy:
@@ -622,11 +411,8 @@ Resources:
         Variables:
           SecretHash: !Ref SecretHash                 
           AccountTable: !Ref AccountTable
-          SessionTable: !Ref SessionTable
-          GameTaskTable: !Ref GameTaskTable
           ApiKeyTable: !Ref ApiKeyTable
           TestRecordTable: !Ref TestRecordTable
-          NpcTaskTable: !Ref NpcTaskTable
           NpcLockTable: !Ref NpcLockTable
           NpcBackgroundTable: !Ref NpcBackgroundTable
           ConversationTable: !Ref ConversationTable
@@ -726,12 +512,6 @@ Outputs:
   AccountTable:
     Description: "Name of the AccountTable"
     Value: !Ref AccountTable
-  GameTaskTable:
-    Description: "Name of the GameTaskTable"
-    Value: !Ref GameTaskTable
-  SessionTable:
-    Description: "Name of the SessionTable"
-    Value: !Ref SessionTable
   ApiKeyTable:
     Description: "Name of the ApiKeyTable"
     Value: !Ref ApiKeyTable
@@ -753,9 +533,6 @@ Outputs:
   TestRecordTable:
     Description: "Name of the TestRecordTable"
     Value: !Ref TestRecordTable
-  NpcTaskTable:
-    Description: "Name of the NpcTaskTable"
-    Value: !Ref NpcTaskTable
   NpcLockTable:
     Description: "Name of the NpcLockTable"
     Value: !Ref NpcLockTable
