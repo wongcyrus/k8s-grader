@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# Set Docker API version to avoid version mismatch
+export DOCKER_API_VERSION=1.43
+
 cd $(dirname $0)
 
 echo ">> Building AWS Lambda layer inside a docker image..."

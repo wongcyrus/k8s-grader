@@ -39,7 +39,7 @@ Create Python Virtural environment and install dependances.
 ```
 ### Configure AWS Credentials 
 ```
-aws login
+sudo aws login
 ```
 Use us-east-1 region
 
