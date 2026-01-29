@@ -53,7 +53,7 @@ python genkey.py
 ```
 Deploy the SAM stack with the generated secret hash:
 ```
-./deploy.sh "WGvZuUEBVlb_6nGqN05bDHcsC-ZyjSas7h8mLxrqtCY="
+sudo ./deploy.sh "WGvZuUEBVlb_6nGqN05bDHcsC-ZyjSas7h8mLxrqtCY="
 ```
 If you do not set the secret hash, the default one will be used.
 
