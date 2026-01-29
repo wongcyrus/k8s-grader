@@ -182,6 +182,48 @@ Resources:
         - AttributeName: "game"
           KeyType: "HASH"
 
+  # New refactored tables
+  TaskStateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "email"
+          AttributeType: "S"
+        - AttributeName: "gameTask"
+          AttributeType: "S"
+        - AttributeName: "status"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "email"
+          KeyType: "HASH"
+        - AttributeName: "gameTask"
+          KeyType: "RANGE"
+      GlobalSecondaryIndexes:
+        - IndexName: "StatusIndex"
+          KeySchema:
+            - AttributeName: "email"
+              KeyType: "HASH"
+            - AttributeName: "status"
+              KeyType: "RANGE"
+          Projection:
+            ProjectionType: "ALL"
+
+  NpcAssignmentTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "email"
+          AttributeType: "S"
+        - AttributeName: "game"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "email"
+          KeyType: "HASH"
+        - AttributeName: "game"
+          KeyType: "RANGE"
+
 # Handle CORS https://github.com/aws/serverless-application-model/issues/1786
   ApiGatewayApi:
     Type: AWS::Serverless::Api
@@ -591,6 +633,75 @@ Resources:
           NCPBackgroundSheetId: !Ref NCPBackgroundSheetId
           GameSourceTable: !Ref GameSourceTable
 
+  # New unified task handler (refactored)
+  TaskHandlerFunction:
+    Type: AWS::Serverless::Function 
+    Properties:
+      CodeUri: task-handler/
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TaskStateTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcLockTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcAssignmentTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AccountTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ApiKeyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TestRecordTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcBackgroundTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameSourceTable
+        - S3CrudPolicy:
+            BucketName: !Ref TestResultBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
+      Layers:
+        - !Ref LibLayer
+        - !Ref CommonLayer
+      Environment:
+        Variables:
+          TaskStateTable: !Ref TaskStateTable
+          NpcLockTable: !Ref NpcLockTable
+          NpcAssignmentTable: !Ref NpcAssignmentTable
+          AccountTable: !Ref AccountTable
+          ApiKeyTable: !Ref ApiKeyTable
+          TestRecordTable: !Ref TestRecordTable
+          NpcBackgroundTable: !Ref NpcBackgroundTable
+          ConversationTable: !Ref ConversationTable
+          GameSourceTable: !Ref GameSourceTable
+          TestResultBucket: !Ref TestResultBucket
+          SecretHash: !Ref SecretHash
+          EasterEggSheetId: !Ref EasterEggSheetId
+      Events:
+        TaskApi:
+          Type: Api 
+          Properties:
+            Path: /task
+            Method: get
+            RestApiId:
+              Ref: ApiGatewayApi
+            Auth:
+              ApiKeyRequired: true
+        TaskApiCors:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /task
+            Method: options
+            Auth:
+              ApiKeyRequired: false
+
   PostDeploymentCustomResource:
     Type: AWS::CloudFormation::CustomResource
     Properties:
@@ -657,6 +768,15 @@ Outputs:
   GameSourceTable:
     Description: "Name of the GameSourceTable"
     Value: !Ref GameSourceTable
+  TaskStateTable:
+    Description: "Name of the TaskStateTable (refactored)"
+    Value: !Ref TaskStateTable
+  NpcAssignmentTable:
+    Description: "Name of the NpcAssignmentTable (refactored)"
+    Value: !Ref NpcAssignmentTable
+  TaskHandlerApi:
+    Description: "Endpoint URL for unified Task Handler function (refactored)"
+    Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/task"
   GameUrl:
     Description: "Game URL and you need to replace the Student Individual API key."
     Value: !Sub "https://wongcyrus.github.io/k8s-isekai/index.html?baseUrl=https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/&game=game01&apiKey=INDIVIDUAL_API_KEY"

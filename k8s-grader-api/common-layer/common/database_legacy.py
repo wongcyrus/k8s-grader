@@ -8,18 +8,62 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from common.status import GamePhrase, TestResult
 
-dynamodb = boto3.resource("dynamodb")
+# Lazy initialization for testing
+_dynamodb = None
+_tables = {}
 
-account_table = dynamodb.Table(os.getenv("AccountTable"))
-game_task_table = dynamodb.Table(os.getenv("GameTaskTable"))
-session_table = dynamodb.Table(os.getenv("SessionTable"))
-api_key_table = dynamodb.Table(os.getenv("ApiKeyTable"))
-test_record_table = dynamodb.Table(os.getenv("TestRecordTable"))
-npc_task_table = dynamodb.Table(os.getenv("NpcTaskTable"))
-npc_lock_table = dynamodb.Table(os.getenv("NpcLockTable"))
-npc_background_table = dynamodb.Table(os.getenv("NpcBackgroundTable"))
-conversation_table = dynamodb.Table(os.getenv("ConversationTable"))
-game_source_table = dynamodb.Table(os.getenv("GameSourceTable"))
+def _get_table(table_name_env: str):
+    """Get table with lazy initialization"""
+    global _dynamodb, _tables
+    if _dynamodb is None:
+        _dynamodb = boto3.resource("dynamodb")
+    if table_name_env not in _tables:
+        table_name = os.getenv(table_name_env)
+        if table_name:
+            _tables[table_name_env] = _dynamodb.Table(table_name)
+        else:
+            _tables[table_name_env] = None
+    return _tables[table_name_env]
+
+@property
+def account_table():
+    return _get_table("AccountTable")
+
+@property
+def game_task_table():
+    return _get_table("GameTaskTable")
+
+@property
+def session_table():
+    return _get_table("SessionTable")
+
+@property
+def api_key_table():
+    return _get_table("ApiKeyTable")
+
+@property
+def test_record_table():
+    return _get_table("TestRecordTable")
+
+@property
+def npc_task_table():
+    return _get_table("NpcTaskTable")
+
+@property
+def npc_lock_table():
+    return _get_table("NpcLockTable")
+
+@property
+def npc_background_table():
+    return _get_table("NpcBackgroundTable")
+
+@property
+def conversation_table():
+    return _get_table("ConversationTable")
+
+@property
+def game_source_table():
+    return _get_table("GameSourceTable")
 
 
 def is_endpoint_exist(email: str, endpoint: str) -> bool:

@@ -6,7 +6,10 @@ pytest
 pytest-order
 pytest-xdist
 pytest-html
+pytest-cov
+pytest-mock
 names_generator
 Jinja2
 requests-toolbelt
 cryptography
+moto
