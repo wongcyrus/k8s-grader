@@ -9,7 +9,7 @@ from common.handler import (
     extract_k8s_credentials,
     setup_paths
 )
-from common.database_legacy import get_user_data, get_npc_background, get_ai_random_chat
+from common.database import get_user_data, get_npc_background, get_ai_random_chat
 from common.services.task_service import TaskService
 from common.file import clear_tmp_directory, write_user_files
 from common.google_spreadsheet import get_easter_egg_link

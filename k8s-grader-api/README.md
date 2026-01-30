@@ -4,16 +4,18 @@ A serverless Kubernetes learning game grading system built with AWS SAM, Lambda,
 
 ## 🎯 Project Overview
 
-This is a **refactored greenfield deployment** with clean architecture:
-- **Single unified endpoint** (`/task`) replacing multiple legacy endpoints
-- **Simplified database** (2 tables instead of 5)
+A serverless Kubernetes learning game grading system with clean architecture:
+- **Single unified endpoint** (`/task`) for all task operations
+- **Simplified database** using repository pattern
 - **State machine pattern** for explicit state transitions
 - **Declarative task configuration** via manifest.json files
 - **Progress tracking** with points system and retry limits
 
 ### Architecture Highlights
 
-- **93 tests passing** with 61% overall coverage
+- **106 tests passing** with 63% overall coverage
+- **Unit tests**: Fast, mocked, test business logic (106 tests)
+- **Integration tests**: Real API calls, test deployed stack
 - **Core models**: PhaseConfig, TaskManifest, TaskState (98% coverage)
 - **Services layer**: TaskService, TestRunner (95-100% coverage)
 - **Database repositories**: TaskState, NpcAssignment (75% coverage)
@@ -33,7 +35,8 @@ k8s-grader-api/
 ├── keygen/                       # API key generation
 ├── save-k8s-account/             # Account registration
 ├── post_deployment/              # Post-deploy setup
-├── tests/                        # Unit tests (93 tests)
+├── tests/                        # Unit tests (106 tests)
+│   └── integration/              # Integration tests (real API)
 ├── template.yaml                 # SAM infrastructure
 └── deploy.sh                     # Automated deployment
 
@@ -127,7 +130,7 @@ Each task has a declarative configuration file (optional):
 }
 ```
 
-**Note:** manifest.json is **optional**! If not present, the system auto-generates a manifest by discovering test files (test_01_setup.py, test_04_challenge.py, etc.). This provides 100% backward compatibility with the old system.
+**Note:** manifest.json is **optional**! If not present, the system auto-generates a manifest by discovering test files (test_01_setup.py, test_04_challenge.py, etc.).
 
 **Generate manifests automatically:**
 ```bash
@@ -305,20 +308,75 @@ sam logs -n TaskHandlerFunction --stack-name k8s-grader-api --tail
 
 See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for more troubleshooting tips.
 
+## 🧪 Testing
+
+### Unit Tests (Fast, Mocked)
+
+Run unit tests locally with mocked AWS services:
+
+```bash
+./run_tests.sh
+```
+
+- **106 tests** covering all components
+- **63% code coverage**
+- Uses `moto` to mock AWS services
+- Fast execution (< 5 seconds)
+- No AWS credentials required
+
+### Integration Tests (Real API)
+
+Test against the deployed stack on AWS:
+
+```bash
+# 1. Deploy the stack
+./deploy.sh
+
+# 2. Generate encrypted API key
+./generate_test_api_key.sh
+# Visit the URL, copy the generated key, and set it:
+export TEST_API_KEY="your-generated-encrypted-key"
+
+# 3. Run integration tests
+./run_integration_tests.sh
+```
+
+Integration tests:
+- Call real API Gateway endpoints
+- Interact with real DynamoDB tables
+- Verify end-to-end functionality
+- Test performance and error handling
+- Require deployed stack and AWS credentials
+- **Use encrypted API keys** (contains user email)
+
+See [tests/integration/README.md](tests/integration/README.md) for detailed documentation.
+
+### Test Comparison
+
+| Aspect | Unit Tests | Integration Tests |
+|--------|-----------|-------------------|
+| Speed | Fast (< 5s) | Slow (30s+) |
+| Dependencies | Mocked | Real AWS |
+| Cost | Free | AWS charges |
+| When to run | Every commit | Before/after deploy |
+| Purpose | Code logic | End-to-end validation |
+
+**Best Practice:** Run unit tests during development, integration tests before deployment.
+
 ## 📝 License
 
 See [LICENSE](../LICENSE) file for details.
 
 ## 🤝 Contributing
 
-This is a refactored greenfield deployment. The architecture is designed to be:
+The architecture is designed to be:
 - Easy to understand and maintain
 - Well-tested with high coverage
 - Documented with clear guides
 - Extensible for new features
 
 When adding features:
-1. Write tests first
+1. Write tests first (both unit and integration)
 2. Update documentation
 3. Follow existing patterns
 4. Maintain test coverage above 60%

@@ -25,6 +25,8 @@ def aws_credentials(monkeypatch):
     monkeypatch.setenv('TaskStateTable', 'TaskStateTable')
     monkeypatch.setenv('NpcLockTable', 'NpcLockTable')
     monkeypatch.setenv('NpcAssignmentTable', 'NpcAssignmentTable')
+    # Add SECRET_HASH for handler tests
+    monkeypatch.setenv('SecretHash', '2M540grRh05JjA0N0f3ptfGqSq-AN6v1zym1rKEIk-g=')
 
 
 @pytest.fixture

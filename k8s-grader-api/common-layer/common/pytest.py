@@ -6,7 +6,7 @@ import urllib.request
 from typing import Dict, List, Optional, Tuple
 
 import pytest
-from common.database_legacy import get_game_source
+from common.database import get_game_source
 from common.status import GamePhrase, TestResult
 from jinja2 import Environment
 

@@ -23,7 +23,7 @@ Parameters:
   PythonVersion:
     Type: String
     Description: "Python version for the Lambda functions"
-    Default: "python3.14"
+    Default: "python3.12"
 Globals:
   Function:
     Timeout: 29
@@ -551,6 +551,9 @@ Outputs:
   NpcAssignmentTable:
     Description: "Name of the NpcAssignmentTable (refactored)"
     Value: !Ref NpcAssignmentTable
+  ApiEndpoint:
+    Description: "Base API Gateway endpoint URL (for integration tests)"
+    Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
   TaskHandlerApi:
     Description: "Endpoint URL for unified Task Handler function (refactored)"
     Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/task"

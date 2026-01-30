@@ -51,8 +51,12 @@ def mock_user_data():
 class TestLambdaHandler:
     """Test Lambda handler"""
     
-    def test_missing_parameters(self):
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_missing_parameters(self, mock_get_email):
         """Test with missing parameters"""
+        # Mock returns None for missing parameters
+        mock_get_email.return_value = (None, None, None)
+        
         event = {
             'queryStringParameters': {},
             'headers': {'x-api-key': 'test-key'}
@@ -65,8 +69,11 @@ class TestLambdaHandler:
         assert body['status'] == 'ERROR'
         assert 'Missing required parameters' in body['message']
     
-    def test_invalid_game_format(self):
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_invalid_game_format(self, mock_get_email):
         """Test with invalid game format"""
+        mock_get_email.return_value = ('test@example.com', 'game-01', 'npc1')
+        
         event = {
             'queryStringParameters': {
                 'email': 'test@example.com',
@@ -83,8 +90,11 @@ class TestLambdaHandler:
         assert body['status'] == 'ERROR'
         assert 'alphanumeric' in body['message']
     
-    def test_npc_not_found(self, api_event):
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_npc_not_found(self, mock_get_email, api_event):
         """Test with NPC not found"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         with patch('app.get_npc_background', return_value=None):
             response = lambda_handler(api_event, None)
             
@@ -93,8 +103,11 @@ class TestLambdaHandler:
             assert body['status'] == 'ERROR'
             assert 'not found' in body['message']
     
-    def test_random_chat(self, api_event):
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_random_chat(self, mock_get_email, api_event):
         """Test random chat response"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
              patch('app.random.random', return_value=0.1), \
              patch('app.get_ai_random_chat', return_value='Hello there!'):
@@ -106,8 +119,11 @@ class TestLambdaHandler:
             assert body['status'] == 'OK'
             assert body['message'] == 'Hello there!'
     
-    def test_npc_locked(self, api_event, dynamodb_tables):
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_npc_locked(self, mock_get_email, api_event, dynamodb_tables):
         """Test with locked NPC"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
              patch('app.random.random', return_value=0.5):
             
@@ -123,8 +139,11 @@ class TestLambdaHandler:
             assert body['status'] == 'ERROR'
             assert 'does not have any task' in body['message']
     
-    def test_different_npc_assigned(self, api_event, dynamodb_tables):
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_different_npc_assigned(self, mock_get_email, api_event, dynamodb_tables):
         """Test with different NPC assigned"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
              patch('app.random.random', return_value=0.5):
             
@@ -140,8 +159,11 @@ class TestLambdaHandler:
             assert body['status'] == 'ERROR'
             assert 'Complete task from npc2' in body['message']
     
-    def test_user_not_found(self, api_event):
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_user_not_found(self, mock_get_email, api_event):
         """Test with user not found"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
              patch('app.random.random', return_value=0.5), \
              patch('app.task_service.validate_npc_access', return_value=(True, None)), \
@@ -154,8 +176,11 @@ class TestLambdaHandler:
             assert body['status'] == 'ERROR'
             assert 'User account not found' in body['message']
     
-    def test_all_tasks_completed(self, api_event, mock_user_data, dynamodb_tables):
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_all_tasks_completed(self, mock_get_email, api_event, mock_user_data, dynamodb_tables):
         """Test when all tasks are completed"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
              patch('app.random.random', return_value=0.5), \
              patch('app.get_user_data', return_value=mock_user_data), \
@@ -171,8 +196,11 @@ class TestLambdaHandler:
             assert body['status'] == 'OK'
             assert 'Congratulations' in body['message']
     
-    def test_start_new_task(self, api_event, mock_user_data, sample_task_state, dynamodb_tables):
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_start_new_task(self, mock_get_email, api_event, mock_user_data, sample_task_state, dynamodb_tables):
         """Test starting a new task"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
              patch('app.random.random', return_value=0.5), \
              patch('app.get_user_data', return_value=mock_user_data), \
@@ -190,9 +218,12 @@ class TestLambdaHandler:
             assert body['task_id'] == '01_test_task'
             assert body['progress'] == 0.0
     
-    def test_execute_phase_success(self, api_event, mock_user_data, in_progress_task_state, 
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_execute_phase_success(self, mock_get_email, api_event, mock_user_data, in_progress_task_state, 
                                    sample_manifest, dynamodb_tables):
         """Test executing phase successfully"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         # Setup state
         in_progress_task_state.current_phase_id = 'setup'
         
@@ -210,8 +241,9 @@ class TestLambdaHandler:
              patch('app.extract_k8s_credentials', return_value=('cert', 'key', 'endpoint')), \
              patch('app.clear_tmp_directory'), \
              patch('app.write_user_files'), \
+             patch('app.task_service.validate_npc_access', return_value=(True, None)), \
              patch('app.task_service.get_current_task', return_value='01_task'), \
-             patch('app.TaskStateRepository.get', return_value=in_progress_task_state), \
+             patch('common.database.repositories.TaskStateRepository.get', return_value=in_progress_task_state), \
              patch('app.task_service.execute_phase', return_value=execute_result):
             
             response = lambda_handler(api_event, None)
@@ -222,9 +254,12 @@ class TestLambdaHandler:
             assert 'report_url' in body
             assert 'progress' in body
     
-    def test_execute_phase_failure(self, api_event, mock_user_data, in_progress_task_state, 
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_execute_phase_failure(self, mock_get_email, api_event, mock_user_data, in_progress_task_state, 
                                    sample_manifest, dynamodb_tables):
         """Test executing phase with failure"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         in_progress_task_state.current_phase_id = 'setup'
         
         execute_result = {
@@ -242,8 +277,9 @@ class TestLambdaHandler:
              patch('app.extract_k8s_credentials', return_value=('cert', 'key', 'endpoint')), \
              patch('app.clear_tmp_directory'), \
              patch('app.write_user_files'), \
+             patch('app.task_service.validate_npc_access', return_value=(True, None)), \
              patch('app.task_service.get_current_task', return_value='01_task'), \
-             patch('app.TaskStateRepository.get', return_value=in_progress_task_state), \
+             patch('common.database.repositories.TaskStateRepository.get', return_value=in_progress_task_state), \
              patch('app.task_service.execute_phase', return_value=execute_result):
             
             response = lambda_handler(api_event, None)
@@ -253,9 +289,12 @@ class TestLambdaHandler:
             assert body['status'] == 'FAILED'
             assert 'Tests failed' in body['message']
     
-    def test_complete_task(self, api_event, mock_user_data, in_progress_task_state, 
+    @patch('app.get_email_game_and_npc_from_event')
+    def test_complete_task(self, mock_get_email, api_event, mock_user_data, in_progress_task_state, 
                           sample_manifest, dynamodb_tables):
         """Test completing a task"""
+        mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
+        
         # Mark all phases as passed
         in_progress_task_state.phase_states['setup'] = PhaseState('setup', PhaseStatus.PASSED)
         in_progress_task_state.phase_states['challenge'] = PhaseState('challenge', PhaseStatus.PASSED)
@@ -282,8 +321,9 @@ class TestLambdaHandler:
              patch('app.extract_k8s_credentials', return_value=('cert', 'key', 'endpoint')), \
              patch('app.clear_tmp_directory'), \
              patch('app.write_user_files'), \
+             patch('app.task_service.validate_npc_access', return_value=(True, None)), \
              patch('app.task_service.get_current_task', return_value='01_task'), \
-             patch('app.TaskStateRepository.get', return_value=in_progress_task_state), \
+             patch('common.database.repositories.TaskStateRepository.get', return_value=in_progress_task_state), \
              patch('app.task_service.execute_phase', return_value=execute_result), \
              patch('app.task_service.complete_task', return_value=completion_result), \
              patch('app.get_easter_egg_link', return_value='https://easter.egg'):

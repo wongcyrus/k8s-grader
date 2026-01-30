@@ -1,8 +1,11 @@
 """Database repositories for data access"""
 import os
+import json
+import time
 import boto3
-from typing import Optional, List
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timedelta, timezone
+from boto3.dynamodb.conditions import Key
 import logging
 
 logger = logging.getLogger(__name__)
@@ -364,4 +367,473 @@ class NpcRepository:
             return True
         except Exception as e:
             logger.error(f"Failed to clear assignment: {e}")
+            return False
+
+
+
+class AccountRepository:
+    """Repository for user account data"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('AccountTable', 'AccountTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def is_endpoint_exist(self, email: str, endpoint: str) -> bool:
+        """Check if endpoint exists for a different user"""
+        try:
+            response = self.table.query(
+                IndexName="EndpointIndex",
+                KeyConditionExpression=Key("endpoint").eq(endpoint)
+            )
+            items = response.get("Items", [])
+            if items:
+                return items[0].get("email") != email
+            return False
+        except Exception as e:
+            logger.error(f"Failed to check endpoint: {e}")
+            return False
+    
+    def save(self, email: str, endpoint: str, client_certificate: str, client_key: str) -> bool:
+        """Save user account"""
+        try:
+            self.table.put_item(
+                Item={
+                    "email": email,
+                    "endpoint": endpoint,
+                    "client_certificate": client_certificate,
+                    "client_key": client_key,
+                    "time": int(time.time()),
+                }
+            )
+            logger.info(f"Saved account for {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save account: {e}")
+            return False
+    
+    def get(self, email: str) -> Optional[Dict[str, Any]]:
+        """Get user account data"""
+        try:
+            response = self.table.get_item(Key={"email": email})
+            return response.get("Item")
+        except Exception as e:
+            logger.error(f"Failed to get account: {e}")
+            return None
+
+
+class ApiKeyRepository:
+    """Repository for API key management"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('ApiKeyTable', 'ApiKeyTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def get(self, email: str) -> Optional[str]:
+        """Get API key for user"""
+        try:
+            response = self.table.get_item(Key={"email": email})
+            item = response.get("Item")
+            return item.get("api_key") if item else None
+        except Exception as e:
+            logger.error(f"Failed to get API key: {e}")
+            return None
+    
+    def save(self, email: str, api_key: str) -> bool:
+        """Save API key for user"""
+        try:
+            self.table.put_item(Item={"email": email, "api_key": api_key})
+            logger.info(f"Saved API key for {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save API key: {e}")
+            return False
+
+
+class GameTaskRepository:
+    """Repository for game task tracking"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('GameTaskTable', 'GameTaskTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def get_tasks(self, email: str, game: str) -> List[str]:
+        """Get all tasks for user in game"""
+        if not email or not game:
+            return []
+        if not game.isalnum():
+            raise ValueError("Game parameter must be alphanumeric")
+        
+        try:
+            response = self.table.query(
+                KeyConditionExpression=Key("email").eq(email)
+                & Key("game").begins_with(f"{game}#")
+            )
+            items = response.get("Items", [])
+            return sorted([item["game"].split("#", 1)[1] for item in items])
+        except Exception as e:
+            logger.error(f"Failed to get tasks: {e}")
+            return []
+    
+    def save(self, email: str, game: str, task: str) -> bool:
+        """Save game task"""
+        try:
+            self.table.put_item(
+                Item={"email": email, "game": f"{game}#{task}", "time": int(time.time())}
+            )
+            logger.debug(f"Saved task {game}#{task} for {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save task: {e}")
+            return False
+    
+    def delete(self, email: str, game: str, task: str) -> bool:
+        """Delete game task"""
+        try:
+            self.table.delete_item(Key={"email": email, "game": f"{game}#{task}"})
+            logger.debug(f"Deleted task {game}#{task} for {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete task: {e}")
+            return False
+
+
+class SessionRepository:
+    """Repository for game session data"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('SessionTable', 'SessionTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def save(self, email: str, game: str, task: str, session: Dict[str, Any]) -> bool:
+        """Save game session"""
+        try:
+            self.table.put_item(
+                Item={
+                    "email": email,
+                    "game": f"{game}#{task}",
+                    "session": json.dumps(session),
+                    "time": int(time.time()),
+                }
+            )
+            logger.debug(f"Saved session for {email} - {game}#{task}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save session: {e}")
+            return False
+    
+    def get(self, email: str, game: str, task: str) -> Optional[Dict[str, Any]]:
+        """Get game session"""
+        try:
+            response = self.table.get_item(Key={"email": email, "game": f"{game}#{task}"})
+            item = response.get("Item")
+            if item:
+                return json.loads(item["session"])
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get session: {e}")
+            return None
+    
+    def delete(self, email: str, game: str, task: str) -> bool:
+        """Delete game session"""
+        try:
+            self.table.delete_item(Key={"email": email, "game": f"{game}#{task}"})
+            logger.debug(f"Deleted session for {email} - {game}#{task}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete session: {e}")
+            return False
+
+
+class TestRecordRepository:
+    """Repository for test execution records"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('TestRecordTable', 'TestRecordTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def save(self, email: str, game: str, current_task: str, game_phase: str,
+             test_result: str, bucket: str, key: str, report_url: str, now_str: str) -> bool:
+        """Save test record"""
+        try:
+            self.table.put_item(
+                Item={
+                    "email": email,
+                    "gameTime": game + "#" + now_str,
+                    "task": current_task,
+                    "gamePhase": game_phase,
+                    "testResult": test_result,
+                    "bucket": bucket,
+                    "key": key,
+                    "reportUrl": report_url,
+                    "time": now_str,
+                }
+            )
+            logger.info(f"Saved test record for {email} - {game}#{current_task}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save test record: {e}")
+            return False
+
+
+class NpcTaskRepository:
+    """Repository for NPC task assignments"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('NpcTaskTable', 'NpcTaskTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def save_ongoing(self, email: str, game: str, npc: str, task: str) -> bool:
+        """Save ongoing NPC task"""
+        try:
+            self.table.put_item(
+                Item={
+                    "email": email,
+                    "game": game,
+                    "npc": npc,
+                    "task": task,
+                    "time": int(time.time()),
+                }
+            )
+            logger.info(f"Saved ongoing task {task} from {npc} for {email}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save ongoing task: {e}")
+            return False
+    
+    def get_ongoing(self, email: str, game: str) -> Tuple[Optional[str], Optional[str]]:
+        """Get ongoing NPC task"""
+        try:
+            response = self.table.get_item(Key={"email": email, "game": game})
+            item = response.get("Item")
+            if item:
+                return item["npc"], item["task"]
+            return None, None
+        except Exception as e:
+            logger.error(f"Failed to get ongoing task: {e}")
+            return None, None
+    
+    def delete_ongoing(self, email: str, game: str) -> bool:
+        """Delete ongoing NPC task"""
+        try:
+            self.table.delete_item(Key={"email": email, "game": game})
+            logger.debug(f"Deleted ongoing task for {email} - {game}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete ongoing task: {e}")
+            return False
+
+
+class NpcBackgroundRepository:
+    """Repository for NPC background data"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('NpcBackgroundTable', 'NpcBackgroundTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def get(self, name: str) -> Optional[Dict[str, str]]:
+        """Get NPC background"""
+        try:
+            response = self.table.get_item(Key={"name": name})
+            item = response.get("Item")
+            if item:
+                return {
+                    "name": item.get("name"),
+                    "age": item.get("age"),
+                    "gender": item.get("gender"),
+                    "background": item.get("background"),
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get NPC background: {e}")
+            return None
+    
+    def save(self, name: str, age: str, gender: str, background: str) -> bool:
+        """Save NPC background"""
+        try:
+            self.table.put_item(
+                Item={
+                    "name": name,
+                    "age": age,
+                    "gender": gender,
+                    "background": background,
+                    "time": int(time.time()),
+                }
+            )
+            logger.info(f"Saved NPC background for {name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save NPC background: {e}")
+            return False
+
+
+class NpcLockRepository:
+    """Repository for NPC lock management"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('NpcLockTable', 'NpcLockTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def save(self, email: str, game: str, npc: str, minutes: int = 30) -> bool:
+        """Save NPC lock"""
+        if not email or not game or not npc:
+            raise ValueError("Email, game, and npc are required")
+        
+        try:
+            expiration_time = int((datetime.now() + timedelta(minutes=minutes)).timestamp())
+            self.table.put_item(
+                Item={
+                    "email": email,
+                    "gameNpc": game + "#" + npc,
+                    "ttl": expiration_time,
+                    "time": int(time.time()),
+                }
+            )
+            logger.info(f"Locked NPC {npc} for {email} ({minutes} min)")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save NPC lock: {e}")
+            return False
+    
+    def get(self, email: str, game: str, npc: str) -> Optional[Dict[str, Any]]:
+        """Get NPC lock"""
+        try:
+            response = self.table.get_item(
+                Key={"email": email, "gameNpc": game + "#" + npc}
+            )
+            return response.get("Item")
+        except Exception as e:
+            logger.error(f"Failed to get NPC lock: {e}")
+            return None
+
+
+class ConversationRepository:
+    """Repository for AI conversation templates"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('ConversationTable', 'ConversationTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def get_instruction_template(self, game: str, task: str, npc: str) -> Optional[str]:
+        """Get AI instruction template"""
+        try:
+            key = f"{game}#{task}#{npc}"
+            response = self.table.get_item(Key={"key": key})
+            item = response.get("Item")
+            return item.get("instruction") if item else None
+        except Exception as e:
+            logger.error(f"Failed to get instruction template: {e}")
+            return None
+    
+    def get_random_chat(self, npc: str) -> Optional[str]:
+        """Get random chat instruction for NPC"""
+        try:
+            response = self.table.get_item(Key={"key": npc})
+            item = response.get("Item")
+            return item.get("instruction") if item else None
+        except Exception as e:
+            logger.error(f"Failed to get random chat: {e}")
+            return None
+
+
+class GameSourceRepository:
+    """Repository for game source URLs"""
+    
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('GameSourceTable', 'GameSourceTable')
+        self._table = None
+    
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+    
+    def get(self, game: str) -> Optional[str]:
+        """Get game source URL"""
+        try:
+            response = self.table.get_item(Key={"game": game})
+            item = response.get("Item")
+            return item.get("source") if item else None
+        except Exception as e:
+            logger.error(f"Failed to get game source: {e}")
+            return None
+    
+    def save(self, game: str, source: str) -> bool:
+        """Save game source URL"""
+        try:
+            self.table.put_item(
+                Item={
+                    "game": game,
+                    "source": source,
+                    "time": int(time.time()),
+                }
+            )
+            logger.info(f"Saved game source for {game}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save game source: {e}")
             return False
