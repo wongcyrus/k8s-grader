@@ -186,7 +186,7 @@ Resources:
       Name: !Sub "${AWS::StackName}-api"
       StageName: !Ref StageName
       Auth:
-        ApiKeyRequired: true
+        ApiKeyRequired: false
       Cors:
         AllowOrigin: "'*'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,x-api-key'"
@@ -302,8 +302,6 @@ Resources:
             Method: get
             RestApiId:
               Ref: ApiGatewayApi
-            Auth:
-              ApiKeyRequired: false
         SaveK8sAccountPost:
           Type: Api 
           Properties:
@@ -311,8 +309,12 @@ Resources:
             Method: post
             RestApiId:
               Ref: ApiGatewayApi
-            Auth:
-              ApiKeyRequired: true
+        SaveK8sAccountOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /save-k8s-account
+            Method: options
 
   KeygenFunction:
     Type: AWS::Serverless::Function 
@@ -375,8 +377,13 @@ Resources:
             Method: get
             RestApiId:
               Ref: ApiGatewayApi
-            Auth:
-              ApiKeyRequired: false
+        KeygenOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /keygen
+            Method: options
+
 
   PostDeploymentFunction:
     Type: AWS::Serverless::Function 
@@ -477,16 +484,12 @@ Resources:
             Method: get
             RestApiId:
               Ref: ApiGatewayApi
-            Auth:
-              ApiKeyRequired: true
-        TaskApiCors:
+        TaskApiOptions:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGatewayApi
             Path: /task
             Method: options
-            Auth:
-              ApiKeyRequired: false
 
   PostDeploymentCustomResource:
     Type: AWS::CloudFormation::CustomResource
