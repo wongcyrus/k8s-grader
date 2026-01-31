@@ -33,7 +33,7 @@ echo ""
 
 # Check if TEST_API_KEY is set
 if [ -z "$TEST_API_KEY" ]; then
-    echo "❌ Error: TEST_API_KEY environment variable not set"
+    echo "⚠️  Warning: TEST_API_KEY environment variable not set"
     echo ""
     echo "The API uses encrypted keys that contain the user's email."
     echo "You need to generate one using the keygen endpoint:"
@@ -50,7 +50,8 @@ if [ -z "$TEST_API_KEY" ]; then
     echo "3. Set the generated key:"
     echo "   export TEST_API_KEY='your-generated-encrypted-key'"
     echo ""
-    exit 1
+    echo "Skipping integration tests..."
+    exit 0
 fi
 
 echo "✅ TEST_API_KEY is set"
@@ -65,7 +66,7 @@ fi
 # Install dependencies if needed
 if ! python -c "import pytest" 2>/dev/null; then
     echo "Installing test dependencies..."
-    pip install pytest requests boto3 pytest-timeout
+    pip install -q pytest requests boto3 pytest-timeout
 fi
 
 echo ""

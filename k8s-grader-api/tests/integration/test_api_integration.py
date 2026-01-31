@@ -6,6 +6,7 @@ import time
 from typing import Dict, Any
 
 
+@pytest.mark.integration
 class TestAPIIntegration:
     """Test real API endpoints"""
     
@@ -92,6 +93,7 @@ class TestAPIIntegration:
             assert 'User account not found' in data['message'] or 'not found' in data['message']
 
 
+@pytest.mark.integration
 class TestTaskFlow:
     """Test complete task flow with real API"""
     
@@ -126,6 +128,7 @@ class TestTaskFlow:
             assert data['progress'] == 0.0
 
 
+@pytest.mark.integration
 class TestDynamoDBIntegration:
     """Test DynamoDB operations through the API"""
     
@@ -170,6 +173,7 @@ class TestDynamoDBIntegration:
                 pytest.skip(f"Could not verify DynamoDB state: {e}")
 
 
+@pytest.mark.integration
 class TestAPIPerformance:
     """Test API performance and response times"""
     
@@ -222,6 +226,7 @@ class TestAPIPerformance:
         assert all(status == 200 for status in results)
 
 
+@pytest.mark.integration
 class TestErrorHandling:
     """Test API error handling"""
     
@@ -241,7 +246,8 @@ class TestErrorHandling:
         assert response.status_code == 200
         data = response.json()
         assert data['status'] == 'ERROR'
-        assert 'Internal error' in data['message']  # Fernet decryption fails
+        # After deployment, should return user-friendly error message
+        assert 'Invalid or expired API key' in data['message']
     
     def test_missing_api_key(self, api_endpoint, test_email, test_game, test_npc):
         """Test API without API key"""

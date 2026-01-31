@@ -22,12 +22,16 @@ if [ ! -f "$VENV_PYTHON" ]; then
     "$SCRIPT_DIR/venv/bin/pip" install -q -r "$SCRIPT_DIR/common-layer/requirements.txt"
 fi
 
-# Run tests
-echo -e "${GREEN}Running all tests...${NC}"
-"$VENV_PYTHON" -m pytest "$SCRIPT_DIR/tests/" -v --tb=short --cov=common --cov-report=term-missing
+# Run unit tests only (exclude integration tests)
+echo -e "${GREEN}Running unit tests...${NC}"
+"$VENV_PYTHON" -m pytest "$SCRIPT_DIR/tests/" -v --tb=short --cov=common --cov-report=term-missing:skip-covered --cov-report=html -m "not integration"
 
 echo ""
-echo -e "${GREEN}✅ All tests completed!${NC}"
+echo -e "${GREEN}✅ All unit tests completed!${NC}"
 echo ""
 echo "To view detailed coverage report:"
 echo "  open htmlcov/index.html"
+echo ""
+echo "Note: Integration tests are excluded. Run them separately with:"
+echo "  bash run_integration_tests.sh"
+

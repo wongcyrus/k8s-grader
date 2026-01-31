@@ -124,5 +124,6 @@ def get_email_from_api_key(api_key: str) -> str:
     try:
         fernet = Fernet(SECRET_HASH)
         return fernet.decrypt(api_key.encode()).decode()
-    except (ValueError, TypeError) as e:
-        raise ValueError(f"Invalid API key format: {e}") from e
+    except Exception as e:
+        # Catch all decryption errors including InvalidToken, padding errors, etc.
+        raise ValueError(f"Invalid or expired API key: {type(e).__name__}") from e

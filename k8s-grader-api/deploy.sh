@@ -78,9 +78,9 @@ run_tests() {
     fi
     
     if [ -f "run_tests.sh" ]; then
-        print_info "Running test suite..."
+        print_info "Running unit test suite (integration tests excluded)..."
         bash run_tests.sh
-        print_success "All tests passed"
+        print_success "All unit tests passed"
     else
         print_info "No test script found, skipping tests"
     fi
@@ -176,6 +176,43 @@ show_next_steps() {
     print_success "Deployment complete!"
 }
 
+# Run integration tests
+run_integration_tests() {
+    print_header "Running Integration Tests"
+    
+    # Check if TEST_API_KEY is set
+    if [ -z "$TEST_API_KEY" ]; then
+        print_info "Skipping integration tests - TEST_API_KEY not set"
+        echo ""
+        echo "To run integration tests, generate an API key first:"
+        echo "  1. Get the keygen URL from stack outputs above"
+        echo "  2. Visit the URL to generate a key"
+        echo "  3. Export TEST_API_KEY='your-key' and run: bash run_integration_tests.sh"
+        return 0
+    fi
+    
+    if [ -d "venv" ]; then
+        source venv/bin/activate
+        print_info "Virtual environment activated"
+    fi
+    
+    if [ -f "run_integration_tests.sh" ]; then
+        print_info "Running integration test suite against deployed API..."
+        bash run_integration_tests.sh
+        if [ $? -eq 0 ]; then
+            print_success "All integration tests passed"
+        else
+            print_error "Some integration tests failed"
+            echo ""
+            echo "This is not critical - the deployment is complete."
+            echo "Review the test output above for details."
+            return 1
+        fi
+    else
+        print_info "No integration test script found, skipping"
+    fi
+}
+
 # Main script
 main() {
     echo ""
@@ -187,6 +224,7 @@ main() {
     GUIDED=false
     SKIP_TESTS=false
     SKIP_BUILD=false
+    SKIP_INTEGRATION=false
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -202,15 +240,20 @@ main() {
                 SKIP_BUILD=true
                 shift
                 ;;
+            --skip-integration)
+                SKIP_INTEGRATION=true
+                shift
+                ;;
             --help)
                 echo ""
                 echo "Usage: ./deploy.sh [OPTIONS]"
                 echo ""
                 echo "Options:"
-                echo "  --guided       Run guided deployment (first time)"
-                echo "  --skip-tests   Skip running tests"
-                echo "  --skip-build   Skip build step (use existing build)"
-                echo "  --help         Show this help message"
+                echo "  --guided              Run guided deployment (first time)"
+                echo "  --skip-tests          Skip running unit tests"
+                echo "  --skip-build          Skip build step (use existing build)"
+                echo "  --skip-integration    Skip integration tests after deployment"
+                echo "  --help                Show this help message"
                 echo ""
                 exit 0
                 ;;
@@ -247,6 +290,17 @@ main() {
     
     get_outputs
     show_next_steps
+    
+    # Run integration tests unless skipped
+    if [ "$SKIP_INTEGRATION" = false ]; then
+        echo ""
+        run_integration_tests || true  # Don't fail deployment if integration tests fail
+    else
+        print_info "Skipping integration tests (--skip-integration flag)"
+        echo ""
+        echo "To run integration tests manually:"
+        echo "  bash run_integration_tests.sh"
+    fi
 }
 
 # Run main function

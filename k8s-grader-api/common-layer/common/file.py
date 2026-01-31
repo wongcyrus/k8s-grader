@@ -31,6 +31,9 @@ def create_json_input(endpoint, extra_data=None):
         "host": endpoint,
     }
     json_input.update(extra_data)
-    del json_input["$instruction"]
+    # Remove all metadata keys (keys starting with $) - not needed for test execution
+    keys_to_remove = [key for key in json_input.keys() if key.startswith('$')]
+    for key in keys_to_remove:
+        del json_input[key]
     with open("/tmp/json_input.json", "w", encoding="utf-8") as json_file:
         json.dump(json_input, json_file)

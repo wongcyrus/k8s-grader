@@ -2,6 +2,7 @@
 import json
 import logging
 import random
+from decimal import Decimal
 from typing import Dict, Any, Optional
 
 from common.handler import (
@@ -20,6 +21,14 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 setup_paths()
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """JSON encoder that handles Decimal types from DynamoDB"""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return int(obj) if obj % 1 == 0 else float(obj)
+        return super(DecimalEncoder, self).default(obj)
 
 # Initialize service
 task_service = TaskService()
@@ -76,16 +85,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         task_repo = TaskStateRepository()
         state = task_repo.get(email, game, current_task)
         
+        is_new_task = state is None
+        
         if not state:
             # Start new task
             state = task_service.start_task(email, game, current_task, npc)
-            return task_started_response(state)
         
-        # Add credentials to session (may have changed)
+        # Always add/update credentials to session (may have changed)
         state.session_data['$endpoint'] = endpoint
         state.session_data['$client_certificate'] = client_certificate
         state.session_data['$client_key'] = client_key
         state.session_data['$email'] = email
+        
+        # Save state with updated credentials
+        task_repo.save(state)
+        
+        # If this was a new task, return started response
+        if is_new_task:
+            return task_started_response(state)
         
         # Execute current phase
         result = task_service.execute_phase(email, game, current_task)
@@ -105,6 +122,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Phase passed, continue to next
         return phase_passed_response(result, state, manifest)
+    
+    except ValueError as e:
+        # Handle API key validation errors
+        error_msg = str(e)
+        if "Invalid API key" in error_msg or "decrypt" in error_msg.lower():
+            logger.error(f"API key validation error: {e}")
+            return error_response("Invalid or expired API key. Please generate a new one.")
+        logger.error(f"Validation error: {e}", exc_info=True)
+        return error_response(f"Validation error: {str(e)}")
         
     except Exception as e:
         logger.error(f"Handler error: {e}", exc_info=True)
@@ -119,7 +145,7 @@ def error_response(message: str) -> Dict[str, Any]:
         'body': json.dumps({
             'status': 'ERROR',
             'message': message
-        })
+        }, cls=DecimalEncoder)
     }
 
 
@@ -131,7 +157,7 @@ def ok_response(message: str) -> Dict[str, Any]:
         'body': json.dumps({
             'status': 'OK',
             'message': message
-        })
+        }, cls=DecimalEncoder)
     }
 
 
@@ -146,7 +172,7 @@ def task_started_response(state) -> Dict[str, Any]:
             'current_phase': state.current_phase_id,
             'message': state.session_data.get('$instruction', 'Task started!'),
             'progress': 0.0
-        })
+        }, cls=DecimalEncoder)
     }
 
 
@@ -166,7 +192,7 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
             'report_url': result['report_url'],
             'progress': progress,
             'points': state.total_points
-        })
+        }, cls=DecimalEncoder)
     }
 
 
@@ -185,7 +211,7 @@ def phase_failed_response(result, state) -> Dict[str, Any]:
             'report_url': result.get('report_url', ''),
             'attempts': phase_state.attempts if phase_state else 0,
             'test_result': result.get('test_result').name if result.get('test_result') else 'UNKNOWN'
-        })
+        }, cls=DecimalEncoder)
     }
 
 
@@ -205,7 +231,7 @@ def task_completed_response(completion_result, report_url) -> Dict[str, Any]:
             'easter_egg_url': easter_egg or '',
             'progress': 1.0,
             'total_points': state.total_points
-        })
+        }, cls=DecimalEncoder)
     }
 
 
