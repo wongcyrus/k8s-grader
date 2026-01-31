@@ -89,6 +89,9 @@ class TaskService:
         # Generate session data
         session_data = generate_session(email, game, task_id)
         
+        # Add task instruction from manifest
+        session_data['$instruction'] = manifest.description
+        
         # Create initial state
         state = TaskState(
             email=email,

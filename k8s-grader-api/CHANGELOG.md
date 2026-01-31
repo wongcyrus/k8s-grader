@@ -2,7 +2,26 @@
 
 ## Recent Bug Fixes (2026-01-31)
 
-### 1. Task Stuck Forever After Max Attempts Reached 🔥 CRITICAL
+### 1. Missing Task Instructions in Game 🎮
+**Issue:** Players received no instructions when starting a task. The `$instruction` field was empty, leaving players confused about what to do.
+
+**Root Cause:** The task description from the manifest was never added to the session data. The `$instruction` field was expected but never populated.
+
+**Fix:** Added task description from manifest to session data when starting a task:
+```python
+session_data['$instruction'] = manifest.description
+```
+
+**Files Modified:**
+- `common-layer/common/services/task_service.py` - Added instruction to session data
+
+**User Experience:**
+- Before: No instructions shown, players confused ❌
+- After: Clear task description shown when task starts ✅
+
+---
+
+### 2. Task Stuck Forever After Max Attempts Reached 🔥 CRITICAL
 **Issue:** When a phase (like setup) failed the maximum number of times, the task would get stuck forever and the NPC would remain locked permanently. Users had no way to retry.
 
 **Root Cause:** The state machine detected `max_attempts_reached` but there was no handling for this condition. The task remained in IN_PROGRESS status and the NPC assignment was never cleared.

@@ -15,6 +15,16 @@ System architecture and design:
 - Security model
 - Scalability considerations
 
+### [GAME_LOGIC.md](GAME_LOGIC.md) 🎮
+Complete game flow and mechanics:
+- Player journey with diagrams
+- Task and phase state machines
+- NPC management system
+- Session personalization
+- Abandonment and retry flow
+- Points and progress system
+- API response types
+
 ### [QUICK_START.md](QUICK_START.md)
 Fast-track guide to get up and running in minutes.
 

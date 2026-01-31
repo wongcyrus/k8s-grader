@@ -230,10 +230,12 @@ curl -X POST http://localhost:3000/task \
 
 ## 📚 Documentation
 
+- **[GAME_LOGIC.md](GAME_LOGIC.md)** - Complete game flow and mechanics with diagrams
 - **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Complete deployment instructions
 - **[MANIFEST_GUIDE.md](MANIFEST_GUIDE.md)** - Task manifest creation guide
 - **[SECRET_HASH_GUIDE.md](SECRET_HASH_GUIDE.md)** - API key encryption guide
 - **[QUICK_START.md](QUICK_START.md)** - Quick reference for common tasks
+- **[DOCS_INDEX.md](DOCS_INDEX.md)** - Complete documentation index
 
 ## 🏗️ Infrastructure
 
