@@ -237,6 +237,49 @@ class TaskService:
             'total_points': state.total_points
         }
     
+    def abandon_task(self, email: str, game: str, task_id: str, reason: str) -> Dict[str, Any]:
+        """
+        Abandon a task (e.g., max attempts reached)
+        
+        Args:
+            email: User email
+            game: Game identifier
+            task_id: Task identifier
+            reason: Reason for abandonment
+            
+        Returns:
+            Dictionary with abandonment results
+            
+        Raises:
+            ValueError: If state not found
+        """
+        # Load state and manifest
+        state = self.task_repo.get(email, game, task_id)
+        if not state:
+            raise ValueError(f"Task state not found: {task_id}")
+        
+        manifest = TaskManifest.load(game, task_id)
+        sm = TaskStateMachine(manifest, state)
+        
+        # Mark as abandoned
+        success, error = sm.fail_task(reason)
+        if not success:
+            return {'success': False, 'error': error}
+        
+        # Save state
+        self.task_repo.save(state)
+        
+        # Clear NPC assignment (don't lock - allow immediate retry)
+        self.npc_repo.clear_assignment(email, game)
+        
+        logger.warning(f"Abandoned task {task_id} for {email}: {reason}")
+        
+        return {
+            'success': True,
+            'state': state,
+            'reason': reason
+        }
+    
     def validate_npc_access(self, email: str, game: str, npc: str) -> tuple[bool, Optional[str]]:
         """
         Validate if NPC can give tasks to user

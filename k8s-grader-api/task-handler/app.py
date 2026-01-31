@@ -82,10 +82,19 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # Check if task already started
         from common.database.repositories import TaskStateRepository
+        from common.models.task_state import TaskStatus
         task_repo = TaskStateRepository()
         state = task_repo.get(email, game, current_task)
         
         is_new_task = state is None
+        
+        # If task was abandoned, allow restart
+        if state and state.status == TaskStatus.ABANDONED:
+            logger.info(f"Restarting abandoned task {current_task} for {email}")
+            # Delete old state and start fresh
+            task_repo.delete(email, game, current_task)
+            state = None
+            is_new_task = True
         
         if not state:
             # Start new task
@@ -108,6 +117,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         result = task_service.execute_phase(email, game, current_task)
         
         if not result['success']:
+            # Check if max attempts reached
+            from common.state_machine.task_state_machine import TaskStateMachine
+            manifest = result['manifest']
+            sm = TaskStateMachine(manifest, result['state'])
+            next_action = sm.get_next_action()
+            
+            if next_action['action'] == 'max_attempts_reached':
+                # Abandon the task
+                abandon_result = task_service.abandon_task(
+                    email, game, current_task,
+                    f"Maximum attempts reached for phase '{next_action['phase_id']}'"
+                )
+                return task_abandoned_response(abandon_result, result.get('report_url', ''))
+            
             return phase_failed_response(result, state)
         
         # Check if task is complete
@@ -230,6 +253,26 @@ def task_completed_response(completion_result, report_url) -> Dict[str, Any]:
             'report_url': report_url,
             'easter_egg_url': easter_egg or '',
             'progress': 1.0,
+            'total_points': state.total_points
+        }, cls=DecimalEncoder)
+    }
+
+
+def task_abandoned_response(abandon_result, report_url) -> Dict[str, Any]:
+    """Return response for abandoned task"""
+    state = abandon_result['state']
+    reason = abandon_result['reason']
+    
+    return {
+        'statusCode': 200,
+        'headers': cors_headers(),
+        'body': json.dumps({
+            'status': 'ABANDONED',
+            'task_id': state.task_id,
+            'message': f'❌ Task abandoned: {reason}. You can try again with the same NPC.',
+            'reason': reason,
+            'report_url': report_url,
+            'progress': 0.0,
             'total_points': state.total_points
         }, cls=DecimalEncoder)
     }

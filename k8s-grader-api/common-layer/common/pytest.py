@@ -38,7 +38,7 @@ def get_test_base_path(game: str) -> str:
     return f"/tmp/{game}/tests"
 
 
-def run_tests(test_phase: GamePhrase, game: str, task: str) -> TestResult:
+def run_tests(test_phase: GamePhrase, game: str, task: str, timeout: int = None) -> TestResult:
     get_tests(game)
     retcode = TestResult.OK.value
     result_container = [retcode]
@@ -57,7 +57,9 @@ def run_tests(test_phase: GamePhrase, game: str, task: str) -> TestResult:
 
     thread = threading.Thread(target=run_pytest)
     thread.start()
-    thread.join(timeout=PYTEST_TIMEOUT_SECONDS)
+    # Use provided timeout or fall back to default
+    timeout_seconds = timeout if timeout is not None else PYTEST_TIMEOUT_SECONDS
+    thread.join(timeout=timeout_seconds)
 
     if thread.is_alive():
         return TestResult.TIME_OUT

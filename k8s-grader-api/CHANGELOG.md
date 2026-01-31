@@ -2,7 +2,48 @@
 
 ## Recent Bug Fixes (2026-01-31)
 
-### 1. Missing K8s Credentials in Session Data
+### 1. Task Stuck Forever After Max Attempts Reached 🔥 CRITICAL
+**Issue:** When a phase (like setup) failed the maximum number of times, the task would get stuck forever and the NPC would remain locked permanently. Users had no way to retry.
+
+**Root Cause:** The state machine detected `max_attempts_reached` but there was no handling for this condition. The task remained in IN_PROGRESS status and the NPC assignment was never cleared.
+
+**Fix:** Added complete task abandonment and retry flow:
+1. Detect when max attempts are reached
+2. Mark task as ABANDONED
+3. Clear NPC assignment (no lock - allows immediate retry)
+4. Return clear message to user that they can try again
+5. **When player retries:** Detect ABANDONED status, delete old state, start fresh
+
+**Files Modified:**
+- `common-layer/common/state_machine/task_state_machine.py` - Added `fail_task()` method
+- `common-layer/common/services/task_service.py` - Added `abandon_task()` method
+- `task-handler/app.py` - Added max attempts detection, abandonment handling, and retry logic
+
+**User Experience:**
+- Before: Task stuck forever, NPC locked, no way to retry ❌
+- After: Clear message, NPC unlocked, can retry immediately with fresh start ✅
+
+**Retry Flow:**
+1. Task abandoned → Status = ABANDONED, NPC unlocked
+2. Player talks to same NPC → System detects ABANDONED status
+3. Old state deleted → Fresh task started
+4. Player can try again from the beginning
+
+---
+
+### 2. TypeError: run_tests() Unexpected Keyword Argument 'timeout'
+**Issue:** Test execution failed with `TypeError: run_tests() got an unexpected keyword argument 'timeout'`.
+
+**Root Cause:** The `test_runner.py` was calling `run_tests()` with a `timeout` parameter from the phase configuration, but the function didn't accept this parameter. It only used a hardcoded `PYTEST_TIMEOUT_SECONDS` constant.
+
+**Fix:** Added optional `timeout` parameter to `run_tests()` function that defaults to `PYTEST_TIMEOUT_SECONDS` if not provided.
+
+**Files Modified:**
+- `common-layer/common/pytest.py` - Added `timeout` parameter with default value
+
+---
+
+### 2. Missing K8s Credentials in Session Data
 **Issue:** New tasks failed with "No endpoint in session data" error during first phase execution.
 
 **Root Cause:** K8s credentials (endpoint, certificates, keys) were not being added to session data when starting new tasks.
@@ -31,16 +72,19 @@
 ### 3. Deploy Script Improvements
 **Issues:**
 - Coverage report required pressing 'q' to continue
+- AWS CLI output required pressing a key to continue (pager)
 - Integration tests not running after deployment
 - Stack name extraction bug (concatenating multiple names)
 
 **Fixes:**
 - Added `:skip-covered` to coverage report (no pager)
-- Integration tests now run automatically after deployment
+- Added `--no-cli-pager` to AWS CLI commands (no pager)
+- Integration tests now run automatically after deployment (if TEST_API_KEY is set)
 - Fixed stack name extraction with `head -n 1`
+- Better messaging when TEST_API_KEY is not set
 
 **Files Modified:**
-- `deploy.sh` - Added integration test execution, fixed stack name
+- `deploy.sh` - Added `--no-cli-pager`, improved integration test handling
 - `run_tests.sh` - Added `:skip-covered` option
 
 **New Deploy Options:**
@@ -116,6 +160,7 @@ bash run_integration_tests.sh  # Integration tests
 - `task-handler/app.py`
 - `common-layer/common/handler.py`
 - `common-layer/common/file.py`
+- `common-layer/common/pytest.py`
 
 ### Tests
 - `tests/test_file.py` (new)

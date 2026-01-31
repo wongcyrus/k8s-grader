@@ -139,10 +139,12 @@ get_outputs() {
     
     print_info "Fetching outputs for stack: $STACK_NAME"
     
+    # Use --no-cli-pager to prevent interactive pager
     aws cloudformation describe-stacks \
         --stack-name "$STACK_NAME" \
         --query 'Stacks[0].Outputs' \
-        --output table
+        --output table \
+        --no-cli-pager
 }
 
 # Show next steps
@@ -154,7 +156,8 @@ show_next_steps() {
     BASE_URL=$(aws cloudformation describe-stacks \
         --stack-name "$STACK_NAME" \
         --query 'Stacks[0].Outputs[?OutputKey==`BaseUrl`].OutputValue' \
-        --output text 2>/dev/null || echo "")
+        --output text \
+        --no-cli-pager 2>/dev/null || echo "")
     
     if [ -n "$BASE_URL" ]; then
         echo ""
@@ -182,12 +185,19 @@ run_integration_tests() {
     
     # Check if TEST_API_KEY is set
     if [ -z "$TEST_API_KEY" ]; then
-        print_info "Skipping integration tests - TEST_API_KEY not set"
+        print_info "TEST_API_KEY not set - integration tests will be skipped"
         echo ""
-        echo "To run integration tests, generate an API key first:"
-        echo "  1. Get the keygen URL from stack outputs above"
-        echo "  2. Visit the URL to generate a key"
-        echo "  3. Export TEST_API_KEY='your-key' and run: bash run_integration_tests.sh"
+        echo "To run integration tests:"
+        echo ""
+        echo "1. Generate an API key using the keygen endpoint (see outputs above)"
+        echo "2. Set the environment variable:"
+        echo "   export TEST_API_KEY='your-encrypted-api-key'"
+        echo "3. Run integration tests:"
+        echo "   bash run_integration_tests.sh"
+        echo ""
+        echo "Or use the helper script:"
+        echo "   bash generate_test_api_key.sh"
+        echo ""
         return 0
     fi
     
@@ -198,13 +208,13 @@ run_integration_tests() {
     
     if [ -f "run_integration_tests.sh" ]; then
         print_info "Running integration test suite against deployed API..."
-        bash run_integration_tests.sh
-        if [ $? -eq 0 ]; then
+        if bash run_integration_tests.sh; then
             print_success "All integration tests passed"
         else
             print_error "Some integration tests failed"
             echo ""
-            echo "This is not critical - the deployment is complete."
+            echo "⚠️  Integration test failures don't affect the deployment."
+            echo "The API is deployed and functional."
             echo "Review the test output above for details."
             return 1
         fi

@@ -169,6 +169,29 @@ class TaskStateMachine:
         
         return True, None
     
+    def fail_task(self, reason: str) -> Tuple[bool, Optional[str]]:
+        """
+        Mark task as failed/abandoned (e.g., max attempts reached)
+        
+        Args:
+            reason: Reason for failure
+            
+        Returns:
+            Tuple of (success, error_message)
+        """
+        from common.models.task_state import TaskStatus
+        
+        if self.state.status == TaskStatus.COMPLETED:
+            return False, "Cannot fail a completed task"
+        
+        if self.state.status == TaskStatus.ABANDONED:
+            return False, "Task already abandoned"
+        
+        self.state.status = TaskStatus.ABANDONED
+        logger.warning(f"Task {self.state.task_id} abandoned for {self.state.email}: {reason}")
+        
+        return True, None
+    
     def get_next_action(self) -> dict:
         """
         Determine what should happen next
