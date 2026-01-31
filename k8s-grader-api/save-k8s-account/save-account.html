@@ -19,30 +19,239 @@
 
             <div class="mb-3">
                 <label for="endpoint" class="form-label">Endpoint:</label>
-                <input type="text" id="endpoint" name="endpoint" class="form-control" required>
+                <input type="text" id="endpoint" name="endpoint" class="form-control" 
+                       placeholder="https://abcd.app.github.dev/" required>
+                <small class="form-text text-muted">Your Kubernetes API server URL (must start with http:// or https://)</small>
             </div>
 
             <div class="mb-3">
                 <label for="client-certificate" class="form-label">Client Certificate:</label>
-                <input type="file" id="client-certificate" name="client-certificate" class="form-control" required>
+                <input type="file" id="client-certificate" name="client-certificate" class="form-control" 
+                       accept=".crt,.pem,.cer" required>
+                <small class="form-text text-muted">Upload your client.crt file (PEM format, .crt/.pem/.cer)</small>
             </div>
 
             <div class="mb-3">
                 <label for="client-key" class="form-label">Client Key:</label>
-                <input type="file" id="client-key" name="client-key" class="form-control" required>
+                <input type="file" id="client-key" name="client-key" class="form-control" 
+                       accept=".key,.pem" required>
+                <small class="form-text text-muted">Upload your client.key file (PEM format, .key/.pem)</small>
             </div>
 
             <button type="submit" class="btn btn-primary">Submit</button>
         </form>
 
         <script>
-            document.getElementById('accountForm').addEventListener('submit', function (event) {
+            // File validation functions
+            function validateFileSize(file, maxSizeMB = 1) {
+                const maxBytes = maxSizeMB * 1024 * 1024;
+                if (file.size > maxBytes) {
+                    return `File size exceeds ${maxSizeMB}MB limit`;
+                }
+                if (file.size < 100) {
+                    return 'File is too small to be a valid certificate';
+                }
+                return null;
+            }
+
+            function validateFileExtension(file, allowedExtensions, expectedFilename) {
+                const fileName = file.name.toLowerCase();
+                
+                // Warn if filename doesn't match expected
+                if (expectedFilename && !fileName.includes(expectedFilename)) {
+                    const proceed = confirm(
+                        `Warning: Expected filename containing "${expectedFilename}" but got "${file.name}".\n\n` +
+                        `Are you sure this is the correct file?`
+                    );
+                    if (!proceed) {
+                        return 'User cancelled - incorrect filename';
+                    }
+                }
+                
+                const hasValidExtension = allowedExtensions.some(ext => fileName.endsWith(ext));
+                if (!hasValidExtension) {
+                    return `Invalid file type. Expected: ${allowedExtensions.join(', ')}`;
+                }
+                return null;
+            }
+
+            async function validateCertificateContent(file, expectedType) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const content = e.target.result;
+                        
+                        // Check for PEM format markers
+                        if (expectedType === 'certificate') {
+                            // Must have CERTIFICATE markers
+                            if (!content.includes('-----BEGIN CERTIFICATE-----') || 
+                                !content.includes('-----END CERTIFICATE-----')) {
+                                reject('Invalid certificate file. Expected client.crt with BEGIN/END CERTIFICATE markers.');
+                                return;
+                            }
+                            
+                            // Must NOT have PRIVATE KEY markers (user uploaded key file instead)
+                            if (content.includes('PRIVATE KEY')) {
+                                reject('Wrong file! You uploaded a private key file. Please upload client.crt (certificate file) instead.');
+                                return;
+                            }
+                            
+                        } else if (expectedType === 'key') {
+                            // Must have PRIVATE KEY markers
+                            const hasPrivateKey = content.includes('-----BEGIN PRIVATE KEY-----') || 
+                                                 content.includes('-----BEGIN RSA PRIVATE KEY-----') ||
+                                                 content.includes('-----BEGIN EC PRIVATE KEY-----');
+                            const hasEndKey = content.includes('-----END PRIVATE KEY-----') || 
+                                            content.includes('-----END RSA PRIVATE KEY-----') ||
+                                            content.includes('-----END EC PRIVATE KEY-----');
+                            
+                            if (!hasPrivateKey || !hasEndKey) {
+                                reject('Invalid key file. Expected client.key with BEGIN/END PRIVATE KEY markers.');
+                                return;
+                            }
+                            
+                            // Must NOT have CERTIFICATE markers (user uploaded cert file instead)
+                            if (content.includes('-----BEGIN CERTIFICATE-----')) {
+                                reject('Wrong file! You uploaded a certificate file. Please upload client.key (private key file) instead.');
+                                return;
+                            }
+                        }
+                        
+                        // Check minimum content length (base64 encoded data should be substantial)
+                        if (content.length < 200) {
+                            reject(`File content is too short to be a valid ${expectedType}.`);
+                            return;
+                        }
+                        
+                        resolve();
+                    };
+                    reader.onerror = function() {
+                        reject('Failed to read file content.');
+                    };
+                    reader.readAsText(file);
+                });
+            }
+
+            function validateEndpoint(endpoint) {
+                if (!endpoint) {
+                    return 'Endpoint is required';
+                }
+                if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+                    return 'Endpoint must start with http:// or https://';
+                }
+                try {
+                    new URL(endpoint);
+                } catch (e) {
+                    return 'Invalid endpoint URL format';
+                }
+                return null;
+            }
+
+            // Add real-time file validation
+            document.getElementById('client-certificate').addEventListener('change', async function(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const sizeError = validateFileSize(file);
+                if (sizeError) {
+                    alert(sizeError);
+                    e.target.value = '';
+                    return;
+                }
+                
+                const extError = validateFileExtension(file, ['.crt', '.pem', '.cer'], 'client.crt');
+                if (extError) {
+                    alert(extError);
+                    e.target.value = '';
+                    return;
+                }
+                
+                try {
+                    await validateCertificateContent(file, 'certificate');
+                    // Show success indicator
+                    e.target.classList.add('is-valid');
+                    e.target.classList.remove('is-invalid');
+                } catch (error) {
+                    alert('Certificate validation failed:\n\n' + error);
+                    e.target.value = '';
+                    e.target.classList.add('is-invalid');
+                    e.target.classList.remove('is-valid');
+                }
+            });
+
+            document.getElementById('client-key').addEventListener('change', async function(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const sizeError = validateFileSize(file);
+                if (sizeError) {
+                    alert(sizeError);
+                    e.target.value = '';
+                    return;
+                }
+                
+                const extError = validateFileExtension(file, ['.key', '.pem'], 'client.key');
+                if (extError) {
+                    alert(extError);
+                    e.target.value = '';
+                    return;
+                }
+                
+                try {
+                    await validateCertificateContent(file, 'key');
+                    // Show success indicator
+                    e.target.classList.add('is-valid');
+                    e.target.classList.remove('is-invalid');
+                } catch (error) {
+                    alert('Key validation failed:\n\n' + error);
+                    e.target.value = '';
+                    e.target.classList.add('is-invalid');
+                    e.target.classList.remove('is-valid');
+                }
+            });
+
+            document.getElementById('accountForm').addEventListener('submit', async function (event) {
                 event.preventDefault();
 
                 const apiKey = document.getElementById('apiKey').value;
                 const endpoint = document.getElementById('endpoint').value;
                 const clientCertificate = document.getElementById('client-certificate').files[0];
                 const clientKey = document.getElementById('client-key').files[0];
+
+                // Validate endpoint
+                const endpointError = validateEndpoint(endpoint);
+                if (endpointError) {
+                    alert(endpointError);
+                    return;
+                }
+
+                // Validate files are selected
+                if (!clientCertificate || !clientKey) {
+                    alert('Please select both certificate and key files');
+                    return;
+                }
+
+                // Validate file sizes
+                const certSizeError = validateFileSize(clientCertificate);
+                if (certSizeError) {
+                    alert('Certificate: ' + certSizeError);
+                    return;
+                }
+
+                const keySizeError = validateFileSize(clientKey);
+                if (keySizeError) {
+                    alert('Key: ' + keySizeError);
+                    return;
+                }
+
+                // Validate file content before submission
+                try {
+                    await validateCertificateContent(clientCertificate, 'certificate');
+                    await validateCertificateContent(clientKey, 'key');
+                } catch (error) {
+                    alert('File validation failed: ' + error);
+                    return;
+                }
 
                 const formData = new FormData();
                 formData.append('endpoint', endpoint);

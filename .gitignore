@@ -164,3 +164,9 @@ k8s/minikube/labsuser.pem
 k8s/minikube/downloaded_files/**
 kubectl
 **/**log.txt
+k8s/minikube/minikube-client-certs.zip
+k8s/minikube/minikube-client-certs/ca.crt
+k8s/minikube/minikube-client-certs/client.crt
+k8s/minikube/minikube-client-certs/client.key
+k8s/minikube/minikube-client-certs/config
+k8s/minikube/minikube-client-certs/README.txt

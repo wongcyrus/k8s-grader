@@ -1,0 +1,2 @@
+ignore_checks:
+  - W3660  # GatewayResponse modifying API definition is expected for CORS error handling

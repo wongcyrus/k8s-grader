@@ -135,7 +135,7 @@ deploy() {
 get_outputs() {
     print_header "Stack Outputs"
     
-    STACK_NAME=$(grep stack_name samconfig.toml | cut -d'"' -f2 || echo "k8s-grader-api-dev")
+    STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
     
     print_info "Fetching outputs for stack: $STACK_NAME"
     
@@ -149,7 +149,7 @@ get_outputs() {
 show_next_steps() {
     print_header "Next Steps"
     
-    STACK_NAME=$(grep stack_name samconfig.toml | cut -d'"' -f2 || echo "k8s-grader-api-dev")
+    STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
     
     BASE_URL=$(aws cloudformation describe-stacks \
         --stack-name "$STACK_NAME" \
