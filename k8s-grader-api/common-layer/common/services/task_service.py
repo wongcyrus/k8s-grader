@@ -80,44 +80,58 @@ class TaskService:
         # Check if already started
         existing = self.task_repo.get(email, game, task_id)
         if existing:
+            # Verify it's the same NPC
+            if existing.npc != npc:
+                raise ValueError(f"Complete task from {existing.npc} first!")
             logger.info(f"Task {task_id} already started for {email}")
             return existing
         
-        # Load manifest
-        manifest = TaskManifest.load(game, task_id)
+        # Try to assign NPC atomically FIRST (prevents race condition)
+        assigned = self.npc_repo.assign_task(email, game, npc, task_id)
+        if not assigned:
+            # Another NPC already assigned - check which one
+            assigned_npc = self.npc_repo.get_assigned_npc(email, game)
+            raise ValueError(f"Complete task from {assigned_npc} first!")
         
-        # Generate session data
-        session_data = generate_session(email, game, task_id)
-        
-        # Add task instruction from manifest
-        session_data['$instruction'] = manifest.description
-        
-        # Create initial state
-        state = TaskState(
-            email=email,
-            game=game,
-            task_id=task_id,
-            npc=npc,
-            status=TaskStatus.NOT_STARTED,
-            current_phase_id=None,
-            session_data=session_data
-        )
-        
-        # Start task via state machine
-        sm = TaskStateMachine(manifest, state)
-        success, error = sm.start_task()
-        
-        if not success:
-            raise ValueError(f"Failed to start task: {error}")
-        
-        # Save state
-        self.task_repo.save(state)
-        
-        # Mark NPC as assigned
-        self.npc_repo.assign_task(email, game, npc, task_id)
-        
-        logger.info(f"Started task {task_id} for {email} with NPC {npc}")
-        return state
+        try:
+            # Load manifest
+            manifest = TaskManifest.load(game, task_id)
+            
+            # Generate session data
+            session_data = generate_session(email, game, task_id)
+            
+            # Add task instruction from manifest
+            session_data['$instruction'] = manifest.description
+            
+            # Create initial state
+            state = TaskState(
+                email=email,
+                game=game,
+                task_id=task_id,
+                npc=npc,
+                status=TaskStatus.NOT_STARTED,
+                current_phase_id=None,
+                session_data=session_data
+            )
+            
+            # Start task via state machine
+            sm = TaskStateMachine(manifest, state)
+            success, error = sm.start_task()
+            
+            if not success:
+                # Rollback assignment on failure
+                self.npc_repo.clear_assignment(email, game)
+                raise ValueError(f"Failed to start task: {error}")
+            
+            # Save state
+            self.task_repo.save(state)
+            
+            logger.info(f"Started task {task_id} for {email} with NPC {npc}")
+            return state
+        except Exception as e:
+            # Rollback assignment on any error
+            self.npc_repo.clear_assignment(email, game)
+            raise
     
     def execute_phase(self, email: str, game: str, task_id: str, 
                      phase_id: Optional[str] = None) -> Dict[str, Any]:

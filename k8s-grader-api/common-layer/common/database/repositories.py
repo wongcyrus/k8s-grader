@@ -318,7 +318,7 @@ class NpcRepository:
     
     def assign_task(self, email: str, game: str, npc: str, task_id: str) -> bool:
         """
-        Assign task to user from NPC
+        Assign task to user from NPC (atomic operation to prevent race conditions)
         
         Args:
             email: User email
@@ -327,9 +327,11 @@ class NpcRepository:
             task_id: Task identifier
             
         Returns:
-            True if successful
+            True if successful, False if assignment already exists
         """
         try:
+            # Use conditional write to prevent race condition
+            # Only succeed if no assignment exists (attribute_not_exists)
             self.assignment_table.put_item(
                 Item={
                     'email': email,
@@ -337,10 +339,14 @@ class NpcRepository:
                     'npc': npc,
                     'task_id': task_id,
                     'assigned_at': datetime.now(timezone.utc).isoformat()
-                }
+                },
+                ConditionExpression='attribute_not_exists(email) AND attribute_not_exists(game)'
             )
             logger.info(f"Assigned task {task_id} from {npc} to {email}")
             return True
+        except self.assignment_table.meta.client.exceptions.ConditionalCheckFailedException:
+            logger.warning(f"Assignment already exists for {email} in {game}")
+            return False
         except Exception as e:
             logger.error(f"Failed to assign task: {e}")
             return False

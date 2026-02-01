@@ -1,6 +1,56 @@
 # Changelog
 
-## Recent Bug Fixes (2026-01-31)
+## Recent Bug Fixes (2026-02-01)
+
+### 1. Race Condition in NPC Assignment 🔥 CRITICAL
+**Issue:** When a player quickly chatted with 2 NPCs (e.g., NPC-A and NPC-B), both NPCs could try to assign tasks simultaneously, resulting in incorrect locking behavior where the second NPC would overwrite the first NPC's assignment.
+
+**Root Cause:** Classic **check-then-act** pattern without atomic operations:
+```python
+# Step 1: Check (not atomic)
+assigned_npc = get_assigned_npc(email, game)
+if assigned_npc and assigned_npc != npc:
+    return False
+
+# Step 2: Act (separate operation - race condition!)
+assign_task(email, game, npc, task_id)
+```
+
+**Fix:** Implemented 3-layer protection:
+
+1. **Backend - Atomic DynamoDB writes**: Used conditional expressions to ensure only one NPC can assign at a time
+   ```python
+   self.assignment_table.put_item(
+       Item={...},
+       ConditionExpression='attribute_not_exists(email) AND attribute_not_exists(game)'
+   )
+   ```
+
+2. **Backend - Assign-first pattern**: Changed flow to assign NPC atomically BEFORE creating task state, with proper rollback on failure
+
+3. **Frontend - Request debouncing**: Added `pendingRequest` flag to prevent multiple simultaneous AJAX calls
+
+**Files Modified:**
+- `common-layer/common/database/repositories.py` - Added atomic conditional write to `assign_task()`
+- `common-layer/common/services/task_service.py` - Changed `start_task()` to assign-first pattern with rollback
+- `k8s-isekai/js/plugins/NpcK8sPluginCommand.js` - Added `pendingRequest` flag
+- `tests/test_repositories.py` - Added atomic operation tests
+- `tests/test_task_service.py` - Added race condition prevention test
+- `GAME_LOGIC.md` - Added comprehensive race condition documentation
+
+**User Experience:**
+- Before: Second NPC could overwrite first NPC's assignment, causing confusion ❌
+- After: Only first NPC succeeds, second gets clear error: "Complete task from NPC-A first!" ✅
+
+**Test Coverage:**
+- `test_race_condition_prevention` - Verifies two NPCs cannot assign simultaneously
+- `test_assign_task_atomic_operation` - Tests atomic DynamoDB operation
+- `test_reassign_npc` - Confirms atomic operation prevents overwrites
+- All 116 unit tests passing ✅
+
+---
+
+## Previous Bug Fixes (2026-01-31)
 
 ### 1. Missing Task Instructions in Game 🎮
 **Issue:** Players received no instructions when starting a task. The `$instruction` field was empty, leaving players confused about what to do.

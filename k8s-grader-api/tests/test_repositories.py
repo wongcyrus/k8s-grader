@@ -252,19 +252,21 @@ class TestNpcRepository:
         assert npc is None
     
     def test_reassign_npc(self, dynamodb_tables):
-        """Test reassigning to different NPC"""
+        """Test that reassigning to different NPC is prevented by atomic operation"""
         repo = NpcRepository()
         
         # Assign to npc1
-        repo.assign_task("user@test.com", "game01", "npc1", "01_task")
+        success1 = repo.assign_task("user@test.com", "game01", "npc1", "01_task")
+        assert success1 is True
         assert repo.get_assigned_npc("user@test.com", "game01") == "npc1"
         
-        # Reassign to npc2
-        repo.assign_task("user@test.com", "game01", "npc2", "02_task")
+        # Try to reassign to npc2 - should fail due to atomic operation
+        success2 = repo.assign_task("user@test.com", "game01", "npc2", "02_task")
+        assert success2 is False
         
-        # Should be npc2 now
+        # Should still be npc1
         npc = repo.get_assigned_npc("user@test.com", "game01")
-        assert npc == "npc2"
+        assert npc == "npc1"
     
     def test_different_games_independent(self, dynamodb_tables):
         """Test that different games have independent assignments"""
@@ -278,3 +280,38 @@ class TestNpcRepository:
         
         # game02 should not have assignment
         assert repo.get_assigned_npc("user@test.com", "game02") is None
+    
+    def test_assign_task_atomic_operation(self, dynamodb_tables):
+        """Test that assign_task prevents race conditions with atomic operation"""
+        repo = NpcRepository()
+        
+        # First assignment should succeed
+        success1 = repo.assign_task("user@test.com", "game01", "npc1", "01_task")
+        assert success1 is True
+        
+        # Second assignment should fail (conditional write fails)
+        success2 = repo.assign_task("user@test.com", "game01", "npc2", "01_task")
+        assert success2 is False
+        
+        # Verify only first NPC is assigned
+        assigned_npc = repo.get_assigned_npc("user@test.com", "game01")
+        assert assigned_npc == "npc1"
+    
+    def test_assign_task_after_clear(self, dynamodb_tables):
+        """Test that assign_task works after clearing previous assignment"""
+        repo = NpcRepository()
+        
+        # First assignment
+        repo.assign_task("user@test.com", "game01", "npc1", "01_task")
+        
+        # Clear assignment
+        repo.clear_assignment("user@test.com", "game01")
+        
+        # Second assignment should succeed
+        success = repo.assign_task("user@test.com", "game01", "npc2", "02_task")
+        assert success is True
+        
+        # Verify second NPC is assigned
+        assigned_npc = repo.get_assigned_npc("user@test.com", "game01")
+        assert assigned_npc == "npc2"
+

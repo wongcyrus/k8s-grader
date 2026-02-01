@@ -286,3 +286,53 @@ class TestTaskService:
         
         assert can_access is True
         assert error is None
+    
+    def test_race_condition_prevention(self, task_service, sample_manifest):
+        """Test that race condition is prevented when two NPCs try to assign simultaneously"""
+        with patch('common.services.task_service.TaskManifest.load', return_value=sample_manifest), \
+             patch('common.services.task_service.generate_session', return_value={'key': 'value'}):
+            
+            # First NPC successfully starts task
+            state1 = task_service.start_task('user@test.com', 'game01', '01_task', 'npc1')
+            assert state1.npc == 'npc1'
+            
+            # Second NPC tries to start same task - should raise error
+            with pytest.raises(ValueError, match="Complete task from npc1 first"):
+                task_service.start_task('user@test.com', 'game01', '01_task', 'npc2')
+            
+            # Verify only npc1 is assigned
+            assigned_npc = task_service.npc_repo.get_assigned_npc('user@test.com', 'game01')
+            assert assigned_npc == 'npc1'
+            
+            # Verify task state still belongs to npc1
+            state = task_service.task_repo.get('user@test.com', 'game01', '01_task')
+            assert state.npc == 'npc1'
+    
+    def test_abandon_task_success(self, task_service, sample_manifest, in_progress_task_state):
+        """Test abandoning a task"""
+        task_service.task_repo.save(in_progress_task_state)
+        
+        with patch('common.services.task_service.TaskManifest.load', return_value=sample_manifest):
+            result = task_service.abandon_task(
+                in_progress_task_state.email,
+                in_progress_task_state.game,
+                in_progress_task_state.task_id,
+                'Max attempts reached'
+            )
+            
+            assert result['success'] is True
+            assert result['state'].status == TaskStatus.ABANDONED
+            assert result['reason'] == 'Max attempts reached'
+            
+            # Check assignment cleared (not locked - allow retry)
+            assigned = task_service.npc_repo.get_assigned_npc(
+                in_progress_task_state.email,
+                in_progress_task_state.game
+            )
+            assert assigned is None
+    
+    def test_abandon_task_state_not_found(self, task_service):
+        """Test abandoning task when state not found"""
+        with pytest.raises(ValueError, match="Task state not found"):
+            task_service.abandon_task('user@test.com', 'game01', '01_task', 'reason')
+

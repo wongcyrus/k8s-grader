@@ -24,12 +24,15 @@ Complete game flow and mechanics:
 - Abandonment and retry flow
 - Points and progress system
 - API response types
+- **Race condition prevention** 🔥
 
 ### [QUICK_START.md](QUICK_START.md)
 Fast-track guide to get up and running in minutes.
 
 ### [CHANGELOG.md](CHANGELOG.md) 🆕
 Recent bug fixes and improvements:
+- **Race condition in NPC assignment** (2026-02-01) 🔥
+- Task abandonment and retry flow
 - Session credentials fix
 - Metadata key filtering
 - Deploy script improvements

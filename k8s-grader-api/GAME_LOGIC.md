@@ -1322,6 +1322,164 @@ All attempts reset to 0
 - Attempt limits (prevents brute force)
 - Audit trail (all actions logged)
 
+## Race Condition Prevention
+
+### The Problem
+
+When a player quickly chats with 2 NPCs (e.g., NPC-A and NPC-B), a race condition could occur where both NPCs would try to assign tasks simultaneously, resulting in incorrect locking behavior.
+
+#### Root Cause
+
+The issue was a classic **check-then-act** pattern without atomic operations:
+
+```python
+# Step 1: Check (in validate_npc_access)
+assigned_npc = self.npc_repo.get_assigned_npc(email, game)
+if assigned_npc and assigned_npc != npc:
+    return False, "Complete task from {assigned_npc} first!"
+
+# Step 2: Act (in start_task) - NOT ATOMIC!
+self.npc_repo.assign_task(email, game, npc, task_id)
+```
+
+#### Race Condition Scenario
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    RACE CONDITION (BEFORE FIX)                          │
+│                                                                         │
+│  Time  │  Request 1 (NPC-A)              │  Request 2 (NPC-B)          │
+│  ──────┼─────────────────────────────────┼─────────────────────────────│
+│   t0   │ Check assignment → None         │                             │
+│   t1   │                                 │ Check assignment → None     │
+│   t2   │ Assign NPC-A                    │                             │
+│   t3   │                                 │ Assign NPC-B (overwrites!)  │
+│   t4   │ Create task state (NPC-A)       │                             │
+│   t5   │                                 │ Create task state (NPC-B)   │
+│        │                                 │                             │
+│ Result: Player has NPC-B assigned but NPC-A's task was started!        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### The Solution
+
+#### 1. Atomic DynamoDB Operations
+
+Changed `assign_task()` to use DynamoDB conditional writes:
+
+```python
+def assign_task(self, email: str, game: str, npc: str, task_id: str) -> bool:
+    try:
+        self.assignment_table.put_item(
+            Item={...},
+            # Only succeed if no assignment exists
+            ConditionExpression='attribute_not_exists(email) AND attribute_not_exists(game)'
+        )
+        return True
+    except ConditionalCheckFailedException:
+        # Assignment already exists - race condition prevented!
+        return False
+```
+
+#### 2. Assign-First Pattern
+
+Changed `start_task()` to assign NPC **before** creating task state:
+
+```python
+def start_task(self, email: str, game: str, task_id: str, npc: str) -> TaskState:
+    # Check if already started
+    existing = self.task_repo.get(email, game, task_id)
+    if existing:
+        # Verify it's the same NPC
+        if existing.npc != npc:
+            raise ValueError(f"Complete task from {existing.npc} first!")
+        return existing
+    
+    # Try to assign NPC atomically FIRST (prevents race condition)
+    assigned = self.npc_repo.assign_task(email, game, npc, task_id)
+    if not assigned:
+        # Another NPC already assigned
+        assigned_npc = self.npc_repo.get_assigned_npc(email, game)
+        raise ValueError(f"Complete task from {assigned_npc} first!")
+    
+    try:
+        # Create task state...
+        # ...
+    except Exception as e:
+        # Rollback assignment on any error
+        self.npc_repo.clear_assignment(email, game)
+        raise
+```
+
+#### 3. Client-Side Debouncing
+
+Added `pendingRequest` flag in JavaScript to prevent multiple simultaneous requests:
+
+```javascript
+let pendingRequest = false;
+
+const callApi = (npcName) => {
+    if (callCount > 0 || pendingRequest) {
+        $gameMessage.add('I am working on it now!');
+        return;
+    }
+    
+    pendingRequest = true;
+    
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState === 4) {
+            pendingRequest = false; // Clear flag
+            // ...
+        }
+    };
+};
+```
+
+### Fixed Race Condition Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    RACE CONDITION (AFTER FIX)                           │
+│                                                                         │
+│  Time  │  Request 1 (NPC-A)              │  Request 2 (NPC-B)          │
+│  ──────┼─────────────────────────────────┼─────────────────────────────│
+│   t0   │ Atomic assign NPC-A → Success   │                             │
+│   t1   │                                 │ Atomic assign NPC-B → FAIL  │
+│   t2   │ Create task state (NPC-A)       │                             │
+│   t3   │                                 │ Error: "Complete task from  │
+│        │                                 │         NPC-A first!"       │
+│        │                                 │                             │
+│ Result: Only NPC-A assigned, NPC-B gets clear error message            │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Benefits
+
+1. **Atomic Operations**: DynamoDB conditional writes ensure only one NPC can assign at a time
+2. **Fail-Fast**: Second NPC immediately fails with clear error message
+3. **Rollback Safety**: If task creation fails, assignment is rolled back
+4. **Client Protection**: Frontend prevents rapid-fire requests
+5. **No Deadlocks**: No locks held during long operations
+
+### Testing
+
+Comprehensive tests verify the fix:
+
+- `test_race_condition_prevention`: Verifies two NPCs cannot assign simultaneously
+- `test_assign_task_atomic_operation`: Tests atomic DynamoDB operation
+- `test_reassign_npc`: Confirms atomic operation prevents overwrites
+- `test_assign_task_after_clear`: Ensures assignment works after clearing
+
+Run tests:
+```bash
+cd k8s-grader/k8s-grader-api
+./run_tests.sh
+```
+
+### Performance Impact
+
+Minimal - conditional writes have the same performance as regular writes, just with additional validation. No database migration required.
+
 ## Related Documentation
 
 - **[README.md](README.md)** - Project overview
