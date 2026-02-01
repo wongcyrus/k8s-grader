@@ -44,24 +44,24 @@ class TaskManifest:
         """
         task_dir = f"/tmp/{game}/tests/{game}/{task_id}"
         
-        # Discover test files
+        # Discover test files with better descriptions
         phase_mapping = {
-            'test_01_setup.py': ('setup', 'Setup', 0),
-            'test_02_ready.py': ('ready', 'Ready', 5),
-            'test_03_answer.py': ('answer', 'Answer', 10),
-            'test_04_challenge.py': ('challenge', 'Challenge', 15),
-            'test_05_check.py': ('check', 'Check', 20),
-            'test_06_cleanup.py': ('cleanup', 'Cleanup', 0),
+            'test_01_setup.py': ('setup', 'Setup', 'Initialize the task environment', 0),
+            'test_02_ready.py': ('ready', 'Ready', 'Verify prerequisites are met', 5),
+            'test_03_answer.py': ('answer', 'Answer', 'Provide your solution', 10),
+            'test_04_challenge.py': ('challenge', 'Challenge', 'Complete the challenge', 15),
+            'test_05_check.py': ('check', 'Check', 'Validate your solution', 20),
+            'test_06_cleanup.py': ('cleanup', 'Cleanup', 'Clean up resources', 0),
         }
         
         phases = []
-        for test_file, (phase_id, phase_name, points) in phase_mapping.items():
+        for test_file, (phase_id, phase_name, description, points) in phase_mapping.items():
             test_path = os.path.join(task_dir, test_file)
             if os.path.exists(test_path):
                 phases.append(PhaseConfig(
                     id=phase_id,
                     name=phase_name,
-                    description=f"Auto-generated {phase_name} phase",
+                    description=description,
                     test_file=test_file,
                     required=(phase_id != 'cleanup'),
                     auto_run=(phase_id == 'cleanup'),

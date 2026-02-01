@@ -111,7 +111,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         
         # If this was a new task, return started response
         if is_new_task:
-            return task_started_response(state)
+            from common.models.task_manifest import TaskManifest
+            manifest = TaskManifest.load(game, current_task)
+            return task_started_response(state, manifest)
         
         # Execute current phase
         result = task_service.execute_phase(email, game, current_task)
@@ -131,7 +133,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 )
                 return task_abandoned_response(abandon_result, result.get('report_url', ''))
             
-            return phase_failed_response(result, state)
+            return phase_failed_response(result, state, manifest)
         
         # Check if task is complete
         from common.state_machine.task_state_machine import TaskStateMachine
@@ -184,8 +186,12 @@ def ok_response(message: str) -> Dict[str, Any]:
     }
 
 
-def task_started_response(state) -> Dict[str, Any]:
+def task_started_response(state, manifest) -> Dict[str, Any]:
     """Return response for task start"""
+    # Get current phase description
+    current_phase = manifest.get_phase(state.current_phase_id)
+    phase_message = current_phase.description if current_phase else 'Task started!'
+    
     return {
         'statusCode': 200,
         'headers': cors_headers(),
@@ -193,7 +199,8 @@ def task_started_response(state) -> Dict[str, Any]:
             'status': 'STARTED',
             'task_id': state.task_id,
             'current_phase': state.current_phase_id,
-            'message': state.session_data.get('$instruction', 'Task started!'),
+            'phase_name': current_phase.name if current_phase else '',
+            'message': phase_message,
             'progress': 0.0
         }, cls=DecimalEncoder)
     }
@@ -204,14 +211,18 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
     progress = state.calculate_progress(manifest)
     next_phase = manifest.get_next_phase(state.current_phase_id) if state.current_phase_id else None
     
+    # Get next phase description
+    next_phase_message = next_phase.description if next_phase else 'All phases completed!'
+    
     return {
         'statusCode': 200,
         'headers': cors_headers(),
         'body': json.dumps({
             'status': 'OK',
             'current_phase': result['state'].current_phase_id,
+            'phase_name': next_phase.name if next_phase else '',
             'next_phase': next_phase.id if next_phase else None,
-            'message': state.session_data.get('$instruction', 'Phase completed!'),
+            'message': next_phase_message,
             'report_url': result['report_url'],
             'progress': progress,
             'points': state.total_points
@@ -219,9 +230,13 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
     }
 
 
-def phase_failed_response(result, state) -> Dict[str, Any]:
+def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
     """Return response for failed phase"""
     phase_state = state.get_phase_state(state.current_phase_id)
+    
+    # Get current phase info
+    current_phase = manifest.get_phase(state.current_phase_id)
+    phase_message = current_phase.description if current_phase else 'Tests failed. Check the report.'
     
     return {
         'statusCode': 200,
@@ -229,10 +244,12 @@ def phase_failed_response(result, state) -> Dict[str, Any]:
         'body': json.dumps({
             'status': 'FAILED',
             'current_phase': state.current_phase_id,
+            'phase_name': current_phase.name if current_phase else '',
             'next_phase': state.current_phase_id,  # Retry same phase
-            'message': result.get('error', 'Tests failed. Check the report.'),
+            'message': phase_message,
             'report_url': result.get('report_url', ''),
             'attempts': phase_state.attempts if phase_state else 0,
+            'max_attempts': current_phase.max_attempts if current_phase else 3,
             'test_result': result.get('test_result').name if result.get('test_result') else 'UNKNOWN'
         }, cls=DecimalEncoder)
     }

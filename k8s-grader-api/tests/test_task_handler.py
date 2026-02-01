@@ -197,7 +197,7 @@ class TestLambdaHandler:
             assert 'Congratulations' in body['message']
     
     @patch('app.get_email_game_and_npc_from_event')
-    def test_start_new_task(self, mock_get_email, api_event, mock_user_data, sample_task_state, dynamodb_tables):
+    def test_start_new_task(self, mock_get_email, api_event, mock_user_data, sample_task_state, sample_manifest, dynamodb_tables):
         """Test starting a new task"""
         mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
         
@@ -208,7 +208,8 @@ class TestLambdaHandler:
              patch('app.clear_tmp_directory'), \
              patch('app.write_user_files'), \
              patch('app.task_service.get_current_task', return_value='01_task'), \
-             patch('app.task_service.start_task', return_value=sample_task_state):
+             patch('app.task_service.start_task', return_value=sample_task_state), \
+             patch('common.models.task_manifest.TaskManifest.load', return_value=sample_manifest):
             
             response = lambda_handler(api_event, None)
             
@@ -287,7 +288,7 @@ class TestLambdaHandler:
             assert response['statusCode'] == 200
             body = json.loads(response['body'])
             assert body['status'] == 'FAILED'
-            assert 'Tests failed' in body['message']
+            assert 'Initialize' in body['message'] or 'environment' in body['message']
     
     @patch('app.get_email_game_and_npc_from_event')
     def test_complete_task(self, mock_get_email, api_event, mock_user_data, in_progress_task_state, 
@@ -359,20 +360,20 @@ class TestResponseHelpers:
         assert body['status'] == 'OK'
         assert body['message'] == 'Test message'
     
-    def test_task_started_response(self, sample_task_state):
+    def test_task_started_response(self, sample_task_state, sample_manifest):
         """Test task started response"""
         sample_task_state.status = TaskStatus.IN_PROGRESS
         sample_task_state.current_phase_id = 'setup'
-        sample_task_state.session_data['$instruction'] = 'Start the task'
         
-        response = task_started_response(sample_task_state)
+        response = task_started_response(sample_task_state, sample_manifest)
         
         assert response['statusCode'] == 200
         body = json.loads(response['body'])
         assert body['status'] == 'STARTED'
         assert body['task_id'] == '01_test_task'
         assert body['current_phase'] == 'setup'
-        assert body['message'] == 'Start the task'
+        assert body['phase_name'] == 'Setup'
+        assert 'Initialize environment' in body['message']
         assert body['progress'] == 0.0
     
     def test_phase_passed_response(self, in_progress_task_state, sample_manifest):
@@ -394,7 +395,7 @@ class TestResponseHelpers:
         assert body['points'] == 100
         assert 'progress' in body
     
-    def test_phase_failed_response(self, in_progress_task_state):
+    def test_phase_failed_response(self, in_progress_task_state, sample_manifest):
         """Test phase failed response"""
         in_progress_task_state.current_phase_id = 'setup'
         phase_state = PhaseState('setup', PhaseStatus.FAILED)
@@ -407,13 +408,16 @@ class TestResponseHelpers:
             'report_url': 'https://report.url'
         }
         
-        response = phase_failed_response(result, in_progress_task_state)
+        response = phase_failed_response(result, in_progress_task_state, sample_manifest)
         
         assert response['statusCode'] == 200
         body = json.loads(response['body'])
         assert body['status'] == 'FAILED'
         assert body['current_phase'] == 'setup'
+        assert body['phase_name'] == 'Setup'
+        assert 'Initialize environment' in body['message']
         assert body['attempts'] == 2
+        assert body['max_attempts'] == 3
         assert body['test_result'] == 'TESTS_FAILED'
     
     def test_task_completed_response(self, in_progress_task_state):
