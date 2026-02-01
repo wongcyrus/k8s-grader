@@ -4,7 +4,7 @@ Essential documentation for the K8s Grader API.
 
 ## Core Documentation
 
-### [README.md](README.md)
+### [../README.md](../README.md)
 **Start here!** Project overview, quick start, and key concepts.
 - 106 unit tests, 15 integration tests (all passing)
 - Self-contained integration tests (no manual setup)
@@ -87,7 +87,7 @@ Task manifest configuration guide:
 
 ## Integration Tests
 
-### [tests/integration/README.md](tests/integration/README.md)
+### [../tests/integration/README.md](../tests/integration/README.md)
 Self-contained integration test documentation:
 - **Automatic setup and cleanup** ✅
 - **No manual API key generation needed** ✅
@@ -135,18 +135,20 @@ curl "${API_ENDPOINT}/keygen/?secret=${SECRET_HASH}&email=your@email.com"
 
 ```
 k8s-grader-api/
-├── README.md                    # Project overview ✅
-├── QUICK_START.md               # Fast-track guide ✅
-├── DOCS_INDEX.md                # This file (documentation index)
-├── CHANGELOG.md                 # Recent changes & bug fixes
-├── ARCHITECTURE.md              # System architecture
-├── GAME_LOGIC.md                # Game flow and mechanics
-├── DEPLOYMENT_GUIDE.md          # Deployment instructions ✅
-├── TESTING_GUIDE.md             # Complete testing guide ✅
-├── INTEGRATION_TEST_IMPROVEMENTS.md  # Integration test summary ✅
-├── MANIFEST_GUIDE.md            # Task manifest guide
-├── DATABASE_GUIDE.md            # Database layer guide
-├── SECRET_HASH_GUIDE.md         # SECRET_HASH management
+├── README.md                    # Project overview (root level)
+├── docs/                        # 📁 All documentation
+│   ├── DOCS_INDEX.md            # Documentation index (start here!)
+│   ├── QUICK_START.md           # Fast-track guide ✅
+│   ├── CHANGELOG.md             # Recent changes & bug fixes
+│   ├── ARCHITECTURE.md          # System architecture
+│   ├── GAME_LOGIC.md            # Game flow and mechanics
+│   ├── DEPLOYMENT_GUIDE.md      # Deployment instructions ✅
+│   ├── TESTING_GUIDE.md         # Complete testing guide ✅
+│   ├── INTEGRATION_TEST_IMPROVEMENTS.md  # Integration test summary ✅
+│   ├── MANIFEST_GUIDE.md        # Task manifest guide
+│   ├── DATABASE_GUIDE.md        # Database layer guide
+│   ├── SECRET_HASH_GUIDE.md     # SECRET_HASH management
+│   └── DOCUMENTATION_CONSOLIDATION.md  # Consolidation report
 ├── deploy.sh                    # Automated deployment script
 ├── run_tests.sh                 # Unit test runner
 ├── run_integration_tests.sh     # Integration test runner

@@ -113,21 +113,23 @@ All cross-references between documents have been verified and updated:
 
 ## Current Documentation Structure
 
-### Essential Files (11 files)
+### Essential Files (13 files)
 ```
 k8s-grader-api/
-├── README.md                           # Project overview
-├── QUICK_START.md                      # Fast-track guide
-├── DOCS_INDEX.md                       # Documentation index (this is the map!)
-├── CHANGELOG.md                        # Recent changes
-├── ARCHITECTURE.md                     # System architecture
-├── GAME_LOGIC.md                       # Game flow and mechanics
-├── DEPLOYMENT_GUIDE.md                 # Deployment instructions
-├── TESTING_GUIDE.md                    # Complete testing guide
-├── INTEGRATION_TEST_IMPROVEMENTS.md    # Integration test summary
-├── DATABASE_GUIDE.md                   # Database layer guide
-├── MANIFEST_GUIDE.md                   # Task manifest guide
-├── SECRET_HASH_GUIDE.md                # SECRET_HASH management
+├── README.md                           # Project overview (root level)
+└── docs/                               # 📁 All documentation
+    ├── DOCS_INDEX.md                   # Documentation index (start here!)
+    ├── QUICK_START.md                  # Fast-track guide
+    ├── CHANGELOG.md                    # Recent changes
+    ├── ARCHITECTURE.md                 # System architecture
+    ├── GAME_LOGIC.md                   # Game flow and mechanics
+    ├── DEPLOYMENT_GUIDE.md             # Deployment instructions
+    ├── TESTING_GUIDE.md                # Complete testing guide
+    ├── INTEGRATION_TEST_IMPROVEMENTS.md # Integration test summary
+    ├── DATABASE_GUIDE.md               # Database layer guide
+    ├── MANIFEST_GUIDE.md               # Task manifest guide
+    ├── SECRET_HASH_GUIDE.md            # SECRET_HASH management
+    └── DOCUMENTATION_CONSOLIDATION.md  # This file
 └── tests/integration/
     ├── README.md                       # Integration test guide
     └── CLEANUP_SCRIPT.md               # Cleanup script docs
@@ -177,7 +179,7 @@ k8s-grader-api/
 ## Navigation Guide
 
 ### For New Users
-1. Start with [README.md](README.md)
+1. Start with [../README.md](../README.md)
 2. Follow [QUICK_START.md](QUICK_START.md)
 3. Deploy with [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
 
@@ -189,7 +191,7 @@ k8s-grader-api/
 
 ### For Testing
 1. Unit tests: [TESTING_GUIDE.md](TESTING_GUIDE.md)
-2. Integration tests: [tests/integration/README.md](tests/integration/README.md)
+2. Integration tests: [../tests/integration/README.md](../tests/integration/README.md)
 3. Improvements: [INTEGRATION_TEST_IMPROVEMENTS.md](INTEGRATION_TEST_IMPROVEMENTS.md)
 
 ### For Configuration

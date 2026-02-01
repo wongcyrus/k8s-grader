@@ -131,7 +131,7 @@ curl -X POST http://localhost:3000/task -H "x-api-key: test" -d '{...}'
 
 ## 📚 Full Documentation
 
-- **[README.md](README.md)** - Complete project overview
+- **[../README.md](../README.md)** - Complete project overview
 - **[DOCS_INDEX.md](DOCS_INDEX.md)** - Documentation index
 - **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Deployment instructions
 - **[TESTING_GUIDE.md](TESTING_GUIDE.md)** - Complete testing guide

@@ -1482,7 +1482,7 @@ Minimal - conditional writes have the same performance as regular writes, just w
 
 ## Related Documentation
 
-- **[README.md](README.md)** - Project overview
+- **[../README.md](../README.md)** - Project overview
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture
 - **[MANIFEST_GUIDE.md](MANIFEST_GUIDE.md)** - Task configuration
 - **[DATABASE_GUIDE.md](DATABASE_GUIDE.md)** - Database layer

@@ -331,7 +331,7 @@ See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for details.
 
 ## Related Documentation
 
-- [README.md](README.md) - Project overview
+- [../README.md](../README.md) - Project overview
 - [GAME_LOGIC.md](GAME_LOGIC.md) - Complete game flow and mechanics
 - [DATABASE_GUIDE.md](DATABASE_GUIDE.md) - Database layer
 - [TESTING_GUIDE.md](TESTING_GUIDE.md) - Testing strategy

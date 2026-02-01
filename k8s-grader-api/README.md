@@ -144,7 +144,7 @@ python k8s-game-rule/tools/generate_manifests.py game01 --task 01_default_namesp
 python k8s-game-rule/tools/generate_manifests.py game01 --dry-run
 ```
 
-See [MANIFEST_GUIDE.md](MANIFEST_GUIDE.md) for complete documentation.
+See [docs/MANIFEST_GUIDE.md](docs/MANIFEST_GUIDE.md) for complete documentation.
 
 ### State Machine
 The system uses a state machine pattern for explicit state transitions:
@@ -230,12 +230,12 @@ curl -X POST http://localhost:3000/task \
 
 ## 📚 Documentation
 
-- **[GAME_LOGIC.md](GAME_LOGIC.md)** - Complete game flow and mechanics with diagrams
-- **[DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)** - Complete deployment instructions
-- **[MANIFEST_GUIDE.md](MANIFEST_GUIDE.md)** - Task manifest creation guide
-- **[SECRET_HASH_GUIDE.md](SECRET_HASH_GUIDE.md)** - API key encryption guide
-- **[QUICK_START.md](QUICK_START.md)** - Quick reference for common tasks
-- **[DOCS_INDEX.md](DOCS_INDEX.md)** - Complete documentation index
+- **[docs/GAME_LOGIC.md](docs/GAME_LOGIC.md)** - Complete game flow and mechanics with diagrams
+- **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment instructions
+- **[docs/MANIFEST_GUIDE.md](docs/MANIFEST_GUIDE.md)** - Task manifest creation guide
+- **[docs/SECRET_HASH_GUIDE.md](docs/SECRET_HASH_GUIDE.md)** - API key encryption guide
+- **[docs/QUICK_START.md](docs/QUICK_START.md)** - Quick reference for common tasks
+- **[docs/DOCS_INDEX.md](docs/DOCS_INDEX.md)** - Complete documentation index
 
 ## 🏗️ Infrastructure
 
