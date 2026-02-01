@@ -149,7 +149,7 @@ get_outputs() {
 
 # Show next steps
 show_next_steps() {
-    print_header "Next Steps"
+    print_header "Deployment Complete"
     
     STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
     
@@ -159,47 +159,41 @@ show_next_steps() {
         --output text \
         --no-cli-pager 2>/dev/null || echo "")
     
+    print_success "Stack deployed successfully!"
+    
     if [ -n "$BASE_URL" ]; then
+        echo ""
+        echo "API Endpoint: ${BASE_URL}"
+        echo ""
+        echo "Quick Start:"
         echo ""
         echo "1. Generate an API key:"
         echo "   curl \"${BASE_URL}keygen?secret=YOUR_SECRET&email=YOUR_EMAIL\""
         echo ""
-        echo "2. Test the new /task endpoint:"
+        echo "2. Test the /task endpoint:"
         echo "   curl -H \"x-api-key: YOUR_API_KEY\" \\"
         echo "     \"${BASE_URL}task?action=start&game=game01&task=01&npc=npc01\""
         echo ""
-        echo "3. Monitor logs:"
-        echo "   sam logs -n TaskHandlerFunction --tail"
+        echo "Monitoring:"
         echo ""
-        echo "4. View CloudWatch logs:"
-        echo "   aws logs tail /aws/lambda/${STACK_NAME}-TaskHandlerFunction --follow"
+        echo "• SAM logs:       sam logs -n TaskHandlerFunction --tail"
+        echo "• CloudWatch:     aws logs tail /aws/lambda/${STACK_NAME}-TaskHandlerFunction --follow"
         echo ""
     fi
-    
-    print_success "Deployment complete!"
 }
 
 # Run integration tests
 run_integration_tests() {
     print_header "Running Integration Tests"
     
-    # Check if TEST_API_KEY is set
-    if [ -z "$TEST_API_KEY" ]; then
-        print_info "TEST_API_KEY not set - integration tests will be skipped"
-        echo ""
-        echo "To run integration tests:"
-        echo ""
-        echo "1. Generate an API key using the keygen endpoint (see outputs above)"
-        echo "2. Set the environment variable:"
-        echo "   export TEST_API_KEY='your-encrypted-api-key'"
-        echo "3. Run integration tests:"
-        echo "   bash run_integration_tests.sh"
-        echo ""
-        echo "Or use the helper script:"
-        echo "   bash generate_test_api_key.sh"
-        echo ""
-        return 0
-    fi
+    print_info "Integration tests are now self-contained!"
+    print_info "Tests will automatically:"
+    echo "  • Generate unique test user"
+    echo "  • Create test account in DynamoDB"
+    echo "  • Generate encrypted API key"
+    echo "  • Run all tests"
+    echo "  • Clean up all test data"
+    echo ""
     
     if [ -d "venv" ]; then
         source venv/bin/activate
@@ -207,15 +201,20 @@ run_integration_tests() {
     fi
     
     if [ -f "run_integration_tests.sh" ]; then
-        print_info "Running integration test suite against deployed API..."
+        print_info "Running self-contained integration test suite..."
         if bash run_integration_tests.sh; then
             print_success "All integration tests passed"
+            echo ""
+            print_success "Test data automatically cleaned up"
         else
             print_error "Some integration tests failed"
             echo ""
             echo "⚠️  Integration test failures don't affect the deployment."
             echo "The API is deployed and functional."
             echo "Review the test output above for details."
+            echo ""
+            echo "To manually clean up test data (if needed):"
+            echo "  python tests/integration/cleanup_test_keys.py"
             return 1
         fi
     else
@@ -262,8 +261,19 @@ main() {
                 echo "  --guided              Run guided deployment (first time)"
                 echo "  --skip-tests          Skip running unit tests"
                 echo "  --skip-build          Skip build step (use existing build)"
-                echo "  --skip-integration    Skip integration tests after deployment"
+                echo "  --skip-integration    Skip self-contained integration tests"
                 echo "  --help                Show this help message"
+                echo ""
+                echo "Integration Tests:"
+                echo "  Integration tests are now self-contained and run automatically"
+                echo "  after deployment. They will:"
+                echo "    • Generate unique test user"
+                echo "    • Create test account in DynamoDB"
+                echo "    • Auto-generate encrypted API key"
+                echo "    • Run all tests"
+                echo "    • Clean up all test data"
+                echo ""
+                echo "  No manual API key setup required!"
                 echo ""
                 exit 0
                 ;;

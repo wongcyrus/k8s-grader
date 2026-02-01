@@ -15,7 +15,7 @@ A serverless Kubernetes learning game grading system with clean architecture:
 
 - **106 tests passing** with 63% overall coverage
 - **Unit tests**: Fast, mocked, test business logic (106 tests)
-- **Integration tests**: Real API calls, test deployed stack
+- **Integration tests**: Self-contained, automatic setup/cleanup (15 tests) ✅
 - **Core models**: PhaseConfig, TaskManifest, TaskState (98% coverage)
 - **Services layer**: TaskService, TestRunner (95-100% coverage)
 - **Database repositories**: TaskState, NpcAssignment (75% coverage)
@@ -36,7 +36,7 @@ k8s-grader-api/
 ├── save-k8s-account/             # Account registration
 ├── post_deployment/              # Post-deploy setup
 ├── tests/                        # Unit tests (106 tests)
-│   └── integration/              # Integration tests (real API)
+│   └── integration/              # Integration tests (15 tests, self-contained) ✅
 ├── template.yaml                 # SAM infrastructure
 └── deploy.sh                     # Automated deployment
 
@@ -326,30 +326,37 @@ Run unit tests locally with mocked AWS services:
 - Fast execution (< 5 seconds)
 - No AWS credentials required
 
-### Integration Tests (Real API)
+### Integration Tests (Self-Contained, Automatic)
 
-Test against the deployed stack on AWS:
+Test against the deployed stack on AWS with **zero manual setup**:
 
 ```bash
 # 1. Deploy the stack
-./deploy.sh
+./deploy.sh  # Integration tests run automatically!
 
-# 2. Generate encrypted API key
-./generate_test_api_key.sh
-# Visit the URL, copy the generated key, and set it:
-export TEST_API_KEY="your-generated-encrypted-key"
-
-# 3. Run integration tests
+# Or run manually anytime
 ./run_integration_tests.sh
 ```
 
+**That's it!** Tests automatically:
+- Generate unique test user
+- Create test account in DynamoDB
+- Auto-generate encrypted API key
+- Run all 15 tests
+- Clean up all test data
+
+**No manual API key setup required!**
+
 Integration tests:
-- Call real API Gateway endpoints
-- Interact with real DynamoDB tables
-- Verify end-to-end functionality
-- Test performance and error handling
-- Require deployed stack and AWS credentials
-- **Use encrypted API keys** (contains user email)
+- ✅ Self-contained (automatic setup/cleanup)
+- ✅ Call real API Gateway endpoints
+- ✅ Interact with real DynamoDB tables
+- ✅ Test end-to-end workflows
+- ✅ Validate performance (< 5s response time)
+- ✅ Test concurrent requests
+- ✅ 15 tests, all passing
+- ✅ **Self-contained** - automatic setup and cleanup
+- ✅ **Use encrypted API keys** (contains user email)
 
 See [tests/integration/README.md](tests/integration/README.md) for detailed documentation.
 
@@ -357,13 +364,15 @@ See [tests/integration/README.md](tests/integration/README.md) for detailed docu
 
 | Aspect | Unit Tests | Integration Tests |
 |--------|-----------|-------------------|
-| Speed | Fast (< 5s) | Slow (30s+) |
+| Speed | Fast (< 5s) | Moderate (~60s) |
 | Dependencies | Mocked | Real AWS |
-| Cost | Free | AWS charges |
-| When to run | Every commit | Before/after deploy |
+| Setup | None | **Automatic** ✅ |
+| Cleanup | Automatic | **Automatic** ✅ |
+| Cost | Free | AWS charges (minimal) |
+| When to run | Every commit | **Auto after deploy** ✅ |
 | Purpose | Code logic | End-to-end validation |
 
-**Best Practice:** Run unit tests during development, integration tests before deployment.
+**Best Practice:** Run unit tests during development, integration tests run automatically after deployment.
 
 ## 📝 License
 

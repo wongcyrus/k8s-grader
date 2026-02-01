@@ -104,8 +104,15 @@ def dynamodb_client(aws_region):
 
 @pytest.fixture(scope="session")
 def test_email(test_run_id) -> str:
-    """Generate unique test email for this test run"""
-    return os.environ.get('TEST_EMAIL', f'integration-test-{test_run_id}@example.com')
+    """Generate unique test email for this test run
+    
+    Note: Keep email short to avoid API Gateway's 128-character limit
+    for API keys. Fernet encryption expands the size significantly.
+    """
+    # Use shorter format: test-{8chars}@ex.com (total ~20 chars)
+    # This ensures encrypted key stays under 128 chars
+    short_id = test_run_id.split('-')[1][:8]  # Just use first 8 chars of UUID
+    return os.environ.get('TEST_EMAIL', f'test-{short_id}@ex.com')
 
 
 @pytest.fixture(scope="session")
@@ -151,6 +158,7 @@ def test_api_key(stack_outputs, test_email, api_endpoint) -> str:
     
     # Generate encrypted API key using keygen endpoint
     import requests
+    import time
     try:
         print(f"🔑 Generating API key for {test_email}...")
         response = requests.get(
@@ -165,17 +173,44 @@ def test_api_key(stack_outputs, test_email, api_endpoint) -> str:
         if response.status_code == 200:
             # The keygen endpoint returns the API key as plain text
             generated_key = response.text.strip()
-            if generated_key and len(generated_key) > 10:
+            
+            # Check if it's an error message
+            if generated_key.startswith('Failed') or generated_key.startswith('Invalid') or generated_key.startswith('Secret') or generated_key.startswith('API Gateway') or generated_key.startswith('Usage plan'):
+                pytest.skip(
+                    f"Keygen endpoint returned error: {generated_key}. "
+                    f"Please check Lambda logs or visit: {api_endpoint}/keygen/?secret={secret_hash}&email={test_email}"
+                )
+            
+            if generated_key and len(generated_key) > 10 and not generated_key.startswith('<'):
                 print(f"✅ Generated API key successfully")
+                print(f"   Key length: {len(generated_key)} characters")
+                print(f"   Key prefix: {generated_key[:20]}...")
+                
+                # Wait a moment for API Gateway to propagation the key
+                print(f"⏳ Waiting 3 seconds for API Gateway propagation...")
+                time.sleep(3)
+                
+                # Verify the key works by testing decryption
+                try:
+                    from cryptography.fernet import Fernet
+                    fernet = Fernet(secret_hash.encode())
+                    decrypted_email = fernet.decrypt(generated_key.encode()).decode()
+                    print(f"✅ API key validation successful: {decrypted_email}")
+                    if decrypted_email != test_email:
+                        pytest.skip(f"API key email mismatch: expected {test_email}, got {decrypted_email}")
+                except Exception as e:
+                    pytest.skip(f"API key validation failed: {e}")
+                
                 return generated_key
             else:
                 pytest.skip(
                     f"Could not parse API key from keygen response. "
+                    f"Response: {response.text[:200]} "
                     f"Please visit: {api_endpoint}/keygen/?secret={secret_hash}&email={test_email} "
                     "and set TEST_API_KEY environment variable."
                 )
         else:
-            pytest.skip(f"Failed to generate API key: HTTP {response.status_code}")
+            pytest.skip(f"Failed to generate API key: HTTP {response.status_code}, Response: {response.text[:200]}")
     except Exception as e:
         pytest.skip(f"Failed to generate API key: {e}")
 

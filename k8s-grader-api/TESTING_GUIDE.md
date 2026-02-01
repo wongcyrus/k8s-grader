@@ -58,10 +58,13 @@ pytest tests/test_task_handler.py::TestLambdaHandler::test_missing_parameters
 - Error handling with real services
 
 ### How They Work
+- **Self-contained** - No manual setup required!
 - Use CloudFormation API to get stack outputs dynamically
+- Automatically generate unique test users
+- Auto-generate encrypted API keys via keygen endpoint
 - Make real HTTP requests to deployed API
 - Interact with real DynamoDB tables
-- Clean up test data automatically
+- Clean up test data automatically (9 DynamoDB tables + API Gateway)
 
 ### Encrypted API Keys
 
@@ -91,6 +94,8 @@ def get_email_from_api_key(api_key: str) -> str:
 - Prevents email spoofing
 - Single source of truth
 
+**Good news:** Integration tests now generate these automatically!
+
 ### Prerequisites
 
 1. **Deploy the stack:**
@@ -98,25 +103,23 @@ def get_email_from_api_key(api_key: str) -> str:
    ./deploy.sh
    ```
 
-2. **Get API key:**
-   ```bash
-   aws apigateway get-api-keys --include-values
-   ```
-
-3. **Set environment variables:**
-   ```bash
-   export STACK_NAME="k8s-grader-api-dev"
-   export TEST_API_KEY="your-api-key-here"
-   ```
+That's it! No manual API key setup needed.
 
 ### Running Integration Tests
 
 ```bash
-# Run all integration tests
+# Run all integration tests (automatic setup!)
 ./run_integration_tests.sh
 
+# Or run during deployment
+./deploy.sh  # Integration tests run automatically
+
+# Skip integration tests during deployment
+./deploy.sh --skip-integration
+
 # Run with custom stack name
-./run_integration_tests.sh my-stack-name
+export STACK_NAME=my-stack-name
+./run_integration_tests.sh
 
 # Run specific test class
 cd tests/integration
@@ -124,14 +127,20 @@ pytest test_api_integration.py::TestAPIIntegration
 
 # Run with verbose output
 pytest -v -s
-
-# Run only fast tests (skip slow ones)
-pytest -m "not slow"
 ```
+
+**What happens automatically:**
+1. ✅ Generates unique test user email (e.g., `integration-test-abc12345-1234567890@example.com`)
+2. ✅ Creates test account in DynamoDB with fake K8s credentials
+3. ✅ Auto-generates encrypted API key via keygen endpoint
+4. ✅ Runs 15 integration tests across 6 test classes
+5. ✅ Cleans up all test data from 9 DynamoDB tables + API Gateway
+
+**No manual setup required!**
 
 ### Test Categories
 
-#### 1. API Integration Tests
+#### 1. API Integration Tests (6 tests)
 ```bash
 pytest test_api_integration.py::TestAPIIntegration
 ```
@@ -139,18 +148,18 @@ pytest test_api_integration.py::TestAPIIntegration
 - API endpoint reachability
 - Parameter validation
 - Error responses
+- NPC not found handling
+- User not found handling
 
-#### 2. Task Flow Tests
+#### 2. Task Flow Tests (1 test)
 ```bash
 pytest test_api_integration.py::TestTaskFlow
 ```
-- Complete task workflow
+- Complete task workflow (start → execute → complete)
 - Task state transitions
 - Phase execution
 
-**Note:** Requires real user account with K8s credentials
-
-#### 3. DynamoDB Integration Tests
+#### 3. DynamoDB Integration Tests (1 test)
 ```bash
 pytest test_api_integration.py::TestDynamoDBIntegration
 ```
@@ -158,15 +167,21 @@ pytest test_api_integration.py::TestDynamoDBIntegration
 - Data consistency
 - Table operations
 
-#### 4. Performance Tests
+#### 4. Performance Tests (2 tests)
 ```bash
 pytest test_api_integration.py::TestAPIPerformance
 ```
 - Response time validation (< 5s)
-- Concurrent request handling
-- Load testing
+- Concurrent request handling (5+ simultaneous)
 
-#### 5. Error Handling Tests
+#### 5. Save Account API Tests (2 tests)
+```bash
+pytest test_api_integration.py::TestSaveAccountAPI
+```
+- GET returns HTML form
+- Validates endpoint uniqueness
+
+#### 6. Error Handling Tests (3 tests)
 ```bash
 pytest test_api_integration.py::TestErrorHandling
 ```
@@ -174,6 +189,8 @@ pytest test_api_integration.py::TestErrorHandling
 - Missing authentication
 - Malformed requests
 - Security validation
+
+**Total: 15 integration tests**
 
 ## Configuration
 
@@ -187,16 +204,16 @@ No configuration needed. Tests use mocked services.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `STACK_NAME` | No | `k8s-grader-api-dev` | CloudFormation stack name |
-| `TEST_API_KEY` | Yes | - | API key for authentication |
 | `AWS_REGION` | No | `us-east-1` | AWS region |
-| `TEST_EMAIL` | No | `integration-test@example.com` | Test user email |
 
-#### Using .env File
+**Note:** `TEST_API_KEY` is no longer required! Tests generate API keys automatically.
+
+#### Using .env File (Optional)
 
 ```bash
 cd tests/integration
 cp .env.example .env
-# Edit .env with your values
+# Edit .env with your values (optional)
 ```
 
 Then run tests:
@@ -213,9 +230,12 @@ pytest
 - No cleanup needed
 
 ### Integration Tests
+- **Self-contained** - Automatic test user and API key generation
 - Automatic cleanup before and after each test
-- Uses unique test email to avoid conflicts
+- Uses unique test email per run to avoid conflicts
+- Cleans up 9 DynamoDB tables + API Gateway keys
 - Never touches production data
+- No manual setup required!
 
 ## CI/CD Integration
 
@@ -256,8 +276,8 @@ jobs:
       - name: Run integration tests
         env:
           STACK_NAME: k8s-grader-api-test
-          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
         run: ./run_integration_tests.sh
+        # No TEST_API_KEY needed - tests are self-contained!
 ```
 
 ## Best Practices
@@ -372,13 +392,15 @@ aws cloudformation describe-stacks --stack-name k8s-grader-api-dev
 ./deploy.sh
 ```
 
-**"TEST_API_KEY not set"**
+**"API key generation failed"**
 ```bash
-# Get API key
-aws apigateway get-api-keys --include-values
+# Check keygen endpoint is accessible
+BASE_URL=$(aws cloudformation describe-stacks \
+  --stack-name k8s-grader-api-dev \
+  --query 'Stacks[0].Outputs[?OutputKey==`BaseUrl`].OutputValue' \
+  --output text)
 
-# Set environment variable
-export TEST_API_KEY="your-key-here"
+curl "${BASE_URL}keygen/"
 ```
 
 **Tests timeout**

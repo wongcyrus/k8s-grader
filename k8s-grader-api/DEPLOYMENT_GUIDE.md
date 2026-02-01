@@ -308,6 +308,70 @@ curl -H "x-api-key: YOUR_API_KEY" \
 
 ---
 
+### 6. Run Integration Tests (Automatic)
+
+**Good news!** Integration tests now run automatically after deployment via `deploy.sh`.
+
+The tests are **self-contained** and require no manual setup:
+
+```bash
+# Integration tests run automatically during deployment
+./deploy.sh
+
+# Or run manually anytime
+./run_integration_tests.sh
+```
+
+**What happens automatically**:
+1. ✅ Generates unique test user email (e.g., `integration-test-abc12345-1234567890@example.com`)
+2. ✅ Creates test account in DynamoDB with fake K8s credentials
+3. ✅ Auto-generates encrypted API key via keygen endpoint
+4. ✅ Runs 15 integration tests across 6 test classes
+5. ✅ Cleans up all test data from 9 DynamoDB tables + API Gateway
+
+**No manual API key setup required!**
+
+**Expected output**:
+```
+================================
+Running Integration Tests
+================================
+ℹ Integration tests are now self-contained!
+ℹ Tests will automatically:
+  • Generate unique test user
+  • Create test account in DynamoDB
+  • Generate encrypted API key
+  • Run all tests
+  • Clean up all test data
+
+✓ All integration tests passed
+✓ Test data automatically cleaned up
+```
+
+**If tests fail**:
+- ⚠️ Test failures don't affect deployment
+- The API is deployed and functional
+- Review test output for details
+- Manually clean up if needed: `python tests/integration/cleanup_test_keys.py`
+
+**Skip integration tests**:
+```bash
+./deploy.sh --skip-integration
+```
+
+**Test coverage**:
+- API endpoint reachability
+- Task flow (start → execute → complete)
+- DynamoDB persistence
+- API performance (< 5s response time)
+- Concurrent requests (5+ simultaneous)
+- Error handling (invalid keys, missing params)
+- Save account API validation
+
+See `tests/integration/README.md` for complete documentation.
+
+---
+
 ## Monitoring
 
 ### CloudWatch Logs
