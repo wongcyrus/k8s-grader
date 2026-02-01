@@ -5,8 +5,8 @@
 
 set -e
 
-echo "K8s Grader API - Integration Tests"
-echo "===================================="
+echo "K8s Grader API - Self-Contained Integration Tests"
+echo "=================================================="
 echo ""
 
 # Get stack name from argument or environment or use default
@@ -31,31 +31,14 @@ fi
 echo "✅ Stack found"
 echo ""
 
-# Check if TEST_API_KEY is set
+# Note about TEST_API_KEY
 if [ -z "$TEST_API_KEY" ]; then
-    echo "⚠️  Warning: TEST_API_KEY environment variable not set"
+    echo "ℹ️  TEST_API_KEY not set - will auto-generate during tests"
     echo ""
-    echo "The API uses encrypted keys that contain the user's email."
-    echo "You need to generate one using the keygen endpoint:"
+else
+    echo "✅ Using TEST_API_KEY from environment"
     echo ""
-    echo "1. Get stack outputs:"
-    echo "   API_ENDPOINT=\$(aws cloudformation describe-stacks --stack-name $STACK_NAME \\"
-    echo "     --query 'Stacks[0].Outputs[?OutputKey==\`ApiEndpoint\`].OutputValue' --output text)"
-    echo "   SECRET_HASH=\$(aws cloudformation describe-stacks --stack-name $STACK_NAME \\"
-    echo "     --query 'Stacks[0].Outputs[?OutputKey==\`SecretHash\`].OutputValue' --output text)"
-    echo ""
-    echo "2. Generate encrypted API key:"
-    echo "   Visit: \${API_ENDPOINT}/keygen/?secret=\${SECRET_HASH}&email=integration-test@example.com"
-    echo ""
-    echo "3. Set the generated key:"
-    echo "   export TEST_API_KEY='your-generated-encrypted-key'"
-    echo ""
-    echo "Skipping integration tests..."
-    exit 0
 fi
-
-echo "✅ TEST_API_KEY is set"
-echo ""
 
 # Activate virtual environment if it exists
 if [ -d "venv" ]; then
@@ -70,8 +53,15 @@ if ! python -c "import pytest" 2>/dev/null; then
 fi
 
 echo ""
-echo "Running integration tests..."
-echo "================================"
+echo "Running self-contained integration tests..."
+echo "============================================"
+echo ""
+echo "Tests will:"
+echo "  1. Generate unique test user email"
+echo "  2. Create test user account in DynamoDB"
+echo "  3. Generate encrypted API key automatically"
+echo "  4. Run all tests"
+echo "  5. Clean up all test data"
 echo ""
 
 # Export variables for pytest
@@ -87,7 +77,12 @@ TEST_EXIT_CODE=$?
 echo ""
 if [ $TEST_EXIT_CODE -eq 0 ]; then
     echo "✅ All integration tests passed!"
+    echo ""
+    echo "Test data has been automatically cleaned up."
 else
     echo "❌ Some integration tests failed"
+    echo ""
+    echo "Note: Test data should be automatically cleaned up."
+    echo "If cleanup failed, check the test output for warnings."
     exit $TEST_EXIT_CODE
 fi

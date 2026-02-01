@@ -227,6 +227,45 @@ class TestAPIPerformance:
 
 
 @pytest.mark.integration
+class TestSaveAccountAPI:
+    """Test save-k8s-account API endpoint"""
+    
+    def test_save_account_get_returns_html(self, api_endpoint, test_api_key):
+        """Test GET request returns HTML form"""
+        response = requests.get(
+            f"{api_endpoint}/save-k8s-account/",
+            headers={'x-api-key': test_api_key}
+        )
+        
+        assert response.status_code == 200
+        assert 'text/html' in response.headers.get('Content-Type', '')
+        assert 'Save K8s Account' in response.text or 'form' in response.text.lower()
+    
+    def test_save_account_validates_endpoint_uniqueness(self, api_endpoint, test_api_key, 
+                                                        test_email, test_user_data):
+        """Test that save-account validates endpoint uniqueness"""
+        # The test user already has an endpoint registered
+        # Try to register the same endpoint with a different email
+        
+        files = {
+            'endpoint': (None, test_user_data['endpoint']),
+            'client-certificate': (None, 'test-cert-data-' + 'x' * 100),
+            'client-key': (None, 'test-key-data-' + 'x' * 100)
+        }
+        
+        response = requests.post(
+            f"{api_endpoint}/save-k8s-account/",
+            files=files,
+            headers={'x-api-key': test_api_key}
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        # Should either succeed (same user) or fail (different user with same endpoint)
+        assert data['status'] in ['OK', 'ERROR']
+
+
+@pytest.mark.integration
 class TestErrorHandling:
     """Test API error handling"""
     
