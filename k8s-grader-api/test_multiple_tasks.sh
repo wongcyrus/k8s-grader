@@ -2,6 +2,12 @@
 
 # Comprehensive E2E test - Complete multiple tasks
 # This tests the real game flow across multiple tasks and NPCs
+#
+# NOTE: For a fully self-contained test (with automatic setup), use:
+#   ./test_complete_flow.sh
+#
+# This script requires manual configuration:
+#   API_BASE_URL, API_KEY, EMAIL environment variables
 
 set -e
 

@@ -1,201 +1,102 @@
 # Documentation Index
 
-Essential documentation for the K8s Grader API.
+**Last Updated:** February 2, 2026
+
+This directory contains all documentation for the k8s-grader-api project.
+
+---
+
+## Quick Links
+
+- **[Quick Start Guide](QUICK_START.md)** - Get started in 5 minutes
+- **[Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)** - February 2026 bug fixes ⭐
+- **[Testing Scripts](../TESTING_SCRIPTS.md)** - Automated E2E tests
+- **[Changelog](CHANGELOG.md)** - All changes and updates
+
+---
 
 ## Core Documentation
 
-### [../README.md](../README.md)
-**Start here!** Project overview, quick start, and key concepts.
-- 138 unit tests, 15 integration tests (all passing)
-- Self-contained integration tests (no manual setup)
-- Deployment and testing instructions
+### Getting Started
+- **[Quick Start Guide](QUICK_START.md)** - Installation and setup
+- **[README](README.md)** - Project overview
+- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - How to deploy
 
-### [QUICK_START.md](QUICK_START.md) ⚡
-Fast-track guide to get up and running in minutes.
-- Deploy with `./deploy.sh` (includes automatic tests)
-- Run tests locally
-- Common tasks and debugging
+### Development
+- **[Architecture](ARCHITECTURE.md)** - System design and components
+- **[Game Logic](GAME_LOGIC.md)** - How the game works
+- **[Database Guide](DATABASE_GUIDE.md)** - DynamoDB tables and schema
+- **[Manifest Guide](MANIFEST_GUIDE.md)** - Task manifest format
 
-### [ARCHITECTURE.md](ARCHITECTURE.md)
-System architecture and design:
-- Architecture diagram
-- Core components
-- Data flow
-- Security model
-- Scalability considerations
+### Testing
+- **[Testing Guide](TESTING_GUIDE.md)** - Unit and integration tests
+- **[Testing Scripts](../TESTING_SCRIPTS.md)** - Automated E2E tests ⭐
+- **[Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)** - February 2026 fixes
 
-### [GAME_LOGIC.md](GAME_LOGIC.md) 🎮
-Complete game flow and mechanics:
-- Player journey with diagrams
-- Task and phase state machines
-- NPC management system
-- Session personalization
-- Abandonment and retry flow
-- Points and progress system
-- API response types
-- **Race condition prevention** 🔥
+### Operations
+- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Deployment procedures
+- **[Secret Hash Guide](SECRET_HASH_GUIDE.md)** - API key management
+- **[Changelog](CHANGELOG.md)** - Version history
 
-### [CHANGELOG.md](CHANGELOG.md) 🆕
-Recent bug fixes and improvements:
-- **Answer phase skip in production** (2026-02-02) 🎮
-- **Instruction rendering with Jinja2** (2026-02-02) 📝
-- **Duplicate points bug fix** (2026-02-02) 🔥
-- **Easter egg encouragement** (2026-02-02) 🎉
-- **S3 report optimization** (2026-02-02) 💰
-- **Cache invalidation** (2026-02-02) 🔄
-- **Pytest warnings fix** (2026-02-02) 🧹
-- **Requirements separation** (2026-02-02) 📦
-- **Integration tests fixed** (2026-02-01) ✅
-- **Race condition in NPC assignment** (2026-02-01) 🔥
+---
 
-## Deployment
+## Recent Updates (February 2026)
 
-### [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
-Complete deployment instructions, configuration, and troubleshooting.
-- Step-by-step deployment process
-- Post-deployment verification
-- **Automatic integration tests** ✅
-- Monitoring and troubleshooting
+### Bug Fixes ⭐
+- ✅ **Task Completion Bug** - All 4 bugs fixed and verified
+  - See [Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)
+  - Run automated test: `./test_complete_flow.sh`
 
-### [SECRET_HASH_GUIDE.md](SECRET_HASH_GUIDE.md)
-How to generate and manage the SECRET_HASH for API key encryption.
-- Security best practices
-- Key generation
-- Key rotation
+### Documentation Updates
+- ✅ Updated test counts: 121 → 153 tests
+- ✅ Added comprehensive bug fix documentation
+- ✅ Created fully automated E2E test
+- ✅ Consolidated and cleaned up documentation
 
-## Development
+---
 
-### [DATABASE_GUIDE.md](DATABASE_GUIDE.md)
-Database layer using repository pattern:
-- Repository classes overview
-- Usage examples
-- Best practices
-- Testing strategies
+## Documentation by Topic
 
-### [TESTING_GUIDE.md](TESTING_GUIDE.md)
-Complete testing guide covering:
-- Unit tests (138 tests, mocked, fast)
-- **Integration tests (15 tests, self-contained, automatic)** ✅
-- No manual API key setup required
-- Running tests
-- CI/CD integration
+### Architecture & Design
+- [Architecture](ARCHITECTURE.md) - System components
+- [Game Logic](GAME_LOGIC.md) - Game mechanics
+- [Database Guide](DATABASE_GUIDE.md) - Data model
 
-### [MANIFEST_GUIDE.md](MANIFEST_GUIDE.md)
-Task manifest configuration guide:
-- Manifest structure
-- Phase configuration
-- Auto-generation
-- Examples
+### Development
+- [Manifest Guide](MANIFEST_GUIDE.md) - Task configuration
+- [Testing Guide](TESTING_GUIDE.md) - How to test
+- [Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md) - Recent fixes
 
-## Integration Tests
+### Deployment & Operations
+- [Deployment Guide](DEPLOYMENT_GUIDE.md) - Deploy to AWS
+- [Secret Hash Guide](SECRET_HASH_GUIDE.md) - Security
+- [Changelog](CHANGELOG.md) - What's new
 
-### [../tests/integration/README.md](../tests/integration/README.md)
-Self-contained integration test documentation:
-- **Automatic setup and cleanup** ✅
-- **No manual API key generation needed** ✅
-- Prerequisites
-- Running tests (just run `./deploy.sh` or `./run_integration_tests.sh`)
-- Test coverage (15 tests)
-- Troubleshooting
+---
 
-### [INTEGRATION_TEST_IMPROVEMENTS.md](INTEGRATION_TEST_IMPROVEMENTS.md)
-Summary of integration test improvements:
-- Self-contained architecture
-- Automatic user and API key generation
-- Comprehensive cleanup
-- Before/after comparison
-- **All 15 tests passing** ✅
+## Test Documentation
 
-## Quick Reference
+### Automated Testing ⭐
+- **[Testing Scripts](../TESTING_SCRIPTS.md)** - E2E test documentation
+- **[test_complete_flow.sh](../test_complete_flow.sh)** - Self-contained E2E test
+- **[test_multiple_tasks.sh](../test_multiple_tasks.sh)** - Multi-task test
 
-### Deploy (Automated)
-```bash
-./deploy.sh                    # Full deployment with tests
-./deploy.sh --skip-integration # Skip integration tests
-./deploy.sh --guided           # Interactive setup
-```
+### Test Guides
+- **[Testing Guide](TESTING_GUIDE.md)** - Complete testing guide
+- **[E2E Testing README](../tests/E2E_TESTING_README.md)** - E2E test details
+- **[Integration Tests](../tests/integration/README.md)** - Integration test guide
 
-### Run Unit Tests
-```bash
-./run_tests.sh                 # 138 unit tests
-```
+---
 
-### Run Integration Tests
-```bash
-./run_integration_tests.sh    # 15 integration tests (self-contained, automatic)
-# No manual API key setup needed!
-```
+## Need Help?
 
-### Generate API Key (Optional)
-```bash
-# Only needed for manual testing, not for integration tests
-# Integration tests generate keys automatically
-curl "${API_ENDPOINT}/keygen/?secret=${SECRET_HASH}&email=your@email.com"
-```
+- **Quick Start:** [QUICK_START.md](QUICK_START.md)
+- **Testing:** Run `./test_complete_flow.sh`
+- **Deployment:** [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
+- **Bug Reports:** See [Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)
 
-## File Organization
+---
 
-```
-k8s-grader-api/
-├── README.md                    # Project overview (root level)
-├── docs/                        # 📁 All documentation
-│   ├── DOCS_INDEX.md            # Documentation index (start here!)
-│   ├── QUICK_START.md           # Fast-track guide ✅
-│   ├── CHANGELOG.md             # Recent changes & bug fixes
-│   ├── ARCHITECTURE.md          # System architecture
-│   ├── GAME_LOGIC.md            # Game flow and mechanics
-│   ├── DEPLOYMENT_GUIDE.md      # Deployment instructions ✅
-│   ├── TESTING_GUIDE.md         # Complete testing guide ✅
-│   ├── INTEGRATION_TEST_IMPROVEMENTS.md  # Integration test summary ✅
-│   ├── MANIFEST_GUIDE.md        # Task manifest guide
-│   ├── DATABASE_GUIDE.md        # Database layer guide
-│   ├── SECRET_HASH_GUIDE.md     # SECRET_HASH management
-│   └── DOCUMENTATION_CONSOLIDATION.md  # Consolidation report
-├── deploy.sh                    # Automated deployment script
-├── run_tests.sh                 # Unit test runner
-├── run_integration_tests.sh     # Integration test runner
-└── tests/
-    ├── test_*.py                # Unit tests (138 tests)
-    └── integration/
-        ├── README.md            # Integration test guide ✅
-        ├── CLEANUP_SCRIPT.md    # Cleanup script docs
-        ├── test_*.py            # Integration tests (15 tests)
-        └── cleanup_test_keys.py # Manual cleanup script
-```
-
-**Legend**: ✅ = Recently updated with self-contained integration test improvements
-
-## Getting Help
-
-1. **Quick Start**: Read [QUICK_START.md](QUICK_START.md)
-2. **Recent Changes**: Check [CHANGELOG.md](CHANGELOG.md)
-3. **Deployment Issues**: Check [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
-4. **Testing Issues**: Check [TESTING_GUIDE.md](TESTING_GUIDE.md)
-5. **API Keys**: Read [SECRET_HASH_GUIDE.md](SECRET_HASH_GUIDE.md)
-6. **Task Configuration**: Read [MANIFEST_GUIDE.md](MANIFEST_GUIDE.md)
-
-## Recent Improvements ✨
-
-### Integration Tests (February 2026)
-- ✅ **Self-contained** - No manual setup required
-- ✅ **Automatic API key generation** - Tests generate their own keys
-- ✅ **Automatic cleanup** - 9 DynamoDB tables + API Gateway
-- ✅ **All 15 tests passing** - Fixed email length issue
-- ✅ **Runs automatically** - After every deployment
-
-See [INTEGRATION_TEST_IMPROVEMENTS.md](INTEGRATION_TEST_IMPROVEMENTS.md) for details.
-
-### Test Statistics
-- **Unit Tests**: 138 tests, 63% coverage, < 5s execution
-- **Integration Tests**: 15 tests, self-contained, ~66s execution
-- **Total**: 153 tests, all passing ✅
-
-## Documentation Status
-
-All documentation is **up-to-date** as of February 2, 2026:
-- ✅ Integration tests working and documented
-- ✅ Cross-references verified
-- ✅ Duplicate content removed
-- ✅ Outdated information updated
-- ✅ File organization optimized
-- ✅ Recent changes documented (answer phase skip, instruction rendering, etc.)
+**Documentation Status:** ✅ Up to date  
+**Last Review:** February 2, 2026  
+**Next Review:** March 2, 2026
