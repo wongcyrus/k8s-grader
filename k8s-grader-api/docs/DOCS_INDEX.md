@@ -6,7 +6,7 @@ Essential documentation for the K8s Grader API.
 
 ### [../README.md](../README.md)
 **Start here!** Project overview, quick start, and key concepts.
-- 106 unit tests, 15 integration tests (all passing)
+- 138 unit tests, 15 integration tests (all passing)
 - Self-contained integration tests (no manual setup)
 - Deployment and testing instructions
 
@@ -37,14 +37,16 @@ Complete game flow and mechanics:
 
 ### [CHANGELOG.md](CHANGELOG.md) 🆕
 Recent bug fixes and improvements:
+- **Answer phase skip in production** (2026-02-02) 🎮
+- **Instruction rendering with Jinja2** (2026-02-02) 📝
+- **Duplicate points bug fix** (2026-02-02) 🔥
+- **Easter egg encouragement** (2026-02-02) 🎉
+- **S3 report optimization** (2026-02-02) 💰
+- **Cache invalidation** (2026-02-02) 🔄
+- **Pytest warnings fix** (2026-02-02) 🧹
+- **Requirements separation** (2026-02-02) 📦
 - **Integration tests fixed** (2026-02-01) ✅
 - **Race condition in NPC assignment** (2026-02-01) 🔥
-- Task abandonment and retry flow
-- Session credentials fix
-- Metadata key filtering
-- Deploy script improvements
-- Test separation
-- Error message improvements
 
 ## Deployment
 
@@ -72,7 +74,7 @@ Database layer using repository pattern:
 
 ### [TESTING_GUIDE.md](TESTING_GUIDE.md)
 Complete testing guide covering:
-- Unit tests (106 tests, mocked, fast)
+- Unit tests (138 tests, mocked, fast)
 - **Integration tests (15 tests, self-contained, automatic)** ✅
 - No manual API key setup required
 - Running tests
@@ -115,7 +117,7 @@ Summary of integration test improvements:
 
 ### Run Unit Tests
 ```bash
-./run_tests.sh                 # 106 unit tests
+./run_tests.sh                 # 138 unit tests
 ```
 
 ### Run Integration Tests
@@ -153,7 +155,7 @@ k8s-grader-api/
 ├── run_tests.sh                 # Unit test runner
 ├── run_integration_tests.sh     # Integration test runner
 └── tests/
-    ├── test_*.py                # Unit tests (106 tests)
+    ├── test_*.py                # Unit tests (138 tests)
     └── integration/
         ├── README.md            # Integration test guide ✅
         ├── CLEANUP_SCRIPT.md    # Cleanup script docs
@@ -184,15 +186,16 @@ k8s-grader-api/
 See [INTEGRATION_TEST_IMPROVEMENTS.md](INTEGRATION_TEST_IMPROVEMENTS.md) for details.
 
 ### Test Statistics
-- **Unit Tests**: 106 tests, 63% coverage, < 5s execution
+- **Unit Tests**: 138 tests, 63% coverage, < 5s execution
 - **Integration Tests**: 15 tests, self-contained, ~66s execution
-- **Total**: 121 tests, all passing ✅
+- **Total**: 153 tests, all passing ✅
 
 ## Documentation Status
 
-All documentation is **up-to-date** as of February 1, 2026:
+All documentation is **up-to-date** as of February 2, 2026:
 - ✅ Integration tests working and documented
 - ✅ Cross-references verified
 - ✅ Duplicate content removed
 - ✅ Outdated information updated
 - ✅ File organization optimized
+- ✅ Recent changes documented (answer phase skip, instruction rendering, etc.)

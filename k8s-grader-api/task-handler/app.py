@@ -141,6 +141,39 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Execute current phase
         result = task_service.execute_phase(email, game, current_task)
         
+        # Log test execution to TestRecordTable for analytics
+        if result.get('test_result'):
+            from common.database.repositories import TestRecordRepository
+            from datetime import datetime, timezone
+            
+            test_record_repo = TestRecordRepository()
+            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+            
+            # Extract S3 bucket and key from report URL if available
+            report_url = result.get('report_url', '')
+            bucket = ""
+            key = ""
+            if report_url:
+                # Parse S3 info from presigned URL or use environment variable
+                import os
+                bucket = os.getenv('TestResultBucket', '')
+                # Extract key from report URL if needed
+                if bucket and report_url:
+                    # Key format: game/email/task/test_report_phase_timestamp.html
+                    key = f"{game}/{email}/{current_task}/test_report_{state.current_phase_id}_{now_str}.html"
+            
+            test_record_repo.save(
+                email=email,
+                game=game,
+                current_task=current_task,
+                game_phase=state.current_phase_id or 'unknown',
+                test_result=result['test_result'].name,
+                bucket=bucket,
+                key=key,
+                report_url=report_url,
+                now_str=now_str
+            )
+        
         if not result['success']:
             # Check if max attempts reached
             from common.state_machine.task_state_machine import TaskStateMachine
@@ -270,6 +303,10 @@ def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
     # Render template variables with session data
     phase_message = render_template(phase_message, state.session_data)
     
+    # Get encouragement easter egg for failure
+    test_result = result.get('test_result', TestResult.TESTS_FAILED)
+    easter_egg = get_easter_egg_link(test_result)
+    
     return {
         'statusCode': 200,
         'headers': cors_headers(),
@@ -280,6 +317,7 @@ def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
             'next_phase': state.current_phase_id,  # Retry same phase
             'message': phase_message,
             'report_url': result.get('report_url', ''),
+            'easter_egg_url': easter_egg or '',
             'attempts': phase_state.attempts if phase_state else 0,
             'max_attempts': current_phase.max_attempts if current_phase else 3,
             'test_result': result.get('test_result').name if result.get('test_result') else 'UNKNOWN'
@@ -312,6 +350,9 @@ def task_abandoned_response(abandon_result, report_url) -> Dict[str, Any]:
     state = abandon_result['state']
     reason = abandon_result['reason']
     
+    # Get encouragement easter egg for abandonment (use TESTS_FAILED as the result type)
+    easter_egg = get_easter_egg_link(TestResult.TESTS_FAILED)
+    
     return {
         'statusCode': 200,
         'headers': cors_headers(),
@@ -321,6 +362,7 @@ def task_abandoned_response(abandon_result, report_url) -> Dict[str, Any]:
             'message': f'❌ Task abandoned: {reason}. You can try again with the same NPC.',
             'reason': reason,
             'report_url': report_url,
+            'easter_egg_url': easter_egg or '',
             'progress': 0.0,
             'total_points': state.total_points
         }, cls=DecimalEncoder)

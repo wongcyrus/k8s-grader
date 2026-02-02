@@ -13,8 +13,8 @@ A serverless Kubernetes learning game grading system with clean architecture:
 
 ### Architecture Highlights
 
-- **106 tests passing** with 63% overall coverage
-- **Unit tests**: Fast, mocked, test business logic (106 tests)
+- **153 tests passing** with 63% overall coverage
+- **Unit tests**: Fast, mocked, test business logic (138 tests)
 - **Integration tests**: Self-contained, automatic setup/cleanup (15 tests) ✅
 - **Core models**: PhaseConfig, TaskManifest, TaskState (98% coverage)
 - **Services layer**: TaskService, TestRunner (95-100% coverage)
@@ -35,7 +35,7 @@ k8s-grader-api/
 ├── keygen/                       # API key generation
 ├── save-k8s-account/             # Account registration
 ├── post_deployment/              # Post-deploy setup
-├── tests/                        # Unit tests (106 tests)
+├── tests/                        # Unit tests (138 tests)
 │   └── integration/              # Integration tests (15 tests, self-contained) ✅
 ├── template.yaml                 # SAM infrastructure
 └── deploy.sh                     # Automated deployment
@@ -320,7 +320,7 @@ Run unit tests locally with mocked AWS services:
 ./run_tests.sh
 ```
 
-- **106 tests** covering all components
+- **138 tests** covering all components
 - **63% code coverage**
 - Uses `moto` to mock AWS services
 - Fast execution (< 5 seconds)

@@ -32,6 +32,8 @@ def get_npc_background_google_spreadsheet(spreadsheet_id):
 def get_easter_egg_link(current_test_result: TestResult) -> str:
     spreadsheet_id = os.environ.get("EasterEggSheetId")
     file = "/tmp/easter_egg.csv"
+    csv_str = None
+    
     if os.path.exists(file):
         with open(file, "r", encoding="utf-8") as f:
             csv_str = f.read()
@@ -39,11 +41,19 @@ def get_easter_egg_link(current_test_result: TestResult) -> str:
         url = (
             f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export?format=csv"
         )
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            csv_str = response.content.decode("utf-8")
-            with open("/tmp/easter_egg.csv", "w", encoding="utf-8") as file:
-                file.write(csv_str)
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                csv_str = response.content.decode("utf-8")
+                with open("/tmp/easter_egg.csv", "w", encoding="utf-8") as file:
+                    file.write(csv_str)
+        except Exception:
+            # If we can't fetch easter eggs, just return None
+            return None
+    
+    if not csv_str:
+        return None
+    
     f = StringIO(csv_str)
     spreadsheet_data = []
     reader = csv.reader(f, delimiter=",")

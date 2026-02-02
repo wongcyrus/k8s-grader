@@ -1,6 +1,176 @@
 # Changelog
 
-## Recent Bug Fixes (2026-02-01)
+## Recent Changes (February 2026)
+
+### 1. Answer Phase Skip in Production 🎮
+**Issue:** Answer phase was auto-deploying solutions, allowing players to complete tasks without doing any work.
+
+**Root Cause:** The answer phase (test_03_answer.py) automatically deploys the solution, which defeats the purpose of learning.
+
+**Fix:** Added direct phase check in `pytest.py` to skip answer phase in production:
+```python
+if test_phase == GamePhrase.ANSWER:
+    logger.info(f"Skipping answer phase for {game}/{task} - answer phase is for development only")
+    return TestResult.NO_TESTS_COLLECTED
+```
+
+**Files Modified:**
+- `common-layer/common/pytest.py` - Skip answer phase
+- `common-layer/common/state_machine/task_state_machine.py` - Handle NO_TESTS_COLLECTED as success
+- `tests/test_answer_phase_skip.py` - Added 8 behavior tests
+
+**Impact:** Players must do actual work to earn points. Answer phase is skipped, check phase validates player's work.
+
+---
+
+### 2. Instruction Rendering with Jinja2 Templates 📝
+**Issue:** Instructions contained template variables like `{{namespace}}` that weren't being replaced with actual values.
+
+**Fix:** Added Jinja2 template rendering in all response functions:
+```python
+def render_template(template: str, session_data: Dict[str, Any]) -> str:
+    env = Environment()
+    jinja_template = env.from_string(template)
+    return jinja_template.render(session_data)
+```
+
+**Files Modified:**
+- `task-handler/app.py` - Added render_template function and applied to all responses
+- `common-layer/common/models/task_manifest.py` - Read instruction.md for real task instructions
+
+**Impact:** Players see personalized instructions with actual values (e.g., `{{namespace}}` → `blissfularyabhata2developer`).
+
+---
+
+### 3. Duplicate Points Bug Fix 🔥
+**Issue:** Users could receive duplicate points by re-executing already-passed phases.
+
+**Root Cause:** `can_execute_phase()` didn't check if a phase was already passed before allowing re-execution.
+
+**Fix:** Added check to prevent re-execution of passed phases:
+```python
+phase_state = self.state.get_phase_state(phase_id)
+if phase_state and phase_state.status == PhaseStatus.PASSED:
+    return False, f"Phase '{phase_id}' already passed"
+```
+
+**Files Modified:**
+- `common-layer/common/state_machine/task_state_machine.py` - Added passed phase check
+- `tests/test_task_state_machine.py` - Added test for duplicate prevention
+
+**Impact:** Prevents unfair scoring advantages and data integrity issues.
+
+---
+
+### 4. Reset Game Auto-Confirm for Dev Stacks 🚀
+**Issue:** Development workflow required manual confirmation for every game reset during testing.
+
+**Fix:** Automatically skip confirmation for stacks ending with `-dev`:
+```python
+if not stack_name.endswith("-dev"):
+    confirm = input("⚠️  This will delete ALL game state...")
+else:
+    print("ℹ️  Development stack detected - skipping confirmation prompt")
+```
+
+**Files Modified:**
+- `tools/reset_game.py` - Added auto-confirm logic for dev stacks
+
+**Impact:** Faster development workflow while preserving safety for production stacks.
+
+---
+
+### 5. Easter Egg Encouragement Feature 🎉
+**Issue:** Failed tests only showed report URLs without encouragement, reducing player motivation.
+
+**Fix:** Added easter egg links to failed and abandoned responses:
+- Fetches motivational links from Google Sheets
+- Returns random encouragement link based on test result
+- Fixed UnboundLocalError in `get_easter_egg_link()`
+
+**Files Modified:**
+- `task-handler/app.py` - Added easter_egg_url to failure responses
+- `common-layer/common/google_spreadsheet.py` - Fixed error handling
+
+**Impact:** Players receive encouragement when facing failures, improving motivation.
+
+---
+
+### 6. S3 Report Upload Optimization 💰
+**Issue:** Test reports were uploaded to S3 even when tests passed, wasting storage and bandwidth.
+
+**Fix:** Only upload reports when tests fail:
+```python
+if test_result != TestResult.OK:
+    report_url = self._upload_report(...)
+else:
+    logger.info(f"Phase {phase.id} passed: {test_result.name}")
+```
+
+**Files Modified:**
+- `common-layer/common/services/test_runner.py` - Conditional S3 upload
+- `tests/test_test_runner.py` - Added tests for upload behavior
+
+**Impact:** Reduced S3 costs, faster response times for successful tests, cleaner S3 bucket.
+
+---
+
+### 7. Cache Invalidation for Game Source Changes 🔄
+**Issue:** Lambda continued using cached tests even after game source URL changed in database.
+
+**Fix:** Added cache invalidation logic:
+- Store source URL in `/tmp/{game}_source.txt`
+- Compare on each invocation
+- Clear cache if source changed
+- Download fresh tests from new source
+
+**Files Modified:**
+- `common-layer/common/pytest.py` - Added cache invalidation logic
+
+**Impact:** Automatic cache updates when game source changes, no manual intervention needed.
+
+---
+
+### 8. Pytest Warnings Fix 🧹
+**Issues:**
+- `PytestConfigWarning: Unknown config option: timeout`
+- `PytestUnknownMarkWarning: Unknown pytest.mark.integration`
+
+**Fixes:**
+- Added `pytest-timeout==2.2.0` to `requirements-dev.txt`
+- Registered `integration` marker in `tests/integration/pytest.ini`
+- Kept `pytest-timeout` in production (needed for k8s-game-rule tests)
+
+**Files Modified:**
+- `requirements-dev.txt` - Added pytest-timeout
+- `tests/integration/pytest.ini` - Registered integration marker
+- `REQUIREMENTS.md` - Documented requirements separation
+
+**Impact:** Clean test output, no warnings, proper separation of production vs development requirements.
+
+---
+
+### 9. Requirements Separation 📦
+**Issue:** Production and development requirements were mixed, bloating Lambda deployment.
+
+**Fix:** Separated into two files:
+- `common-layer/requirements.txt` - 11 production packages
+- `requirements-dev.txt` - Additional development tools
+
+**Production packages:** cfnresponse, requests, kubernetes, boto3, names_generator, Jinja2, requests-toolbelt, cryptography, pytest, pytest-html, pytest-timeout
+
+**Development packages:** pytest-cov, pytest-mock, pytest-order, pytest-xdist, moto, black, flake8, mypy, ipython
+
+**Files Modified:**
+- `common-layer/requirements.txt` - Production only
+- `requirements-dev.txt` - Development tools
+- `REQUIREMENTS.md` - Comprehensive documentation
+
+**Impact:** Smaller Lambda deployment, faster cold starts, proper separation of concerns.
+
+---
+
+## Previous Bug Fixes (2026-02-01)
 
 ### 1. Race Condition in NPC Assignment 🔥 CRITICAL
 **Issue:** When a player quickly chatted with 2 NPCs (e.g., NPC-A and NPC-B), both NPCs could try to assign tasks simultaneously, resulting in incorrect locking behavior where the second NPC would overwrite the first NPC's assignment.
@@ -217,9 +387,9 @@ bash run_integration_tests.sh  # Integration tests
 
 ## Test Summary
 
-- **Total Tests:** 124 tests
-- **Unit Tests:** 111 (run before deployment)
-- **Integration Tests:** 13 (run after deployment)
+- **Total Tests:** 153 tests
+- **Unit Tests:** 138 (run before deployment)
+- **Integration Tests:** 15 (run after deployment)
 
 ---
 

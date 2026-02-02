@@ -263,3 +263,41 @@ class TestTaskStateMachine:
         assert success is True
         assert sample_task_state.status == TaskStatus.COMPLETED
         assert sample_task_state.total_points == 150  # 0 + 100 + 50
+
+    def test_cannot_reexecute_passed_phase(self, sample_manifest, in_progress_task_state):
+        """Test that a phase cannot be re-executed after it's already passed"""
+        sm = TaskStateMachine(sample_manifest, in_progress_task_state)
+        
+        # Execute setup phase successfully
+        success, error = sm.execute_phase("setup", TestResult.OK, "https://report1.url")
+        assert success is True
+        assert in_progress_task_state.total_points == 0  # Setup gives 0 points
+        assert in_progress_task_state.current_phase_id == "challenge"  # Moved to next phase
+        
+        # Manually set current_phase_id back to setup (simulating a bug or race condition)
+        in_progress_task_state.current_phase_id = "setup"
+        
+        # Try to execute setup again - should fail because it's already passed
+        can_execute, error = sm.can_execute_phase("setup")
+        assert can_execute is False
+        assert "already passed" in error.lower()
+        
+        # Restore to correct phase
+        in_progress_task_state.current_phase_id = "challenge"
+        
+        # Execute challenge successfully
+        success, error = sm.execute_phase("challenge", TestResult.OK, "https://report2.url")
+        assert success is True
+        assert in_progress_task_state.total_points == 100  # Challenge gives 100 points
+        assert in_progress_task_state.current_phase_id == "check"  # Moved to next phase
+        
+        # Manually set current_phase_id back to challenge
+        in_progress_task_state.current_phase_id = "challenge"
+        
+        # Try to execute challenge again - should fail because it's already passed
+        can_execute, error = sm.can_execute_phase("challenge")
+        assert can_execute is False
+        assert "already passed" in error.lower()
+        
+        # Verify total points haven't changed
+        assert in_progress_task_state.total_points == 100

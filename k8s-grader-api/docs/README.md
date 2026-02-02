@@ -49,7 +49,7 @@ Welcome to the K8s Grader API documentation! All documentation has been organize
 
 ## 📊 Project Status
 
-- ✅ **106 unit tests** passing (63% coverage)
+- ✅ **138 unit tests** passing (63% coverage)
 - ✅ **15 integration tests** passing (self-contained)
 - ✅ **All documentation** up-to-date
 - ✅ **Self-contained tests** - No manual setup required

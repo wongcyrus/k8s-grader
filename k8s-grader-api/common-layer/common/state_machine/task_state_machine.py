@@ -68,8 +68,12 @@ class TaskStateMachine:
         if self.state.current_phase_id != phase_id:
             return False, f"Current phase is '{self.state.current_phase_id}', cannot execute '{phase_id}'"
         
-        # Check max attempts
+        # Check if phase already passed (prevent duplicate point awards)
         phase_state = self.state.get_phase_state(phase_id)
+        if phase_state and phase_state.status == PhaseStatus.PASSED:
+            return False, f"Phase '{phase_id}' already passed"
+        
+        # Check max attempts
         if phase_state and phase_state.attempts >= phase.max_attempts:
             return False, f"Maximum attempts ({phase.max_attempts}) reached for phase '{phase_id}'"
         

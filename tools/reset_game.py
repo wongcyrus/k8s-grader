@@ -6,17 +6,22 @@ Usage:
     python reset_game.py [stack-name] [--region REGION] [--email EMAIL] [--game GAME]
 
 Examples:
-    # Reset all data for all users in default stack
+    # Reset all data for all users in default stack (no confirmation for -dev stacks)
     python reset_game.py
 
-    # Reset specific stack
+    # Reset specific stack (will ask for confirmation if not ending with -dev)
     python reset_game.py k8s-grader-api-prod
 
-    # Reset specific user's data
+    # Reset specific user's data (no confirmation needed)
     python reset_game.py --email user@example.com
 
-    # Reset specific game for specific user
+    # Reset specific game for specific user (no confirmation needed)
     python reset_game.py --email user@example.com --game game01
+
+Note:
+    - Stacks ending with '-dev' skip the confirmation prompt for convenience
+    - Production stacks require explicit 'yes' confirmation
+    - Filtered resets (--email or --game) never require confirmation
 """
 
 import argparse
@@ -132,12 +137,16 @@ def reset_game(stack_name="k8s-grader-api-dev", region="us-east-1", email=None, 
     print(f"  - TestRecordTable: {test_record_table}")
     print()
 
-    # Confirm deletion
+    # Confirm deletion (skip confirmation for dev stacks)
     if not email and not game:
-        confirm = input("⚠️  This will delete ALL game state for ALL users. Continue? (yes/no): ")
-        if confirm.lower() != "yes":
-            print("❌ Aborted")
-            sys.exit(0)
+        # Skip confirmation for development stacks (ending with -dev)
+        if not stack_name.endswith("-dev"):
+            confirm = input("⚠️  This will delete ALL game state for ALL users. Continue? (yes/no): ")
+            if confirm.lower() != "yes":
+                print("❌ Aborted")
+                sys.exit(0)
+        else:
+            print("ℹ️  Development stack detected - skipping confirmation prompt")
     
     print("\n🗑️  Deleting items...")
     
@@ -176,17 +185,21 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Reset all data for all users in default stack
+  # Reset all data for all users in default stack (no confirmation for -dev stacks)
   python reset_game.py
 
-  # Reset specific stack
+  # Reset specific stack (will ask for confirmation if not ending with -dev)
   python reset_game.py k8s-grader-api-prod
 
-  # Reset specific user's data
+  # Reset specific user's data (no confirmation needed)
   python reset_game.py --email user@example.com
 
   # Reset with custom region
   python reset_game.py --region us-west-2
+
+Note:
+  Stacks ending with '-dev' skip the confirmation prompt for convenience.
+  Production stacks require explicit 'yes' confirmation.
         """
     )
     
