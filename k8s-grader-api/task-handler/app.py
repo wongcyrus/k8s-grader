@@ -194,13 +194,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Check if task is complete
         from common.state_machine.task_state_machine import TaskStateMachine
         manifest = result['manifest']
+        state = result['state']  # Use updated state from result
         sm = TaskStateMachine(manifest, state)
         
         can_complete, _ = sm.can_complete_task()
         if can_complete:
-            completion_result = task_service.complete_task(email, game, current_task)
+            completion_result = task_service.complete_task(email, game, current_task, state)
             return task_completed_response(completion_result, result['report_url'])
-        
+    
         # Phase passed, continue to next
         return phase_passed_response(result, state, manifest)
     
@@ -267,27 +268,29 @@ def task_started_response(state, manifest) -> Dict[str, Any]:
 
 def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
     """Return response for passed phase"""
-    progress = state.calculate_progress(manifest)
-    next_phase = manifest.get_next_phase(state.current_phase_id) if state.current_phase_id else None
+    # Use updated state from result consistently
+    updated_state = result['state']
+    progress = updated_state.calculate_progress(manifest)
+    next_phase = manifest.get_next_phase(updated_state.current_phase_id) if updated_state.current_phase_id else None
     
     # Get next phase description
     next_phase_message = next_phase.description if next_phase else 'All phases completed!'
     
     # Render template variables with session data
-    next_phase_message = render_template(next_phase_message, state.session_data)
+    next_phase_message = render_template(next_phase_message, updated_state.session_data)
     
     return {
         'statusCode': 200,
         'headers': cors_headers(),
         'body': json.dumps({
             'status': 'OK',
-            'current_phase': result['state'].current_phase_id,
+            'current_phase': updated_state.current_phase_id,
             'phase_name': next_phase.name if next_phase else '',
             'next_phase': next_phase.id if next_phase else None,
             'message': next_phase_message,
             'report_url': result['report_url'],
             'progress': progress,
-            'points': state.total_points
+            'points': updated_state.total_points
         }, cls=DecimalEncoder)
     }
 

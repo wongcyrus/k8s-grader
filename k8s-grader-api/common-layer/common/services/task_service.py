@@ -201,7 +201,7 @@ class TaskService:
             'manifest': manifest
         }
     
-    def complete_task(self, email: str, game: str, task_id: str) -> Dict[str, Any]:
+    def complete_task(self, email: str, game: str, task_id: str, state=None) -> Dict[str, Any]:
         """
         Complete a task including cleanup
         
@@ -209,6 +209,7 @@ class TaskService:
             email: User email
             game: Game identifier
             task_id: Task identifier
+            state: Optional TaskState instance (if None, loads from DB)
             
         Returns:
             Dictionary with completion results
@@ -216,8 +217,9 @@ class TaskService:
         Raises:
             ValueError: If state not found
         """
-        # Load state and manifest
-        state = self.task_repo.get(email, game, task_id)
+        # Load state and manifest (use provided state if available)
+        if state is None:
+            state = self.task_repo.get(email, game, task_id)
         if not state:
             raise ValueError(f"Task state not found: {task_id}")
         

@@ -130,7 +130,8 @@ class TaskStateMachine:
                 self.state.current_phase_id = next_phase.id
                 logger.info(f"Advanced to phase '{next_phase.id}'")
             else:
-                # No more phases - task ready for completion
+                # No more phases - clear current phase and task ready for completion
+                self.state.current_phase_id = None
                 logger.info("No more phases - task ready for completion")
             
             return True, None
