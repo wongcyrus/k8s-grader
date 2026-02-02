@@ -48,13 +48,17 @@ class TestRunner:
                 timeout=phase.timeout_seconds
             )
             
-            # Upload report to S3
-            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-            report_url = self._upload_report(
-                game, task_id, phase.id, timestamp, session_data.get('$email', 'unknown')
-            )
-            
-            logger.info(f"Phase {phase.id} completed: {test_result.name}")
+            # Only upload report to S3 if tests failed
+            # Players don't need to see successful test reports
+            report_url = ""
+            if test_result != TestResult.OK:
+                timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+                report_url = self._upload_report(
+                    game, task_id, phase.id, timestamp, session_data.get('$email', 'unknown')
+                )
+                logger.info(f"Phase {phase.id} failed: {test_result.name}, report uploaded")
+            else:
+                logger.info(f"Phase {phase.id} passed: {test_result.name}")
             
             return test_result, report_url
             

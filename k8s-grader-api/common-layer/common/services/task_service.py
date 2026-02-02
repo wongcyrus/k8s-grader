@@ -226,11 +226,22 @@ class TaskService:
         
         # Run cleanup if exists
         cleanup_phase = manifest.get_phase('cleanup')
-        if cleanup_phase and cleanup_phase.auto_run:
-            test_result, report_url = self.test_runner.run_phase(
-                game, task_id, cleanup_phase, state.session_data
-            )
-            sm.execute_phase('cleanup', test_result, report_url)
+        if cleanup_phase:
+            logger.info(f"Cleanup phase found for task {task_id}: auto_run={cleanup_phase.auto_run}")
+            if cleanup_phase.auto_run:
+                logger.info(f"Running cleanup for completed task {task_id}")
+                try:
+                    test_result, report_url = self.test_runner.run_phase(
+                        game, task_id, cleanup_phase, state.session_data
+                    )
+                    sm.execute_phase('cleanup', test_result, report_url)
+                    logger.info(f"Cleanup completed for task {task_id}: result={test_result.name}")
+                except Exception as e:
+                    logger.error(f"Cleanup failed for task {task_id}: {e}", exc_info=True)
+            else:
+                logger.info(f"Cleanup phase exists but auto_run=False for task {task_id}")
+        else:
+            logger.info(f"No cleanup phase found for task {task_id}")
         
         # Mark complete
         success, error = sm.complete_task()
@@ -277,6 +288,25 @@ class TaskService:
         
         manifest = TaskManifest.load(game, task_id)
         sm = TaskStateMachine(manifest, state)
+        
+        # Run cleanup if exists (cleanup resources even on failure)
+        cleanup_phase = manifest.get_phase('cleanup')
+        if cleanup_phase:
+            logger.info(f"Cleanup phase found for task {task_id}: auto_run={cleanup_phase.auto_run}")
+            if cleanup_phase.auto_run:
+                logger.info(f"Running cleanup for abandoned task {task_id}")
+                try:
+                    test_result, report_url = self.test_runner.run_phase(
+                        game, task_id, cleanup_phase, state.session_data
+                    )
+                    sm.execute_phase('cleanup', test_result, report_url)
+                    logger.info(f"Cleanup completed for abandoned task {task_id}: result={test_result.name}")
+                except Exception as e:
+                    logger.error(f"Cleanup failed for abandoned task {task_id}: {e}", exc_info=True)
+            else:
+                logger.info(f"Cleanup phase exists but auto_run=False for task {task_id}")
+        else:
+            logger.info(f"No cleanup phase found for task {task_id}")
         
         # Mark as abandoned
         success, error = sm.fail_task(reason)

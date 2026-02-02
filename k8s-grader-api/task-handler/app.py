@@ -4,6 +4,7 @@ import logging
 import random
 from decimal import Decimal
 from typing import Dict, Any, Optional
+from jinja2 import Environment
 
 from common.handler import (
     get_email_game_and_npc_from_event,
@@ -29,6 +30,18 @@ class DecimalEncoder(json.JSONEncoder):
         if isinstance(obj, Decimal):
             return int(obj) if obj % 1 == 0 else float(obj)
         return super(DecimalEncoder, self).default(obj)
+
+
+def render_template(template: str, session_data: Dict[str, Any]) -> str:
+    """Render Jinja2 template with session variables"""
+    try:
+        env = Environment()
+        jinja_template = env.from_string(template)
+        return jinja_template.render(session_data)
+    except Exception as e:
+        logger.warning(f"Failed to render template: {e}")
+        return template  # Return original if rendering fails
+
 
 # Initialize service
 task_service = TaskService()
@@ -87,6 +100,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         state = task_repo.get(email, game, current_task)
         
         is_new_task = state is None
+        
+        # If task is already completed, return completion message
+        if state and state.status == TaskStatus.COMPLETED:
+            logger.info(f"Task {current_task} already completed for {email}")
+            from common.models.task_manifest import TaskManifest
+            manifest = TaskManifest.load(game, current_task)
+            return task_completed_response(
+                {'state': state, 'manifest': manifest},
+                state.get_phase_state(state.current_phase_id).report_url if state.current_phase_id else ''
+            )
         
         # If task was abandoned, allow restart
         if state and state.status == TaskStatus.ABANDONED:
@@ -192,6 +215,9 @@ def task_started_response(state, manifest) -> Dict[str, Any]:
     current_phase = manifest.get_phase(state.current_phase_id)
     phase_message = current_phase.description if current_phase else 'Task started!'
     
+    # Render template variables with session data
+    phase_message = render_template(phase_message, state.session_data)
+    
     return {
         'statusCode': 200,
         'headers': cors_headers(),
@@ -213,6 +239,9 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
     
     # Get next phase description
     next_phase_message = next_phase.description if next_phase else 'All phases completed!'
+    
+    # Render template variables with session data
+    next_phase_message = render_template(next_phase_message, state.session_data)
     
     return {
         'statusCode': 200,
@@ -237,6 +266,9 @@ def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
     # Get current phase info
     current_phase = manifest.get_phase(state.current_phase_id)
     phase_message = current_phase.description if current_phase else 'Tests failed. Check the report.'
+    
+    # Render template variables with session data
+    phase_message = render_template(phase_message, state.session_data)
     
     return {
         'statusCode': 200,

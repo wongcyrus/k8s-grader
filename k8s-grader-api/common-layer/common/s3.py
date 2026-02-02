@@ -7,10 +7,19 @@ from common.status import GamePhrase
 TestResultBucket = os.getenv("TestResultBucket")
 
 
-def upload_test_result(file_name, game_phase: GamePhrase, time, email, game, task):
-    object_name = f"{game}/{email}/{task}/a_test_report_{game_phase.name}.html"
+def upload_test_result(file_name, game_phase, time, email, game, task):
+    """
+    Upload test result to S3.
+    
+    Args:
+        game_phase: Either a GamePhrase enum or a string ('setup', 'check', etc.)
+    """
+    # Convert to string if it's an enum
+    phase_name = game_phase.name if isinstance(game_phase, GamePhrase) else game_phase
+    
+    object_name = f"{game}/{email}/{task}/a_test_report_{phase_name}.html"
     object_name_with_time = (
-        f"{game}/{email}/{task}/test_report_{game_phase.name}_{time}.html"
+        f"{game}/{email}/{task}/test_report_{phase_name}_{time}.html"
     )
 
     s3_client = boto3.client("s3")
@@ -34,13 +43,19 @@ def upload_test_result(file_name, game_phase: GamePhrase, time, email, game, tas
 
 
 def generate_presigned_url(
-    game_phase: GamePhrase,
+    game_phase,
     time,
     email,
     game,
     task,
     expiration=604800,  # 7 days in seconds
 ):
+    """
+    Generate presigned URL for S3 object.
+    
+    Args:
+        game_phase: Either a GamePhrase enum or a string ('setup', 'check', etc.)
+    """
     try:
         _, object_name_with_time = get_bucket_key(email, game, task, game_phase, time)
         s3_client = boto3.client("s3")
@@ -54,8 +69,17 @@ def generate_presigned_url(
         return None
 
 
-def get_bucket_key(email, game, task, game_phase: GamePhrase, time):
+def get_bucket_key(email, game, task, game_phase, time):
+    """
+    Get S3 bucket and key for test report.
+    
+    Args:
+        game_phase: Either a GamePhrase enum or a string ('setup', 'check', etc.)
+    """
+    # Convert to string if it's an enum
+    phase_name = game_phase.name if isinstance(game_phase, GamePhrase) else game_phase
+    
     object_name_with_time = (
-        f"{game}/{email}/{task}/test_report_{game_phase.name}_{time}.html"
+        f"{game}/{email}/{task}/test_report_{phase_name}_{time}.html"
     )
     return TestResultBucket, object_name_with_time

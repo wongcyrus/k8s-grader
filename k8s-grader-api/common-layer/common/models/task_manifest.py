@@ -41,16 +41,36 @@ class TaskManifest:
         """
         Auto-generate manifest by discovering test files.
         Provides backward compatibility with old system.
+        Requires instruction.md file to be present.
         """
         task_dir = f"/tmp/{game}/tests/{game}/{task_id}"
         
-        # Discover test files with better descriptions
+        # Read instruction.md - this is REQUIRED
+        instruction_path = os.path.join(task_dir, 'instruction.md')
+        if not os.path.exists(instruction_path):
+            raise FileNotFoundError(
+                f"instruction.md is required but not found in {task_dir}. "
+                "Every task must have an instruction.md file with the game instructions."
+            )
+        
+        try:
+            with open(instruction_path, 'r', encoding='utf-8') as f:
+                task_instruction = f.read().strip()
+        except Exception as e:
+            raise ValueError(f"Failed to read instruction.md in {task_dir}: {e}")
+        
+        if not task_instruction:
+            raise ValueError(f"instruction.md in {task_dir} is empty. Please provide game instructions.")
+        
+        # Discover test files with descriptions
+        # Answer phase: Show instruction (player needs to know what to do)
+        # Check phase: Also show instruction (so player knows what failed)
         phase_mapping = {
             'test_01_setup.py': ('setup', 'Setup', 'Initialize the task environment', 0),
             'test_02_ready.py': ('ready', 'Ready', 'Verify prerequisites are met', 5),
-            'test_03_answer.py': ('answer', 'Answer', 'Provide your solution', 10),
-            'test_04_challenge.py': ('challenge', 'Challenge', 'Complete the challenge', 15),
-            'test_05_check.py': ('check', 'Check', 'Validate your solution', 20),
+            'test_03_answer.py': ('answer', 'Answer', task_instruction, 10),
+            'test_04_challenge.py': ('challenge', 'Challenge', task_instruction, 15),
+            'test_05_check.py': ('check', 'Check', task_instruction, 20),
             'test_06_cleanup.py': ('cleanup', 'Cleanup', 'Clean up resources', 0),
         }
         
@@ -79,7 +99,7 @@ class TaskManifest:
         return cls(
             task_id=task_id,
             title=title,
-            description=f"Auto-generated manifest for {title}",
+            description=task_instruction,
             difficulty='beginner',
             estimated_minutes=15,
             phases=phases,

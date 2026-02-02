@@ -108,10 +108,17 @@ class TaskStateMachine:
         phase_state = self.state.get_or_create_phase_state(phase_id)
         
         # Update based on result
-        if test_result == TestResult.OK:
-            phase_state.mark_passed(report_url, phase.points)
-            self.state.total_points += phase.points
-            logger.info(f"Phase '{phase_id}' passed (+{phase.points} points)")
+        if test_result == TestResult.OK or test_result == TestResult.NO_TESTS_COLLECTED:
+            # NO_TESTS_COLLECTED means phase was skipped (e.g., answer phase in production)
+            # Treat as success and move to next phase
+            if test_result == TestResult.OK:
+                phase_state.mark_passed(report_url, phase.points)
+                self.state.total_points += phase.points
+                logger.info(f"Phase '{phase_id}' passed (+{phase.points} points)")
+            else:
+                # Phase skipped - no points awarded
+                phase_state.mark_passed(report_url, 0)
+                logger.info(f"Phase '{phase_id}' skipped (no tests collected)")
             
             # Move to next phase
             next_phase = self.manifest.get_next_phase(phase_id)

@@ -11,7 +11,7 @@ class TestTestRunner:
     """Test TestRunner service"""
     
     def test_run_phase_success(self, sample_phase_config):
-        """Test running phase successfully"""
+        """Test running phase successfully - no report upload on success"""
         runner = TestRunner()
         session_data = {
             '$endpoint': 'https://k8s.example.com',
@@ -20,14 +20,15 @@ class TestTestRunner:
         
         with patch('common.file.create_json_input'), \
              patch('common.pytest.run_tests', return_value=TestResult.OK), \
-             patch.object(runner, '_upload_report', return_value='https://report.url'):
+             patch.object(runner, '_upload_report', return_value='https://report.url') as mock_upload:
             
             result, report_url = runner.run_phase(
                 'game01', '01_task', sample_phase_config, session_data
             )
             
             assert result == TestResult.OK
-            assert report_url == 'https://report.url'
+            assert report_url == ""  # No report URL on success
+            mock_upload.assert_not_called()  # Upload should NOT be called on success
     
     def test_run_phase_no_endpoint(self, sample_phase_config):
         """Test running phase without endpoint"""
@@ -42,7 +43,7 @@ class TestTestRunner:
         assert report_url == ""
     
     def test_run_phase_test_failure(self, sample_phase_config):
-        """Test running phase with test failure"""
+        """Test running phase with test failure - report should be uploaded"""
         runner = TestRunner()
         session_data = {
             '$endpoint': 'https://k8s.example.com',
@@ -51,7 +52,7 @@ class TestTestRunner:
         
         with patch('common.file.create_json_input'), \
              patch('common.pytest.run_tests', return_value=TestResult.TESTS_FAILED), \
-             patch.object(runner, '_upload_report', return_value='https://report.url'):
+             patch.object(runner, '_upload_report', return_value='https://report.url') as mock_upload:
             
             result, report_url = runner.run_phase(
                 'game01', '01_task', sample_phase_config, session_data
@@ -59,6 +60,7 @@ class TestTestRunner:
             
             assert result == TestResult.TESTS_FAILED
             assert report_url == 'https://report.url'
+            mock_upload.assert_called_once()  # Upload SHOULD be called on failure
     
     def test_run_phase_file_not_found(self, sample_phase_config):
         """Test running phase when test file not found"""
@@ -120,3 +122,83 @@ class TestTestRunner:
             )
             
             assert url == ""
+    
+    def test_run_phase_timeout_uploads_report(self, sample_phase_config):
+        """Test that timeout results upload a report"""
+        runner = TestRunner()
+        session_data = {
+            '$endpoint': 'https://k8s.example.com',
+            '$email': 'test@example.com'
+        }
+        
+        with patch('common.file.create_json_input'), \
+             patch('common.pytest.run_tests', return_value=TestResult.TIME_OUT), \
+             patch.object(runner, '_upload_report', return_value='https://timeout-report.url') as mock_upload:
+            
+            result, report_url = runner.run_phase(
+                'game01', '01_task', sample_phase_config, session_data
+            )
+            
+            assert result == TestResult.TIME_OUT
+            assert report_url == 'https://timeout-report.url'
+            mock_upload.assert_called_once()
+    
+    def test_run_phase_usage_error_uploads_report(self, sample_phase_config):
+        """Test that usage errors upload a report"""
+        runner = TestRunner()
+        session_data = {
+            '$endpoint': 'https://k8s.example.com',
+            '$email': 'test@example.com'
+        }
+        
+        with patch('common.file.create_json_input'), \
+             patch('common.pytest.run_tests', return_value=TestResult.USAGE_ERROR), \
+             patch.object(runner, '_upload_report', return_value='https://error-report.url') as mock_upload:
+            
+            result, report_url = runner.run_phase(
+                'game01', '01_task', sample_phase_config, session_data
+            )
+            
+            assert result == TestResult.USAGE_ERROR
+            assert report_url == 'https://error-report.url'
+            mock_upload.assert_called_once()
+    
+    def test_run_phase_internal_error_uploads_report(self, sample_phase_config):
+        """Test that internal errors upload a report"""
+        runner = TestRunner()
+        session_data = {
+            '$endpoint': 'https://k8s.example.com',
+            '$email': 'test@example.com'
+        }
+        
+        with patch('common.file.create_json_input'), \
+             patch('common.pytest.run_tests', return_value=TestResult.INTERNAL_ERROR), \
+             patch.object(runner, '_upload_report', return_value='https://internal-error-report.url') as mock_upload:
+            
+            result, report_url = runner.run_phase(
+                'game01', '01_task', sample_phase_config, session_data
+            )
+            
+            assert result == TestResult.INTERNAL_ERROR
+            assert report_url == 'https://internal-error-report.url'
+            mock_upload.assert_called_once()
+    
+    def test_run_phase_no_tests_collected_uploads_report(self, sample_phase_config):
+        """Test that NO_TESTS_COLLECTED uploads a report"""
+        runner = TestRunner()
+        session_data = {
+            '$endpoint': 'https://k8s.example.com',
+            '$email': 'test@example.com'
+        }
+        
+        with patch('common.file.create_json_input'), \
+             patch('common.pytest.run_tests', return_value=TestResult.NO_TESTS_COLLECTED), \
+             patch.object(runner, '_upload_report', return_value='https://no-tests-report.url') as mock_upload:
+            
+            result, report_url = runner.run_phase(
+                'game01', '01_task', sample_phase_config, session_data
+            )
+            
+            assert result == TestResult.NO_TESTS_COLLECTED
+            assert report_url == 'https://no-tests-report.url'
+            mock_upload.assert_called_once()

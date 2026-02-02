@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import shutil
 import threading
@@ -9,6 +10,8 @@ import pytest
 from common.database import get_game_source
 from common.status import GamePhrase, TestResult
 from jinja2 import Environment
+
+logger = logging.getLogger(__name__)
 
 PYTEST_TIMEOUT_SECONDS = 30
 
@@ -38,7 +41,35 @@ def get_test_base_path(game: str) -> str:
     return f"/tmp/{game}/tests"
 
 
-def run_tests(test_phase: GamePhrase, game: str, task: str, timeout: int = None) -> TestResult:
+def run_tests(test_phase, game: str, task: str, timeout: int = None) -> TestResult:
+    """
+    Run pytest tests for a specific phase.
+    
+    CRITICAL: Answer phase is SKIPPED in production.
+    The answer phase auto-deploys solutions and is ONLY for development/testing.
+    
+    Args:
+        test_phase: Either a GamePhrase enum or a string ('setup', 'check', etc.)
+        game: Game identifier
+        task: Task identifier
+        timeout: Optional timeout in seconds
+    """
+    # Convert string to GamePhrase enum if needed
+    if isinstance(test_phase, str):
+        try:
+            test_phase = GamePhrase(test_phase)
+        except ValueError:
+            logger.error(f"Invalid test phase: {test_phase}")
+            return TestResult.USAGE_ERROR
+    
+    # ============================================================
+    # SKIP ANSWER PHASE - Never run in production
+    # ============================================================
+    if test_phase == GamePhrase.ANSWER:
+        logger.info(f"Skipping answer phase for {game}/{task} - answer phase is for development only")
+        return TestResult.NO_TESTS_COLLECTED
+    # ============================================================
+    
     get_tests(game)
     retcode = TestResult.OK.value
     result_container = [retcode]
@@ -81,6 +112,24 @@ def get_tests(game: str) -> None:
     if not source:
         raise ValueError(f"Game source not found for {game}")
     
+    # Cache invalidation: Check if source URL changed
+    source_cache_file = f"/tmp/{game}_source.txt"
+    cached_source = None
+    if os.path.exists(source_cache_file):
+        with open(source_cache_file, "r") as f:
+            cached_source = f.read().strip()
+    
+    # If source changed, clear the cache
+    if cached_source and cached_source != source:
+        logger.info(f"Game source changed for {game}, clearing cache")
+        # Remove old files if they exist
+        zip_file = f"/tmp/{game}.zip"
+        if os.path.exists(zip_file):
+            os.remove(zip_file)
+        root_path = get_root_path(game)
+        if os.path.exists(root_path):
+            shutil.rmtree(root_path)
+    
     distination = f"/tmp/{game}.zip"
     if not os.path.exists(distination):
         try:
@@ -98,6 +147,11 @@ def get_tests(game: str) -> None:
                     f"/tmp/{source_folder}/{source_folder}", f"/tmp/{source_folder}/"
                 )
                 shutil.rmtree(f"/tmp/{source_folder}/{source_folder}")
+            
+            # Save the current source URL for cache validation
+            with open(source_cache_file, "w") as f:
+                f.write(source)
+                
         except (IOError, OSError, shutil.Error) as e:
             raise RuntimeError(f"Failed to download or extract tests: {e}") from e
 
@@ -161,7 +215,26 @@ def get_ai_instruction(instruction: str, session: Dict[str, any]) -> str:
     return render(instruction, session)
 
 
-def get_next_game_phrase(game: str, task: str, current_game_phrase: GamePhrase) -> Optional[GamePhrase]:
+def get_next_game_phrase(game: str, task: str, current_game_phrase) -> Optional[GamePhrase]:
+    """
+    Get the next game phrase that has a test file.
+    
+    Args:
+        game: Game identifier
+        task: Task identifier
+        current_game_phrase: Either a GamePhrase enum or a string
+        
+    Returns:
+        Next GamePhrase enum or None if no more phases
+    """
+    # Convert string to GamePhrase enum if needed
+    if isinstance(current_game_phrase, str):
+        try:
+            current_game_phrase = GamePhrase(current_game_phrase)
+        except ValueError:
+            logger.error(f"Invalid game phrase: {current_game_phrase}")
+            return None
+    
     get_tests(game)
 
     current_index = GAME_PHRASE_ORDER.index(current_game_phrase)
