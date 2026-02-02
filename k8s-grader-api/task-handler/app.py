@@ -1,4 +1,5 @@
 """Unified task handler - replaces game-task and grader endpoints"""
+# DEPLOYMENT: 2026-02-02 - Bug fixes for task completion
 import json
 import logging
 import random
@@ -274,7 +275,15 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
     next_phase = manifest.get_next_phase(updated_state.current_phase_id) if updated_state.current_phase_id else None
     
     # Get next phase description
-    next_phase_message = next_phase.description if next_phase else 'All phases completed!'
+    # Only show "All phases completed!" if we can actually complete the task
+    if next_phase:
+        next_phase_message = next_phase.description
+    else:
+        # No next phase - check if task can be completed
+        from common.state_machine.task_state_machine import TaskStateMachine
+        sm = TaskStateMachine(manifest, updated_state)
+        can_complete, _ = sm.can_complete_task()
+        next_phase_message = 'All phases completed!' if can_complete else 'Continue to next phase'
     
     # Render template variables with session data
     next_phase_message = render_template(next_phase_message, updated_state.session_data)

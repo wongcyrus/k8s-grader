@@ -1,4 +1,5 @@
 """Task state machine for managing state transitions"""
+# DEPLOYMENT: 2026-02-02 - Bug fix: clear current_phase_id after last phase
 from typing import Optional, Tuple
 import logging
 

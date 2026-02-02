@@ -1,4 +1,5 @@
 """Task service for high-level task management"""
+# DEPLOYMENT: 2026-02-02 - Bug fix: pass state to complete_task to avoid eventual consistency
 from typing import Optional, Dict, Any
 import logging
 

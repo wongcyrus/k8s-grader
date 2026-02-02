@@ -2,7 +2,57 @@
 
 ## Recent Changes (February 2026)
 
-### 1. Answer Phase Skip in Production 🎮
+### 1. Task Completion Bug Fixes 🔥 CRITICAL
+**Issue:** After completing all phases, the system showed "All phases completed!" but subsequent API calls returned FAILED status instead of COMPLETED. This happened at every phase transition, causing confusion and breaking the game flow.
+
+**Root Causes:** Four separate bugs that all needed to be fixed:
+
+#### Bug 1: Handler Using Stale State Variable
+**Location:** `task-handler/app.py` line 198  
+**Problem:** After `execute_phase()` returned updated state, handler was using old `state` variable  
+**Fix:** Changed to `state = result['state']`
+
+#### Bug 2: complete_task() Loading Fresh State from Database
+**Location:** `task_service.py` line 204  
+**Problem:** `complete_task()` was loading fresh state from DynamoDB instead of using updated state, causing eventual consistency issues  
+**Fix:** Added optional `state` parameter to `complete_task()` method, handler now passes updated state
+
+#### Bug 3: current_phase_id Not Cleared After Last Phase
+**Location:** `task_state_machine.py` line 133  
+**Problem:** When last phase passes and `next_phase` is None, `current_phase_id` was not set to None, leaving it pointing to the last phase  
+**Fix:** Added `self.state.current_phase_id = None` when no more phases exist
+
+#### Bug 4: "All phases completed!" Message Shown When Tests Failed
+**Location:** `task-handler/app.py` lines 269-283  
+**Problem:** The message "All phases completed!" was shown whenever `next_phase` is None, even if the phase tests actually FAILED. This was misleading - it said "completed" but then returned FAILED status on next call  
+**Fix:** Modified `phase_passed_response` to check `can_complete_task()` before showing "All phases completed!" message
+
+**Files Modified:**
+- `task-handler/app.py` - Bugs 1 and 4 fixed
+- `common-layer/common/services/task_service.py` - Bug 2 fixed
+- `common-layer/common/state_machine/task_state_machine.py` - Bug 3 fixed
+- `tests/test_task_completion_bug.py` - Added 5 unit tests
+
+**Deployment History:**
+- First deployment (2026-02-02 09:34 UTC): Bugs 1-3 fixed
+- Second deployment (2026-02-02 19:49 UTC): Bug 4 fixed
+
+**Test Results:**
+- E2E test with single task: ✅ PASSED
+- E2E test with multiple tasks: ✅ PASSED (Bug 4 verified)
+- Unit tests: ✅ 5/5 passing
+
+**User Experience:**
+- Before: "All phases completed!" → Next call returns FAILED ❌
+- After: "All phases completed!" → Next call returns COMPLETED ✅
+- Before: Misleading message when tests fail ❌
+- After: Clear FAILED status when tests actually fail ✅
+
+**Impact:** Task completion now works correctly across all scenarios. Players can complete tasks without confusion, and the system correctly distinguishes between passed and failed tests.
+
+---
+
+### 2. Answer Phase Skip in Production 🎮
 **Issue:** Answer phase was auto-deploying solutions, allowing players to complete tasks without doing any work.
 
 **Root Cause:** The answer phase (test_03_answer.py) automatically deploys the solution, which defeats the purpose of learning.
