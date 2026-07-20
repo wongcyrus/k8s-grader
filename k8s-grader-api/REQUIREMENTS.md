@@ -59,19 +59,19 @@ pip install -r common-layer/requirements.txt
 
 # Testing utilities
 pytest-cov==4.1.0       # Code coverage
-pytest-mock==3.12.0     # Mocking utilities
-pytest-order==1.2.0     # Test execution order
-pytest-xdist==3.5.0     # Parallel test execution
-pytest-timeout==2.2.0   # Test timeout support
-moto==4.2.9             # AWS service mocking
+pytest-mock==3.15.1     # Mocking utilities
+pytest-order==1.5.0     # Test execution order
+pytest-xdist==3.8.0     # Parallel test execution
+pytest-timeout==2.4.0   # Test timeout support
+moto==4.2.14            # AWS service mocking
 
 # Code Quality
 black==23.12.1          # Code formatter
-flake8==7.0.0           # Linter
-mypy==1.8.0             # Type checker
+flake8==7.3.0           # Linter
+mypy==1.20.2            # Type checker
 
 # Development
-ipython==8.19.0         # Interactive shell
+ipython==8.39.0         # Interactive shell
 ```
 
 **Install**:
@@ -202,7 +202,7 @@ mypy common-layer/common/
 pip list --outdated
 
 # Update specific package
-pip install --upgrade pytest==7.4.4
+pip install --upgrade mypy==1.20.2
 
 # Update requirements file
 pip freeze | grep pytest >> requirements-dev.txt

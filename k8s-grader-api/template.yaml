@@ -38,6 +38,20 @@ Resources:
   TestResultBucket:
     Type: AWS::S3::Bucket
 
+  GameSourceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-game-source-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
   ApiKeyTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -450,6 +464,11 @@ Resources:
             TableName: !Ref ConversationTable
         - DynamoDBCrudPolicy:
             TableName: !Ref GameSourceTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "arn:aws:s3:::${GameSourceBucket}/*"
         - S3CrudPolicy:
             BucketName: !Ref TestResultBucket
         - Statement:

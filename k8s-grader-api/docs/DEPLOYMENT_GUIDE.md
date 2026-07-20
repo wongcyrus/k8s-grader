@@ -174,6 +174,24 @@ sam deploy --guided
 
 **Deployment time**: 5-10 minutes
 
+> The `./deploy.sh` helper now uploads `../k8s-game-rule` into the stack-owned **private game source** S3 bucket and the custom resource stores that archive as the `game01` source. This is separate from SAM's own packaging bucket. Use the helper unless you want to manage the private archive yourself.
+
+---
+
+## Public Sample vs Private Games
+
+- `game01` is the public sample and must keep working.
+- The default deploy flow seeds `game01` from the private S3 archive created by `./deploy.sh`.
+- For a private game like `game02`, upload a separate archive and save its `s3://bucket/key` URI in `GameSourceTable` under `game02`.
+- The Lambda test loader reads the URI from `GameSourceTable`, so the archive can stay private and never be published.
+
+Example:
+```bash
+aws dynamodb put-item \
+  --table-name k8s-grader-api-dev-GameSourceTable-XXXX \
+  --item '{"game":{"S":"game02"},"source":{"S":"s3://my-private-bucket/game02.zip"}}'
+```
+
 ---
 
 ### Step 4: Deploy (Subsequent Times)

@@ -20,7 +20,7 @@ echo "Installing dependencies..."
 source venv/bin/activate
 
 # Install boto3 for tools
-pip install -q boto3>=1.26.0
+pip install -q 'boto3>=1.43.51'
 
 echo "✅ Virtual environment recreated successfully!"
 echo ""

@@ -23,6 +23,7 @@ The K8s Grader is a **gamified Kubernetes learning system** where players intera
 - **Phases**: Each task has multiple test phases (setup, challenge, check, cleanup)
 - **Points**: Players earn points for completing phases
 - **Retry**: Limited attempts per phase (typically 3-5)
+- **Source**: The grader downloads the task archive from a private S3 URI stored in `GameSourceTable`
 
 ### Sessions
 - **Personalization**: Each player gets unique resource names
@@ -138,7 +139,7 @@ The K8s Grader is a **gamified Kubernetes learning system** where players intera
 │                           ▼                                             │
 │              ┌────────────────────────────┐                            │
 │              │  4. Run Pytest Tests       │                            │
-│              │     - Download game source │                            │
+│              │     - Download private S3 archive │                            │
 │              │     - Create json_input    │                            │
 │              │     - Execute test file    │                            │
 │              │     - Generate HTML report │                            │
@@ -590,7 +591,7 @@ System:
   1. Loads TaskState (status=IN_PROGRESS, current_phase="setup")
   2. Validates can execute setup phase
   3. Runs pytest on test_01_setup.py
-     - Downloads game source from S3
+     - Downloads private S3 archive
      - Creates /tmp/json_input.json with session data
      - Executes tests with 30s timeout
   4. Tests PASS
@@ -1255,7 +1256,7 @@ All attempts reset to 0
 ### Test Execution Time
 - Typical phase: 5-15 seconds
 - Includes:
-  - Download game source from S3 (~1s)
+  - Download private S3 archive from S3 (~1s)
   - Run pytest (~3-10s)
   - Upload report to S3 (~1s)
   - Update DynamoDB (~100ms)
@@ -1488,4 +1489,3 @@ Minimal - conditional writes have the same performance as regular writes, just w
 - **[DATABASE_GUIDE.md](DATABASE_GUIDE.md)** - Database layer
 - **[TESTING_GUIDE.md](TESTING_GUIDE.md)** - Testing guide
 - **[CHANGELOG.md](CHANGELOG.md)** - Recent bug fixes
-

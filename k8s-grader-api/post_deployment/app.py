@@ -4,7 +4,7 @@ from time import sleep
 from typing import Any, Dict
 
 import cfnresponse
-from common.database import save_game_source, save_npc_background
+from common.database import save_npc_background
 from common.google_spreadsheet import get_npc_background_google_spreadsheet
 
 
@@ -27,7 +27,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> None:
 
     sleep(wait_seconds)
     response = {"TimeWaited": wait_seconds, "Id": uid}
-    if event["RequestType"] == "Create":
+    if event["RequestType"] in ["Create", "Update"]:
         try:
             npc_background_sheet_id = os.environ.get("NCPBackgroundSheetId")
             npc_backgrounds = get_npc_background_google_spreadsheet(
@@ -40,15 +40,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> None:
                     event, context, cfnresponse.FAILED, response, "Waiter-" + uid
                 )
                 return
+
             for npc in npc_backgrounds:
                 save_npc_background(
                     npc["name"], npc["age"], npc["gender"], npc["background"]
                 )
-            save_game_source(
-                "game01",
-                "https://github.com/practical-bootcamp/k8s-game-rule/archive/refs/heads/main.zip",
-            )
-        except (KeyError, ValueError, IOError) as e:
+        except Exception as e:
             reason = f"Failed: {str(e)}"
             response["Reason"] = reason
             cfnresponse.send(

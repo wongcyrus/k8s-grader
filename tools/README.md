@@ -82,7 +82,7 @@ python tools/genkey.py
 ## Requirements
 
 See `requirements.txt` for Python dependencies:
-- boto3>=1.26.0
+- `boto3>=1.43.51`
 
 ## AWS Credentials
 

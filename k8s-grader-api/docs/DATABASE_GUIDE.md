@@ -235,7 +235,9 @@ chat = repo.get_random_chat(npc="alice")
 ```
 
 ### 12. GameSourceRepository
-Manages game source URLs.
+Manages game source URIs.
+
+`game01` is the public sample. Private games like `game02` should store their own private `s3://bucket/key` source under the matching game ID.
 
 ```python
 from common.database import GameSourceRepository
@@ -246,7 +248,10 @@ repo = GameSourceRepository()
 source = repo.get(game="game01")
 
 # Save game source
-repo.save(game="game01", source="https://github.com/...")
+repo.save(game="game01", source="s3://private-bucket/game-rule.zip")
+
+# Save private game source
+repo.save(game="game02", source="s3://private-bucket/game02.zip")
 ```
 
 ## Convenience Functions
@@ -269,7 +274,7 @@ from common.database import (
 )
 
 # Use directly without instantiating repositories
-save_game_source("game01", "https://...")
+save_game_source("game01", "s3://private-bucket/game-rule.zip")
 source = get_game_source("game01")
 ```
 
@@ -317,7 +322,7 @@ if source is None:
     pass
 
 # Returns False on error, logs error message
-success = repo.save("game01", "https://...")
+success = repo.save("game01", "s3://private-bucket/game-rule.zip")
 if not success:
     # Handle error case
     pass
@@ -399,13 +404,13 @@ from common.database import GameSourceRepository
 def test_my_function():
     # Mock repository
     mock_repo = Mock(spec=GameSourceRepository)
-    mock_repo.get.return_value = "https://..."
+    mock_repo.get.return_value = "s3://private-bucket/game-rule.zip"
     
     # Test with mock
     service = MyService(game_repo=mock_repo)
     result = service.get_source("game01")
     
-    assert result == "https://..."
+    assert result == "s3://private-bucket/game-rule.zip"
     mock_repo.get.assert_called_once_with("game01")
 ```
 
@@ -418,10 +423,10 @@ def test_repository_integration():
     repo = GameSourceRepository(table_name="TestGameSourceTable")
     
     # Test operations
-    repo.save("test_game", "https://test.com")
+    repo.save("test_game", "s3://test-bucket/test.zip")
     source = repo.get("test_game")
     
-    assert source == "https://test.com"
+    assert source == "s3://test-bucket/test.zip"
 ```
 
 ## Environment Variables

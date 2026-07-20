@@ -111,10 +111,82 @@ build() {
     fi
 }
 
+# Prepare private game source archive (not the SAM artifacts bucket)
+prepare_game_source() {
+    print_header "Preparing Private Game Source"
+
+    STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
+    REGION=$(grep region samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "us-east-1")
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --no-cli-pager)
+    GAME_RULE_REPO="$(cd ../../k8s-game-rule && pwd)"
+    GAME_SOURCE_BUCKET="${STACK_NAME}-game-source-${ACCOUNT_ID}-${REGION}"
+    GAME_SOURCE_KEY="game01/k8s-game-rule.zip"
+    ARCHIVE_NAME="k8s-game-rule-$(date -u +%Y%m%d%H%M%S).zip"
+    ARCHIVE_PATH="/tmp/${ARCHIVE_NAME}"
+    GAME_SOURCE_URI="s3://${GAME_SOURCE_BUCKET}/${GAME_SOURCE_KEY}"
+
+    if [ ! -d "$GAME_RULE_REPO" ]; then
+        print_error "k8s-game-rule repository not found at ${GAME_RULE_REPO}"
+        exit 1
+    fi
+
+    print_info "Creating archive: ${ARCHIVE_PATH}"
+    python3 - "$GAME_RULE_REPO" "$ARCHIVE_PATH" <<'PY'
+from pathlib import Path
+import os
+import zipfile
+import sys
+
+repo = Path(sys.argv[1]).resolve()
+archive_path = Path(sys.argv[2]).resolve()
+skip_dirs = {".git", ".pytest_cache", "__pycache__", ".mypy_cache", "venv", ".venv", "htmlcov", ".aws-sam"}
+
+with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk(repo):
+        dirs[:] = [d for d in dirs if d not in skip_dirs and not d.startswith(".")]
+        for file in files:
+            path = Path(root) / file
+            if any(part in skip_dirs for part in path.parts):
+                continue
+            zf.write(path, arcname=str(path.relative_to(repo.parent)))
+PY
+
+    print_info "Uploading archive to ${GAME_SOURCE_URI}"
+    aws s3 cp "$ARCHIVE_PATH" "$GAME_SOURCE_URI" --no-cli-pager >/dev/null
+    print_success "Game source uploaded privately"
+
+    export GAME_SOURCE_BUCKET
+    export GAME_SOURCE_URI
+}
+
+seed_game_source_table() {
+    print_header "Seeding Game Source Table"
+
+    STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
+    REGION=$(grep region samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "us-east-1")
+    GAME_SOURCE_TABLE=$(aws cloudformation describe-stacks \
+        --stack-name "$STACK_NAME" \
+        --region "$REGION" \
+        --query 'Stacks[0].Outputs[?OutputKey==`GameSourceTable`].OutputValue' \
+        --output text \
+        --no-cli-pager)
+
+    if [ -z "$GAME_SOURCE_TABLE" ]; then
+        print_error "GameSourceTable output not found"
+        exit 1
+    fi
+
+    aws dynamodb put-item \
+        --table-name "$GAME_SOURCE_TABLE" \
+        --item "{\"game\":{\"S\":\"game01\"},\"source\":{\"S\":\"${GAME_SOURCE_URI}\"}}"
+
+    print_success "Game source table seeded for game01"
+}
+
 # Deploy
 deploy() {
     print_header "Deploying to AWS"
-    
+
     if [ "$1" == "--guided" ]; then
         print_info "Running guided deployment..."
         sam deploy --guided
@@ -301,12 +373,15 @@ main() {
     else
         print_info "Skipping build (--skip-build flag)"
     fi
-    
+
     if [ "$GUIDED" = true ]; then
         deploy --guided
     else
         deploy
     fi
+
+    prepare_game_source
+    seed_game_source_table
     
     get_outputs
     show_next_steps

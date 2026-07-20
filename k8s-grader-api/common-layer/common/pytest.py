@@ -4,8 +4,12 @@ import os
 import shutil
 import threading
 import urllib.request
+import zipfile
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
+import boto3
+from botocore.exceptions import ClientError
 import pytest
 from common.database import get_game_source
 from common.status import GamePhrase, TestResult
@@ -97,14 +101,36 @@ def run_tests(test_phase, game: str, task: str, timeout: int = None) -> TestResu
     return TestResult(result_container[0])
 
 
-def get_repo_branch(game: str) -> Tuple[Optional[str], Optional[str]]:
-    source = get_game_source(game)
-    if source and source.startswith("https://github.com/"):
-        parts = source.split("/")
-        repo = parts[-5]
-        branch = parts[-1].replace(".zip", "").split("/")[-1]
-        return repo, branch
-    return None, None
+def get_archive_root(archive_path: str) -> str:
+    with zipfile.ZipFile(archive_path) as archive:
+        roots = {
+            name.split("/", 1)[0]
+            for name in archive.namelist()
+            if name and not name.endswith("/")
+        }
+
+    if len(roots) != 1:
+        raise ValueError(f"Expected one root directory in archive, got: {sorted(roots)}")
+
+    return roots.pop()
+
+
+def download_source_archive(source: str, archive_path: str) -> None:
+    if source.startswith("s3://"):
+        parsed = urlparse(source)
+        bucket = parsed.netloc
+        key = parsed.path.lstrip("/")
+        if not bucket or not key:
+            raise ValueError(f"Invalid S3 source URI: {source}")
+
+        boto3.client("s3").download_file(bucket, key, archive_path)
+        return
+
+    if source.startswith("https://") or source.startswith("http://"):
+        urllib.request.urlretrieve(source, archive_path)
+        return
+
+    raise ValueError(f"Unsupported game source URI: {source}")
 
 
 def get_tests(game: str) -> None:
@@ -131,29 +157,33 @@ def get_tests(game: str) -> None:
             shutil.rmtree(root_path)
     
     distination = f"/tmp/{game}.zip"
-    if not os.path.exists(distination):
-        try:
-            urllib.request.urlretrieve(source, distination)
-            shutil.unpack_archive(distination, "/tmp/")
-            repo, branch = get_repo_branch(game)
-            if not repo or not branch:
-                raise ValueError(f"Invalid repository format for {game}")
-            
-            source_folder = repo + "-" + branch
-            shutil.move(f"/tmp/{source_folder}", get_root_path(game))
+    root_path = get_root_path(game)
+    needs_download = not os.path.exists(distination)
+    needs_extract = not os.path.exists(root_path)
 
-            if os.path.exists(f"/tmp/{source_folder}/{source_folder}"):
-                shutil.move(
-                    f"/tmp/{source_folder}/{source_folder}", f"/tmp/{source_folder}/"
-                )
-                shutil.rmtree(f"/tmp/{source_folder}/{source_folder}")
-            
+    if not needs_download and not needs_extract:
+        return
+
+    try:
+        if needs_download:
+            download_source_archive(source, distination)
+
+        if needs_extract:
+            shutil.unpack_archive(distination, "/tmp/")
+            source_folder = get_archive_root(distination)
+            extracted_path = f"/tmp/{source_folder}"
+            if not os.path.exists(extracted_path):
+                raise ValueError(f"Extracted archive folder not found: {source_folder}")
+
+            if os.path.exists(root_path):
+                shutil.rmtree(root_path)
+            shutil.move(extracted_path, root_path)
+
             # Save the current source URL for cache validation
             with open(source_cache_file, "w") as f:
                 f.write(source)
-                
-        except (IOError, OSError, shutil.Error) as e:
-            raise RuntimeError(f"Failed to download or extract tests: {e}") from e
+    except (IOError, OSError, shutil.Error, ClientError, ValueError) as e:
+        raise RuntimeError(f"Failed to download or extract tests: {e}") from e
 
 
 def get_tasks(game: str) -> List[str]:

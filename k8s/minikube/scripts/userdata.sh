@@ -7,7 +7,7 @@ sudo usermod -aG docker $USER # && newgrp docker <- this is not working
 sudo systemctl start docker && sudo systemctl enable docker
 docker -v
 curl -Ls https://storage.googleapis.com/kubernetes-release/release/stable.txt
-curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.31.0/bin/linux/amd64/kubectl
+curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.36.2/bin/linux/amd64/kubectl
 sudo chmod +x ./kubectl
 sudo mv ./kubectl /usr/local/bin/kubectl
 TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"`

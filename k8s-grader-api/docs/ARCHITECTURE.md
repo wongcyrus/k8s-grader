@@ -103,7 +103,7 @@ repo.save(state)
 - **AccountRepository** - User K8s credentials
 - **ApiKeyRepository** - Encrypted API keys
 - **NpcRepository** - NPC locks and assignments
-- **GameSourceRepository** - Game source URLs
+- **GameSourceRepository** - Game source URIs (private S3 archive)
 
 See [DATABASE_GUIDE.md](DATABASE_GUIDE.md) for details.
 
@@ -170,7 +170,7 @@ Defines task structure:
 2. TaskHandler loads TaskState
 3. TaskStateMachine.can_execute_phase()
 4. TestRunner.run_phase()
-   - Download game source from S3
+   - Download private game source archive from S3
    - Generate session data
    - Run pytest
    - Upload report to S3
