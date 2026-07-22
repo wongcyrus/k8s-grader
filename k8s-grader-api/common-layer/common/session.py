@@ -1,7 +1,6 @@
 import base64
 import random
 
-from common.pytest import get_session_template
 from jinja2 import Environment
 from names_generator import generate_name
 
@@ -28,6 +27,8 @@ def render(template, func_dict):
 
 
 def generate_session(email: str, game: str, task: str) -> dict:
+    from common.pytest import get_session_template
+
     session = get_session_template(game, task)
 
     student_id = email.split("@")[0]

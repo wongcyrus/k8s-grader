@@ -118,6 +118,22 @@ class TestTaskStateMachine:
         phase_state = in_progress_task_state.get_phase_state("setup")
         assert phase_state.status == PhaseStatus.FAILED
         assert phase_state.attempts == 1
+
+    def test_execute_phase_non_counting_failure(self, exam_manifest, exam_task_state):
+        """Test phases that should not consume attempts on failure"""
+        exam_task_state.status = TaskStatus.IN_PROGRESS
+        exam_task_state.current_phase_id = "challenge"
+        exam_task_state.phase_states["setup"] = PhaseState("setup", PhaseStatus.PASSED)
+        sm = TaskStateMachine(exam_manifest, exam_task_state)
+
+        success, error = sm.execute_phase("challenge", TestResult.TESTS_FAILED, "https://report.url")
+
+        assert success is False
+        assert "Tests failed" in error
+        phase_state = exam_task_state.get_phase_state("challenge")
+        assert phase_state.attempts == 0
+        can_execute, _ = sm.can_execute_phase("challenge")
+        assert can_execute is True
     
     def test_execute_phase_with_points(self, sample_manifest, in_progress_task_state):
         """Test executing phase and earning points"""

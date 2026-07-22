@@ -1,10 +1,33 @@
 import json
 import os
 import shutil
+import re
+
+
+MANAGED_TMP_FILES = {
+    "client_certificate.crt",
+    "client_key.key",
+    "json_input.json",
+    "report.html",
+    "easter_egg.csv",
+}
+MANAGED_TMP_PATTERNS = (
+    re.compile(r"^game\d+$"),
+    re.compile(r"^game\d+\.zip$"),
+    re.compile(r"^game\d+_source\.txt$"),
+)
+
+
+def _is_managed_tmp_entry(filename):
+    if filename in MANAGED_TMP_FILES:
+        return True
+    return any(pattern.match(filename) for pattern in MANAGED_TMP_PATTERNS)
 
 
 def clear_tmp_directory():
     for filename in os.listdir("/tmp/"):
+        if not _is_managed_tmp_entry(filename):
+            continue
         file_path = os.path.join("/tmp/", filename)
         try:
             if os.path.isfile(file_path) or os.path.islink(file_path):

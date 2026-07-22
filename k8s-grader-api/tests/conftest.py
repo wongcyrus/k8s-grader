@@ -25,6 +25,9 @@ def aws_credentials(monkeypatch):
     monkeypatch.setenv('TaskStateTable', 'TaskStateTable')
     monkeypatch.setenv('NpcLockTable', 'NpcLockTable')
     monkeypatch.setenv('NpcAssignmentTable', 'NpcAssignmentTable')
+    monkeypatch.setenv('GameAccessTable', 'GameAccessTable')
+    monkeypatch.setenv('ExamCodeTable', 'ExamCodeTable')
+    monkeypatch.setenv('ExamSessionTable', 'ExamSessionTable')
     # Add SECRET_HASH for handler tests
     monkeypatch.setenv('SecretHash', '2M540grRh05JjA0N0f3ptfGqSq-AN6v1zym1rKEIk-g=')
 
@@ -85,11 +88,49 @@ def dynamodb_tables(aws_credentials):
             ],
             BillingMode='PAY_PER_REQUEST'
         )
+
+        game_access_table = dynamodb.create_table(
+            TableName='GameAccessTable',
+            KeySchema=[
+                {'AttributeName': 'game', 'KeyType': 'HASH'}
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'game', 'AttributeType': 'S'}
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
+
+        exam_code_table = dynamodb.create_table(
+            TableName='ExamCodeTable',
+            KeySchema=[
+                {'AttributeName': 'examCode', 'KeyType': 'HASH'}
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'examCode', 'AttributeType': 'S'}
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
+
+        exam_session_table = dynamodb.create_table(
+            TableName='ExamSessionTable',
+            KeySchema=[
+                {'AttributeName': 'email', 'KeyType': 'HASH'},
+                {'AttributeName': 'examCode', 'KeyType': 'RANGE'}
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'email', 'AttributeType': 'S'},
+                {'AttributeName': 'examCode', 'AttributeType': 'S'}
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
         
         yield {
             'task_table': task_table,
             'lock_table': lock_table,
-            'assignment_table': assignment_table
+            'assignment_table': assignment_table,
+            'game_access_table': game_access_table,
+            'exam_code_table': exam_code_table,
+            'exam_session_table': exam_session_table
         }
 
 
@@ -173,6 +214,83 @@ def sample_manifest(sample_phases):
         prerequisites=[],
         tags=["test", "unit"],
         hints=["This is a test hint"]
+    )
+
+
+@pytest.fixture
+def exam_phases():
+    """Sample exam phases where only check counts attempts"""
+    return [
+        PhaseConfig(
+            id="setup",
+            name="Setup",
+            description="Initialize environment",
+            test_file="test_01_setup.py",
+            required=True,
+            auto_run=False,
+            count_attempts=False,
+            timeout_seconds=30,
+            max_attempts=3,
+            points=0
+        ),
+        PhaseConfig(
+            id="challenge",
+            name="Challenge",
+            description="Loading challenge",
+            test_file="test_04_challenge.py",
+            required=True,
+            auto_run=False,
+            count_attempts=False,
+            timeout_seconds=60,
+            max_attempts=5,
+            points=0
+        ),
+        PhaseConfig(
+            id="check",
+            name="Check",
+            description="Verify solution",
+            test_file="test_05_check.py",
+            required=True,
+            auto_run=False,
+            count_attempts=True,
+            timeout_seconds=30,
+            max_attempts=3,
+            points=100
+        )
+    ]
+
+
+@pytest.fixture
+def exam_manifest(exam_phases):
+    """Sample exam task manifest"""
+    return TaskManifest(
+        task_id="exam_task_01",
+        title="Exam Task",
+        description="Exam task description",
+        difficulty="beginner",
+        estimated_minutes=10,
+        phases=exam_phases,
+        prerequisites=[],
+        tags=["exam"],
+        hints=[]
+    )
+
+
+@pytest.fixture
+def exam_task_state():
+    """Sample exam task state"""
+    return TaskState(
+        email="student@example.com",
+        game="exam01",
+        task_id="exam_task_01",
+        npc="exam",
+        status=TaskStatus.NOT_STARTED,
+        current_phase_id=None,
+        phase_states={},
+        session_data={"test_key": "test_value"},
+        total_points=0,
+        mode="exam",
+        exam_code="EXAM-001"
     )
 
 

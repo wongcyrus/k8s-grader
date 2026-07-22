@@ -3,13 +3,31 @@
 # K8s Grader API Deployment Script
 # This script automates the deployment process
 
-set -e  # Exit on error
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
+CONFIG_ENV="${SAM_CONFIG_ENV:-default}"
+PYTHON_VERSION_OVERRIDE="${PYTHON_VERSION_OVERRIDE:-python3.14}"
+
+get_stack_name() {
+    if [ "${CONFIG_ENV}" = "default" ]; then
+        grep '^\[default.global.parameters\]' -A 5 samconfig.toml | grep 'stack_name' | head -n 1 | cut -d'"' -f2
+    else
+        grep "^\[${CONFIG_ENV}\.global.parameters\]" -A 5 samconfig.toml | grep 'stack_name' | head -n 1 | cut -d'"' -f2
+    fi
+}
+
+get_region() {
+    if [ "${CONFIG_ENV}" = "default" ]; then
+        grep '^\[default.deploy.parameters\]' -A 10 samconfig.toml | grep 'region' | head -n 1 | cut -d'"' -f2
+    else
+        grep "^\[${CONFIG_ENV}\.deploy.parameters\]" -A 10 samconfig.toml | grep 'region' | head -n 1 | cut -d'"' -f2
+    fi
+}
 
 # Functions
 print_success() {
@@ -66,6 +84,14 @@ check_prerequisites() {
         print_error "Python 3 not found"
         exit 1
     fi
+
+    # Check Docker (required for sam build --use-container)
+    if command -v docker &> /dev/null; then
+        print_success "Docker installed: $(docker --version)"
+    else
+        print_error "Docker not found. Containerized SAM builds require Docker."
+        exit 1
+    fi
 }
 
 # Run tests
@@ -90,7 +116,7 @@ run_tests() {
 validate_template() {
     print_header "Validating SAM Template"
     
-    if sam validate; then
+    if sam validate --lint; then
         print_success "Template validation passed"
     else
         print_error "Template validation failed"
@@ -102,8 +128,8 @@ validate_template() {
 build() {
     print_header "Building Application"
     
-    print_info "Running sam build..."
-    if sam build; then
+    print_info "Running sam build --use-container..."
+    if sam build --use-container --config-env "${CONFIG_ENV}"; then
         print_success "Build completed successfully"
     else
         print_error "Build failed"
@@ -115,8 +141,8 @@ build() {
 prepare_game_source() {
     print_header "Preparing Private Game Source"
 
-    STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
-    REGION=$(grep region samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "us-east-1")
+    STACK_NAME="$(get_stack_name || echo "k8s-grader-api-dev")"
+    REGION="$(get_region || echo "us-east-1")"
     ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --no-cli-pager)
     GAME_RULE_REPO="$(cd ../../k8s-game-rule && pwd)"
     GAME_SOURCE_BUCKET="${STACK_NAME}-game-source-${ACCOUNT_ID}-${REGION}"
@@ -162,8 +188,8 @@ PY
 seed_game_source_table() {
     print_header "Seeding Game Source Table"
 
-    STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
-    REGION=$(grep region samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "us-east-1")
+    STACK_NAME="$(get_stack_name || echo "k8s-grader-api-dev")"
+    REGION="$(get_region || echo "us-east-1")"
     GAME_SOURCE_TABLE=$(aws cloudformation describe-stacks \
         --stack-name "$STACK_NAME" \
         --region "$REGION" \
@@ -183,16 +209,60 @@ seed_game_source_table() {
     print_success "Game source table seeded for game01"
 }
 
+deploy_exam_website() {
+    print_header "Deploying Exam Website"
+
+    local stack_name region exam_web_dir bucket website_url
+    stack_name="$(get_stack_name || echo "k8s-grader-api-dev")"
+    region="$(get_region || echo "us-east-1")"
+    exam_web_dir="$(cd ../exam-web && pwd)"
+
+    if [ ! -d "$exam_web_dir" ]; then
+        print_error "Exam web directory not found at $exam_web_dir"
+        exit 1
+    fi
+
+    bucket=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --region "$region" \
+        --query 'Stacks[0].Outputs[?OutputKey==`ExamWebsiteBucket`].OutputValue' \
+        --output text \
+        --no-cli-pager)
+
+    if [ -z "$bucket" ] || [ "$bucket" = "None" ]; then
+        print_error "ExamWebsiteBucket output not found"
+        exit 1
+    fi
+
+    print_info "Uploading exam web files to s3://${bucket}"
+    aws s3 sync "$exam_web_dir" "s3://${bucket}" --delete --no-cli-pager >/dev/null
+    print_success "Exam website uploaded"
+
+    website_url=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --region "$region" \
+        --query 'Stacks[0].Outputs[?OutputKey==`ExamWebsiteUrl`].OutputValue' \
+        --output text \
+        --no-cli-pager)
+
+    if [ -n "$website_url" ] && [ "$website_url" != "None" ]; then
+        echo "Exam Website URL: ${website_url}"
+    fi
+}
+
 # Deploy
 deploy() {
     print_header "Deploying to AWS"
 
-    if [ "$1" == "--guided" ]; then
+    local guided_flag="${1:-}"
+    local parameter_overrides=("PythonVersion=${PYTHON_VERSION_OVERRIDE}")
+
+    if [ "${guided_flag}" == "--guided" ]; then
         print_info "Running guided deployment..."
-        sam deploy --guided
+        sam deploy --guided --config-env "${CONFIG_ENV}" --parameter-overrides "${parameter_overrides[@]}" --no-fail-on-empty-changeset
     else
-        print_info "Deploying with saved configuration..."
-        sam deploy
+        print_info "Deploying with saved configuration (${CONFIG_ENV})..."
+        sam deploy --config-env "${CONFIG_ENV}" --parameter-overrides "${parameter_overrides[@]}" --no-fail-on-empty-changeset
     fi
     
     if [ $? -eq 0 ]; then
@@ -207,7 +277,7 @@ deploy() {
 get_outputs() {
     print_header "Stack Outputs"
     
-    STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
+    STACK_NAME="$(get_stack_name || echo "k8s-grader-api-dev")"
     
     print_info "Fetching outputs for stack: $STACK_NAME"
     
@@ -223,7 +293,7 @@ get_outputs() {
 show_next_steps() {
     print_header "Deployment Complete"
     
-    STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
+    STACK_NAME="$(get_stack_name || echo "k8s-grader-api-dev")"
     
     BASE_URL=$(aws cloudformation describe-stacks \
         --stack-name "$STACK_NAME" \
@@ -382,6 +452,7 @@ main() {
 
     prepare_game_source
     seed_game_source_table
+    deploy_exam_website
     
     get_outputs
     show_next_steps

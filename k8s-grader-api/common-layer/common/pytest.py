@@ -133,20 +133,50 @@ def download_source_archive(source: str, archive_path: str) -> None:
     raise ValueError(f"Unsupported game source URI: {source}")
 
 
+def build_source_fingerprint(source: str) -> str:
+    """Build a deterministic fingerprint for source cache invalidation."""
+    if source.startswith("s3://"):
+        parsed = urlparse(source)
+        bucket = parsed.netloc
+        key = parsed.path.lstrip("/")
+        if not bucket or not key:
+            raise ValueError(f"Invalid S3 source URI: {source}")
+
+        response = boto3.client("s3").head_object(Bucket=bucket, Key=key)
+        etag = (response.get("ETag") or "").strip('"')
+        size = response.get("ContentLength", 0)
+        last_modified = response.get("LastModified")
+        last_modified_token = ""
+        if last_modified:
+            if hasattr(last_modified, "isoformat"):
+                last_modified_token = str(last_modified.isoformat())
+            elif hasattr(last_modified, "timestamp"):
+                last_modified_token = str(last_modified.timestamp())
+            else:
+                last_modified_token = str(last_modified)
+        return f"{source}#etag={etag}#size={size}#lm={last_modified_token}"
+
+    if source.startswith("https://") or source.startswith("http://"):
+        return source
+
+    raise ValueError(f"Unsupported game source URI: {source}")
+
+
 def get_tests(game: str) -> None:
     source = get_game_source(game)
     if not source:
         raise ValueError(f"Game source not found for {game}")
+    source_fingerprint = build_source_fingerprint(source)
     
     # Cache invalidation: Check if source URL changed
     source_cache_file = f"/tmp/{game}_source.txt"
-    cached_source = None
+    cached_source_fingerprint = None
     if os.path.exists(source_cache_file):
         with open(source_cache_file, "r") as f:
-            cached_source = f.read().strip()
+            cached_source_fingerprint = f.read().strip()
     
     # If source changed, clear the cache
-    if cached_source and cached_source != source:
+    if cached_source_fingerprint and cached_source_fingerprint != source_fingerprint:
         logger.info(f"Game source changed for {game}, clearing cache")
         # Remove old files if they exist
         zip_file = f"/tmp/{game}.zip"
@@ -179,9 +209,9 @@ def get_tests(game: str) -> None:
                 shutil.rmtree(root_path)
             shutil.move(extracted_path, root_path)
 
-            # Save the current source URL for cache validation
+            # Save the current source fingerprint for cache validation
             with open(source_cache_file, "w") as f:
-                f.write(source)
+                f.write(source_fingerprint)
     except (IOError, OSError, shutil.Error, ClientError, ValueError) as e:
         raise RuntimeError(f"Failed to download or extract tests: {e}") from e
 

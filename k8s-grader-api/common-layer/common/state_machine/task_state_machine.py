@@ -74,8 +74,8 @@ class TaskStateMachine:
         if phase_state and phase_state.status == PhaseStatus.PASSED:
             return False, f"Phase '{phase_id}' already passed"
         
-        # Check max attempts
-        if phase_state and phase_state.attempts >= phase.max_attempts:
+        # Check max attempts only for phases that count attempts
+        if phase.count_attempts and phase_state and phase_state.attempts >= phase.max_attempts:
             return False, f"Maximum attempts ({phase.max_attempts}) reached for phase '{phase_id}'"
         
         # Check prerequisites (previous required phases must be passed)
@@ -137,7 +137,7 @@ class TaskStateMachine:
             
             return True, None
         else:
-            phase_state.mark_failed(test_result.name, report_url)
+            phase_state.mark_failed(test_result.name, report_url, count_attempts=phase.count_attempts)
             logger.warning(f"Phase '{phase_id}' failed: {test_result.name} "
                          f"(attempt {phase_state.attempts}/{phase.max_attempts})")
             

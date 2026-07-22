@@ -12,6 +12,7 @@ class PhaseConfig:
     test_file: str                   # test_01_setup.py
     required: bool = True            # Must pass to continue
     auto_run: bool = False           # Run automatically (cleanup)
+    count_attempts: bool = True      # Whether failures consume attempts
     timeout_seconds: int = 30        # Test timeout
     max_attempts: int = 3            # Retry limit
     points: int = 0                  # Gamification
@@ -26,6 +27,7 @@ class PhaseConfig:
             test_file=data['test_file'],
             required=data.get('required', True),
             auto_run=data.get('auto_run', False),
+            count_attempts=data.get('count_attempts', True),
             timeout_seconds=data.get('timeout_seconds', 30),
             max_attempts=data.get('max_attempts', 3),
             points=data.get('points', 0)
@@ -40,6 +42,7 @@ class PhaseConfig:
             'test_file': self.test_file,
             'required': self.required,
             'auto_run': self.auto_run,
+            'count_attempts': self.count_attempts,
             'timeout_seconds': self.timeout_seconds,
             'max_attempts': self.max_attempts,
             'points': self.points

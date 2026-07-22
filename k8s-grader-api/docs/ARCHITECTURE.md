@@ -58,6 +58,12 @@ The K8s Grader API is a serverless application built on AWS using:
 
 ## Core Components
 
+### Exam Mode
+
+Exam mode uses a separate WebSocket + durable Lambda path so the browser can queue actions and receive pushed status updates without direct Lambda-to-Lambda orchestration between grading steps.
+
+See [EXAM_DURABLE_FLOW.md](EXAM_DURABLE_FLOW.md) for the full exam-specific flow, state transitions, and runtime-fix history.
+
 ### 1. Lambda Functions
 
 #### TaskHandler (Unified Endpoint)

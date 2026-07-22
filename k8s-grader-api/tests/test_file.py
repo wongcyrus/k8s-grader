@@ -124,3 +124,34 @@ class TestWriteUserFiles:
             # Check key file
             assert calls[1][0][0] == "/tmp/client_key.key"
             assert calls[1][0][1] == "w"
+
+
+class TestClearTmpDirectory:
+    """Test tmp cleanup only touches managed files."""
+
+    def test_clear_tmp_directory_only_removes_managed_entries(self):
+        with patch("common.file.os.listdir", return_value=[
+            "client_certificate.crt",
+            "game02",
+            "game02.zip",
+            "game02_source.txt",
+            "systemd-private-keep",
+        ]), \
+             patch("common.file.os.path.isfile", side_effect=lambda path: path.endswith((".crt", ".zip", "_source.txt"))), \
+             patch("common.file.os.path.islink", return_value=False), \
+             patch("common.file.os.path.isdir", side_effect=lambda path: path.endswith("/game02")), \
+             patch("common.file.os.unlink") as mock_unlink, \
+             patch("common.file.shutil.rmtree") as mock_rmtree:
+            clear_tmp_directory()
+
+        deleted_files = {call.args[0] for call in mock_unlink.call_args_list}
+        deleted_dirs = {call.args[0] for call in mock_rmtree.call_args_list}
+
+        assert deleted_files == {
+            "/tmp/client_certificate.crt",
+            "/tmp/game02.zip",
+            "/tmp/game02_source.txt",
+        }
+        assert deleted_dirs == {"/tmp/game02"}
+        assert "/tmp/systemd-private-keep" not in deleted_files
+        assert "/tmp/systemd-private-keep" not in deleted_dirs

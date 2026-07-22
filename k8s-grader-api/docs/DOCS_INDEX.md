@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Last Updated:** February 2, 2026
+**Last Updated:** July 22, 2026
 
 This directory contains all documentation for the k8s-grader-api project.
 
@@ -24,6 +24,7 @@ This directory contains all documentation for the k8s-grader-api project.
 
 ### Development
 - **[Architecture](ARCHITECTURE.md)** - System design and components
+- **[Exam Durable Flow](EXAM_DURABLE_FLOW.md)** - Exam WebSocket + durable Lambda flow ⭐
 - **[Game Logic](GAME_LOGIC.md)** - How the game works
 - **[Database Guide](DATABASE_GUIDE.md)** - DynamoDB tables and schema
 - **[Manifest Guide](MANIFEST_GUIDE.md)** - Task manifest format
@@ -40,7 +41,15 @@ This directory contains all documentation for the k8s-grader-api project.
 
 ---
 
-## Recent Updates (February 2026)
+## Recent Updates
+
+### Exam Durable Flow (July 2026) ⭐
+- ✅ Added [Exam Durable Flow](EXAM_DURABLE_FLOW.md)
+- ✅ Documented WebSocket → durable Lambda → browser push flow
+- ✅ Documented exam action behavior: `start`, `reset`, `run`, `status`, `records`
+- ✅ Documented runtime fixes for:
+  - `elapsed_delta` / `timedelta` logging crash
+  - nested durable-step serialization error
 
 ### Bug Fixes ⭐
 - ✅ **Task Completion Bug** - All 4 bugs fixed and verified
@@ -59,6 +68,7 @@ This directory contains all documentation for the k8s-grader-api project.
 
 ### Architecture & Design
 - [Architecture](ARCHITECTURE.md) - System components
+- [Exam Durable Flow](EXAM_DURABLE_FLOW.md) - Exam-mode action flow and runtime fixes
 - [Game Logic](GAME_LOGIC.md) - Game mechanics
 - [Database Guide](DATABASE_GUIDE.md) - Data model
 
@@ -71,6 +81,8 @@ This directory contains all documentation for the k8s-grader-api project.
 - [Deployment Guide](DEPLOYMENT_GUIDE.md) - Deploy to AWS
 - [Secret Hash Guide](SECRET_HASH_GUIDE.md) - Security
 - [Changelog](CHANGELOG.md) - What's new
+- `scripts/seed_exam_code.py` - Validate and seed exam code (dry-run + apply)
+- `scripts/reset_task_stage.py` - Reset task phase/stage in TaskStateTable
 
 ---
 

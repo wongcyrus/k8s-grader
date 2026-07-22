@@ -181,7 +181,7 @@ pytest -m integration -v
 
 ## Test Coverage
 
-### 15 Integration Tests Across 6 Test Classes
+### 16 Integration Tests Across 7 Test Classes
 
 #### 1. TestAPIIntegration (6 tests)
 - `test_stack_outputs_available` - Verify stack outputs
@@ -209,6 +209,18 @@ pytest -m integration -v
 - `test_invalid_api_key` - Invalid key handling
 - `test_missing_api_key` - Missing key handling
 - `test_malformed_request` - Security validation
+
+#### 7. TestExamIntegration (1 test)
+- `test_exam_setup_verify_and_start` - Save account, verify exam code, start exam, and status check
+
+Exam test environment overrides:
+
+```bash
+export MINIKUBE_URL="https://fuzzy-capybara-6ppxv9grwqc4xp4-8001.app.github.dev/"
+export EXAM_CODE="GAME02-EXAM-20260721"
+export EXAM_GAME="game02"
+export EXAM_TASK="087_kustomize_configuration"
+```
 
 ---
 

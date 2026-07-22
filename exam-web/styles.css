@@ -1,0 +1,273 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #0b1220;
+  color: #e7ecf3;
+}
+
+main {
+  max-width: 900px;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+
+h1 {
+  margin: 0 0 8px 0;
+}
+
+.card {
+  background: #131d33;
+  border: 1px solid #2a3550;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 12px 0;
+}
+
+label {
+  display: block;
+  margin-bottom: 10px;
+}
+
+input {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid #314062;
+  background: #0f182c;
+  color: #e7ecf3;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+select {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid #314062;
+  background: #0f182c;
+  color: #e7ecf3;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.tab-btn {
+  border: 1px solid #4560a7;
+  background: #1a2a4f;
+  color: #dbe8ff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #264488;
+  color: #fff;
+}
+
+button {
+  border: 1px solid #4560a7;
+  background: #264488;
+  color: white;
+  padding: 10px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.18;
+  cursor: not-allowed;
+  border-style: dashed;
+  border-color: #2a3550;
+  background: transparent;
+  color: #6d7891;
+  text-decoration: line-through;
+}
+
+button.locked {
+  background: transparent;
+  box-shadow: none;
+}
+
+.secondary-btn {
+  background: transparent;
+  border-color: #7a3241;
+  color: #f7cdd6;
+}
+
+.secondary-btn:hover {
+  background: #3a1b23;
+}
+
+pre {
+  background: #0a1120;
+  border: 1px solid #283350;
+  border-radius: 6px;
+  padding: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 180px;
+}
+
+.markdown-body {
+  background: #0a1120;
+  border: 1px solid #283350;
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 180px;
+  overflow-x: auto;
+}
+
+.markdown-body :first-child {
+  margin-top: 0;
+}
+
+.markdown-body :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 14px 0 8px;
+}
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body pre {
+  margin: 0 0 12px;
+}
+
+.markdown-body code {
+  background: #131d33;
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+
+.markdown-body pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid #4560a7;
+  padding-left: 12px;
+  color: #b7c4dc;
+}
+
+.response-body {
+  background: #0a1120;
+  border: 1px solid #283350;
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 180px;
+}
+
+.response-body p {
+  margin: 0 0 10px;
+}
+
+.response-body p:last-child {
+  margin-bottom: 0;
+}
+
+.response-link-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.response-link-list li {
+  margin: 4px 0;
+}
+
+.response-popup-btn {
+  border: 1px solid #4560a7;
+  background: #1b2f5e;
+  color: #dbe8ff;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.response-popup-btn:hover {
+  background: #264488;
+}
+
+.flow-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.flow-list li {
+  margin: 4px 0;
+}
+
+.flow-note {
+  margin-top: 10px;
+  color: #b7c4dc;
+  font-size: 0.95rem;
+}
+
+.state-machine {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.state-step {
+  border: 1px solid #314062;
+  border-radius: 6px;
+  background: #0a1120;
+  padding: 10px 12px;
+  color: #b7c4dc;
+  display: grid;
+  gap: 4px;
+}
+
+.state-step strong {
+  color: #e7ecf3;
+}
+
+.state-step.active {
+  border-color: #74a4ff;
+  background: #1b2f5e;
+  color: #fff;
+}
+
+.state-step.active strong {
+  color: #fff;
+}
+
+.state-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #4560a7;
+  background: #1a2a4f;
+  color: #dbe8ff;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.hidden {
+  display: none;
+}

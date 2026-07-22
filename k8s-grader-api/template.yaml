@@ -23,7 +23,7 @@ Parameters:
   PythonVersion:
     Type: String
     Description: "Python version for the Lambda functions"
-    Default: "python3.12"
+    Default: "python3.14"
 Globals:
   Function:
     Timeout: 29
@@ -37,6 +37,74 @@ Globals:
 Resources:
   TestResultBucket:
     Type: AWS::S3::Bucket
+
+  ExamWebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-exam-web-${AWS::AccountId}-${AWS::Region}"
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        IgnorePublicAcls: false
+        BlockPublicPolicy: false
+        RestrictPublicBuckets: false
+
+  ExamWebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ExamWebsiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: "*"
+            Action:
+              - s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${ExamWebsiteBucket}/*"
+
+  ExamWebsiteCloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${AWS::StackName} exam website"
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: ExamWebsiteS3WebsiteOrigin
+            DomainName: !Sub "${ExamWebsiteBucket}.s3-website-${AWS::Region}.amazonaws.com"
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          TargetOriginId: ExamWebsiteS3WebsiteOrigin
+          ViewerProtocolPolicy: redirect-to-https
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
 
   GameSourceBucket:
     Type: AWS::S3::Bucket
@@ -151,6 +219,67 @@ Resources:
         - AttributeName: "game"
           KeyType: "HASH"
 
+  GameAccessTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "game"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "game"
+          KeyType: "HASH"
+
+  ExamCodeTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "examCode"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "examCode"
+          KeyType: "HASH"
+
+  ExamSessionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "email"
+          AttributeType: "S"
+        - AttributeName: "examCode"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "email"
+          KeyType: "HASH"
+        - AttributeName: "examCode"
+          KeyType: "RANGE"
+
+  ExamWsConnectionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "connection_id"
+          AttributeType: "S"
+        - AttributeName: "email"
+          AttributeType: "S"
+        - AttributeName: "scope"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "connection_id"
+          KeyType: "HASH"
+      GlobalSecondaryIndexes:
+        - IndexName: "EmailScopeIndex"
+          KeySchema:
+            - AttributeName: "email"
+              KeyType: "HASH"
+            - AttributeName: "scope"
+              KeyType: "RANGE"
+          Projection:
+            ProjectionType: "ALL"
+
   # New refactored tables
   TaskStateTable:
     Type: AWS::DynamoDB::Table
@@ -244,6 +373,20 @@ Resources:
         RateLimit: 60
       UsagePlanName: !Sub "${AWS::StackName}-usage-plan"
 
+  ExamWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-exam-ws"
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+
+  ExamWebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ExamWebSocketApi
+      StageName: !Ref StageName
+      AutoDeploy: true
+
   LibLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
@@ -288,6 +431,24 @@ Resources:
             TableName: !Ref ConversationTable
         - DynamoDBCrudPolicy:
             TableName: !Ref GameSourceTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameAccessTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamCodeTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamSessionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameAccessTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamCodeTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamSessionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameAccessTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamCodeTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamSessionTable
         - Statement:
             - Effect: Allow
               Action:
@@ -464,11 +625,31 @@ Resources:
             TableName: !Ref ConversationTable
         - DynamoDBCrudPolicy:
             TableName: !Ref GameSourceTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameAccessTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamCodeTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamSessionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamWsConnectionTable
         - Statement:
             - Effect: Allow
               Action:
                 - s3:GetObject
               Resource: !Sub "arn:aws:s3:::${GameSourceBucket}/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - execute-api:ManageConnections
+              Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ExamWebSocketApi}/${StageName}/POST/@connections/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource:
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live:*"
         - S3CrudPolicy:
             BucketName: !Ref TestResultBucket
         - Statement:
@@ -492,9 +673,16 @@ Resources:
           NpcBackgroundTable: !Ref NpcBackgroundTable
           ConversationTable: !Ref ConversationTable
           GameSourceTable: !Ref GameSourceTable
+          GameAccessTable: !Ref GameAccessTable
+          ExamCodeTable: !Ref ExamCodeTable
+          ExamSessionTable: !Ref ExamSessionTable
+          ExamWsConnectionTable: !Ref ExamWsConnectionTable
           TestResultBucket: !Ref TestResultBucket
           SecretHash: !Ref SecretHash
           EasterEggSheetId: !Ref EasterEggSheetId
+          ExamWebSocketManagementEndpoint: !Sub "https://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+          ExamWebSocketUrl: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+          ExamCommandDurableFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"
       Events:
         TaskApi:
           Type: Api 
@@ -509,6 +697,249 @@ Resources:
             RestApiId: !Ref ApiGatewayApi
             Path: /task
             Method: options
+        ExamVerifyCode:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/verify-code
+            Method: get
+        ExamVerifyCodeOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/verify-code
+            Method: options
+        ExamStart:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/start
+            Method: get
+        ExamStartOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/start
+            Method: options
+        ExamReset:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/reset
+            Method: get
+        ExamResetOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/reset
+            Method: options
+        ExamRun:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/run
+            Method: get
+        ExamRunOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/run
+            Method: options
+        ExamStatus:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/status
+            Method: get
+        ExamStatusOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/status
+            Method: options
+        ExamRecords:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/records
+            Method: get
+        ExamRecordsOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /exam/records
+            Method: options
+
+  ExamCommandDurableFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-exam-command-durable"
+      CodeUri: exam-durable-handler/
+      AutoPublishAlias: live
+      AutoPublishAliasAllProperties: true
+      DurableConfig:
+        ExecutionTimeout: 3600
+        RetentionPeriodInDays: 14
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TaskStateTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AccountTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ApiKeyTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TestRecordTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcBackgroundTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ConversationTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameSourceTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref GameAccessTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamCodeTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamSessionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamWsConnectionTable
+        - S3CrudPolicy:
+            BucketName: !Ref TestResultBucket
+        - Statement:
+            - Effect: Allow
+              Action:
+                - execute-api:ManageConnections
+              Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ExamWebSocketApi}/${StageName}/POST/@connections/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "arn:aws:s3:::${GameSourceBucket}/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
+      Layers:
+        - !Ref LibLayer
+        - !Ref CommonLayer
+      Environment:
+        Variables:
+          TaskStateTable: !Ref TaskStateTable
+          AccountTable: !Ref AccountTable
+          ApiKeyTable: !Ref ApiKeyTable
+          TestRecordTable: !Ref TestRecordTable
+          NpcBackgroundTable: !Ref NpcBackgroundTable
+          ConversationTable: !Ref ConversationTable
+          GameSourceTable: !Ref GameSourceTable
+          GameAccessTable: !Ref GameAccessTable
+          ExamCodeTable: !Ref ExamCodeTable
+          ExamSessionTable: !Ref ExamSessionTable
+          ExamWsConnectionTable: !Ref ExamWsConnectionTable
+          TestResultBucket: !Ref TestResultBucket
+          SecretHash: !Ref SecretHash
+          EasterEggSheetId: !Ref EasterEggSheetId
+          ExamWebSocketManagementEndpoint: !Sub "https://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+          ExamWebSocketUrl: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+          NpcLockTable: !Ref NpcLockTable
+          NpcAssignmentTable: !Ref NpcAssignmentTable
+          GameSourceBucket: !Ref GameSourceBucket
+
+  ExamDurableProbeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-exam-durable-probe"
+      CodeUri: exam-durable-probe-handler/
+      AutoPublishAlias: live
+      AutoPublishAliasAllProperties: true
+      DurableConfig:
+        ExecutionTimeout: 3600
+        RetentionPeriodInDays: 14
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
+
+  ExamWebSocketHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: exam-ws-handler/
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ExamWsConnectionTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TaskStateTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource:
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live:*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - execute-api:ManageConnections
+              Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ExamWebSocketApi}/${StageName}/POST/@connections/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
+      Layers:
+        - !Ref CommonLayer
+      Environment:
+        Variables:
+          SecretHash: !Ref SecretHash
+          ExamWsConnectionTable: !Ref ExamWsConnectionTable
+          TaskStateTable: !Ref TaskStateTable
+          ExamCommandDurableFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"
+
+  ExamWebSocketHandlerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ExamWebSocketHandlerFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ExamWebSocketApi}/*"
+
+  ExamWebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ExamWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ExamWebSocketHandlerFunction.Arn}/invocations"
+
+  ExamWebSocketConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ExamWebSocketApi
+      RouteKey: $connect
+      Target: !Sub "integrations/${ExamWebSocketIntegration}"
+
+  ExamWebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ExamWebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub "integrations/${ExamWebSocketIntegration}"
+
+  ExamWebSocketDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ExamWebSocketApi
+      RouteKey: $default
+      Target: !Sub "integrations/${ExamWebSocketIntegration}"
 
   PostDeploymentCustomResource:
     Type: AWS::CloudFormation::CustomResource
@@ -567,6 +998,18 @@ Outputs:
   GameSourceTable:
     Description: "Name of the GameSourceTable"
     Value: !Ref GameSourceTable
+  GameAccessTable:
+    Description: "Name of the GameAccessTable"
+    Value: !Ref GameAccessTable
+  ExamCodeTable:
+    Description: "Name of the ExamCodeTable"
+    Value: !Ref ExamCodeTable
+  ExamSessionTable:
+    Description: "Name of the ExamSessionTable"
+    Value: !Ref ExamSessionTable
+  ExamWsConnectionTable:
+    Description: "Name of the Exam WebSocket connection table"
+    Value: !Ref ExamWsConnectionTable
   TaskStateTable:
     Description: "Name of the TaskStateTable (refactored)"
     Value: !Ref TaskStateTable
@@ -582,3 +1025,24 @@ Outputs:
   GameUrl:
     Description: "Game URL and you need to replace the Student Individual API key."
     Value: !Sub "https://wongcyrus.github.io/k8s-isekai/index.html?baseUrl=https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/&game=game01&apiKey=INDIVIDUAL_API_KEY"
+  ExamWebsiteBucket:
+    Description: "Name of the exam website S3 bucket"
+    Value: !Ref ExamWebsiteBucket
+  ExamWebsiteUrl:
+    Description: "Public S3 static website URL for exam web UI"
+    Value: !Sub "http://${ExamWebsiteBucket}.s3-website-${AWS::Region}.amazonaws.com"
+  ExamWebsiteHttpsUrl:
+    Description: "HTTPS CloudFront URL for exam web UI"
+    Value: !Sub "https://${ExamWebsiteCloudFrontDistribution.DomainName}"
+  ExamWebSocketUrl:
+    Description: "WebSocket URL for exam real-time updates"
+    Value: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+  ExamWebSocketConnectUrlTemplate:
+    Description: "WebSocket connect URL template with required query parameters"
+    Value: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}?apiKey=YOUR_API_KEY&examCode=YOUR_EXAM_CODE&game=YOUR_GAME&task=YOUR_TASK"
+  ExamCommandDurableFunctionArn:
+    Description: "Qualified ARN of the Lambda durable exam command function"
+    Value: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"
+  ExamDurableProbeFunctionArn:
+    Description: "Qualified ARN of the minimal Lambda durable probe function"
+    Value: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-durable-probe:live"

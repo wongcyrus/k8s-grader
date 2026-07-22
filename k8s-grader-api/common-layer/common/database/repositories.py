@@ -5,7 +5,7 @@ import time
 import boto3
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timedelta, timezone
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 import logging
 
 logger = logging.getLogger(__name__)
@@ -406,7 +406,13 @@ class AccountRepository:
             logger.error(f"Failed to check endpoint: {e}")
             return False
     
-    def save(self, email: str, endpoint: str, client_certificate: str, client_key: str) -> bool:
+    def save(
+        self,
+        email: str,
+        endpoint: str,
+        client_certificate: Optional[str],
+        client_key: Optional[str],
+    ) -> bool:
         """Save user account"""
         try:
             self.table.put_item(
@@ -593,27 +599,44 @@ class TestRecordRepository:
         return self._table
     
     def save(self, email: str, game: str, current_task: str, game_phase: str,
-             test_result: str, bucket: str, key: str, report_url: str, now_str: str) -> bool:
+             test_result: str, bucket: str, key: str, report_url: str, now_str: str,
+             exam_code: Optional[str] = None, mode: str = 'exercise') -> bool:
         """Save test record"""
         try:
-            self.table.put_item(
-                Item={
-                    "email": email,
-                    "gameTime": game + "#" + now_str,
-                    "task": current_task,
-                    "gamePhase": game_phase,
-                    "testResult": test_result,
-                    "bucket": bucket,
-                    "key": key,
-                    "reportUrl": report_url,
-                    "time": now_str,
-                }
-            )
+            item = {
+                "email": email,
+                "gameTime": game + "#" + now_str,
+                "task": current_task,
+                "gamePhase": game_phase,
+                "testResult": test_result,
+                "bucket": bucket,
+                "key": key,
+                "reportUrl": report_url,
+                "time": now_str,
+                "mode": mode,
+            }
+            if exam_code:
+                item["examCode"] = exam_code
+            self.table.put_item(Item=item)
             logger.info(f"Saved test record for {email} - {game}#{current_task}")
             return True
         except Exception as e:
             logger.error(f"Failed to save test record: {e}")
             return False
+
+    def list_by_email(self, email: str, exam_code: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List test records for a user, optionally filtered by exam code"""
+        try:
+            kwargs = {
+                'KeyConditionExpression': Key('email').eq(email)
+            }
+            if exam_code:
+                kwargs['FilterExpression'] = Attr('examCode').eq(exam_code)
+            response = self.table.query(**kwargs)
+            return response.get('Items', [])
+        except Exception as e:
+            logger.error(f"Failed to list test records: {e}")
+            return []
 
 
 class NpcTaskRepository:
@@ -842,4 +865,148 @@ class GameSourceRepository:
             return True
         except Exception as e:
             logger.error(f"Failed to save game source: {e}")
+            return False
+
+
+class GameAccessRepository:
+    """Repository for game access mode metadata"""
+
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('GameAccessTable', 'GameAccessTable')
+        self._table = None
+
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+
+    def get(self, game: str) -> Optional[Dict[str, Any]]:
+        try:
+            response = self.table.get_item(Key={"game": game})
+            return response.get("Item")
+        except Exception as e:
+            logger.error(f"Failed to get game access: {e}")
+            return None
+
+    def get_mode(self, game: str) -> str:
+        item = self.get(game)
+        if not item:
+            return "exercise"
+        return item.get("mode", "exercise")
+
+    def save(self, game: str, mode: str = "exercise", allowed_tasks: Optional[List[str]] = None) -> bool:
+        try:
+            item = {
+                "game": game,
+                "mode": mode,
+                "time": int(time.time()),
+            }
+            if allowed_tasks is not None:
+                item["allowed_tasks"] = allowed_tasks
+            self.table.put_item(Item=item)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save game access: {e}")
+            return False
+
+
+class ExamCodeRepository:
+    """Repository for exam code metadata"""
+
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('ExamCodeTable', 'ExamCodeTable')
+        self._table = None
+
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+
+    def get(self, exam_code: str) -> Optional[Dict[str, Any]]:
+        try:
+            response = self.table.get_item(Key={"examCode": exam_code})
+            return response.get("Item")
+        except Exception as e:
+            logger.error(f"Failed to get exam code: {e}")
+            return None
+
+    def save(self, exam_code: str, game: str, allowed_tasks: List[str], starts_at: str,
+             ends_at: str, max_attempts: int = 3, status: str = "active") -> bool:
+        try:
+            self.table.put_item(
+                Item={
+                    "examCode": exam_code,
+                    "game": game,
+                    "allowedTasks": allowed_tasks,
+                    "startsAt": starts_at,
+                    "endsAt": ends_at,
+                    "maxAttempts": max_attempts,
+                    "status": status,
+                    "time": int(time.time()),
+                }
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save exam code: {e}")
+            return False
+
+
+class ExamSessionRepository:
+    """Repository for verified exam sessions"""
+
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('ExamSessionTable', 'ExamSessionTable')
+        self._table = None
+
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+
+    def get(self, email: str, exam_code: str) -> Optional[Dict[str, Any]]:
+        try:
+            response = self.table.get_item(Key={"email": email, "examCode": exam_code})
+            return response.get("Item")
+        except Exception as e:
+            logger.error(f"Failed to get exam session: {e}")
+            return None
+
+    def save(self, email: str, exam_code: str, game: str, allowed_tasks: List[str],
+             expires_at: str, session_id: Optional[str] = None) -> bool:
+        try:
+            self.table.put_item(
+                Item={
+                    "email": email,
+                    "examCode": exam_code,
+                    "sessionId": session_id or f"{email}#{exam_code}",
+                    "game": game,
+                    "allowedTasks": allowed_tasks,
+                    "active": True,
+                    "expiresAt": expires_at,
+                    "verifiedAt": datetime.now(timezone.utc).isoformat(),
+                    "time": int(time.time()),
+                }
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save exam session: {e}")
+            return False
+
+    def disable(self, email: str, exam_code: str, reason: str) -> bool:
+        try:
+            session = self.get(email, exam_code)
+            if not session:
+                return False
+            session["active"] = False
+            session["lockReason"] = reason
+            self.table.put_item(Item=session)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to disable exam session: {e}")
             return False

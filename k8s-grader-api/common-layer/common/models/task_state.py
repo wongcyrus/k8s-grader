@@ -42,10 +42,11 @@ class PhaseState:
         self.passed_at = datetime.now(timezone.utc).isoformat()
         self.last_attempt_at = self.passed_at
     
-    def mark_failed(self, test_result: str, report_url: str):
+    def mark_failed(self, test_result: str, report_url: str, count_attempts: bool = True):
         """Mark phase as failed"""
         self.status = PhaseStatus.FAILED
-        self.attempts += 1
+        if count_attempts:
+            self.attempts += 1
         self.test_result = test_result
         self.report_url = report_url
         self.last_attempt_at = datetime.now(timezone.utc).isoformat()
@@ -87,9 +88,11 @@ class TaskState:
     npc: str
     status: TaskStatus
     current_phase_id: Optional[str]
+    mode: str = 'exercise'
     phase_states: Dict[str, PhaseState] = field(default_factory=dict)
     session_data: Dict[str, Any] = field(default_factory=dict)
     total_points: int = 0
+    exam_code: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     completed_at: Optional[str] = None
@@ -142,11 +145,13 @@ class TaskState:
             'game': self.game,
             'task_id': self.task_id,
             'npc': self.npc,
+            'mode': self.mode,
             'status': self.status.value,
             'current_phase_id': self.current_phase_id,
             'phase_states': {k: v.to_dict() for k, v in self.phase_states.items()},
             'session_data': self.session_data,
             'total_points': self.total_points,
+            'exam_code': self.exam_code,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
             'completed_at': self.completed_at
@@ -160,6 +165,7 @@ class TaskState:
             game=data['game'],
             task_id=data['task_id'],
             npc=data['npc'],
+            mode=data.get('mode', 'exercise'),
             status=TaskStatus(data['status']),
             current_phase_id=data.get('current_phase_id'),
             phase_states={
@@ -168,6 +174,7 @@ class TaskState:
             },
             session_data=data.get('session_data', {}),
             total_points=data.get('total_points', 0),
+            exam_code=data.get('exam_code'),
             created_at=data['created_at'],
             updated_at=data['updated_at'],
             completed_at=data.get('completed_at')

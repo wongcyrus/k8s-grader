@@ -24,7 +24,7 @@ RUN dnf update -y \
 #
 
 RUN mkdir -p /opt/kubectl
-RUN cd /opt/kubectl && curl -LO "https://storage.googleapis.com/kubernetes-release/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+RUN cd /opt/kubectl && curl -fL -o kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
 RUN chmod +x /opt/kubectl/kubectl
 
 #

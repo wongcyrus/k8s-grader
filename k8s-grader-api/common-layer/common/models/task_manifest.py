@@ -25,6 +25,12 @@ class TaskManifest:
         Load manifest from task directory.
         If manifest.json doesn't exist, auto-generate from test files.
         """
+        # Ensure game tests are present under /tmp before loading manifest.
+        # This prevents /exam/start from failing on cold containers where
+        # TaskManifest is loaded before any pytest-driven download path runs.
+        from common.pytest import get_tests
+        get_tests(game)
+
         path = f"/tmp/{game}/tests/{game}/{task_id}/manifest.json"
         
         if os.path.exists(path):

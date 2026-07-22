@@ -206,6 +206,82 @@ Uses saved configuration from `samconfig.toml`
 
 ---
 
+## Exam Code Validation (Fail-Fast) Before Enabling Exam Mode
+
+Use the validation seeder script to avoid publishing broken exam configuration.
+
+### Dry Run (validation only)
+
+```bash
+python scripts/seed_exam_code.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --exam-code GAME02-EXAM-20260721 \
+  --game game02 \
+  --game-tests-root ../../k8s-game-rule/tests \
+  --task-folder . \
+  --order-mode numeric_prefix \
+  --starts-at 2026-01-01T00:00:00+00:00 \
+  --ends-at 2026-12-31T23:59:59+00:00 \
+  --max-attempts 3
+```
+
+### Apply (write to DynamoDB)
+
+```bash
+python scripts/seed_exam_code.py ... --apply
+```
+
+### What is validated
+
+- Task folder exists and is non-empty
+- Deterministic ordering (`numeric_prefix`, `lexicographic`, or `explicit`)
+- Each task has non-empty `instruction.md`
+- Each task has `test_*.py` and required `test_05_check.py`
+- `manifest.json` is valid JSON when present
+- Time window and attempts are valid
+- Game source exists in `GameSourceTable`
+
+Only after successful validation does `--apply` write `ExamCodeTable` and `GameAccessTable`.
+
+---
+
+## Reset Task Stage in DynamoDB
+
+Use this when a student task state needs to be moved back to a phase.
+
+```bash
+# Dry run
+python scripts/reset_task_stage.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --email student@example.com \
+  --game game02 \
+  --task 087_kustomize_configuration \
+  --phase-id check
+
+# Apply
+python scripts/reset_task_stage.py ... --apply
+```
+
+- Resets `status` to `in_progress`
+- Sets `current_phase_id` to `--phase-id`
+- Clears target/later standard phase states (`setup→ready→answer→challenge→check→cleanup`)
+- Recomputes `total_points` from remaining passed phases
+
+---
+
+## Student Reset Logic (Exam UI)
+
+- Student reset requires explicit confirmation in UI.
+- Reset is allowed only when task status is:
+  - `in_progress`
+  - `abandoned`
+- Reset is blocked when task is `completed` (teacher/admin action required).
+- Reset restarts the task from phase 1 and keeps audit trail in **Records**.
+
+---
+
 ## Post-Deployment Verification
 
 ### 1. Check Stack Status

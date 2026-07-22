@@ -17,6 +17,7 @@ Welcome to the K8s Grader API documentation! All documentation has been organize
 
 ### Architecture & Design
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
+- [EXAM_DURABLE_FLOW.md](EXAM_DURABLE_FLOW.md) - Exam WebSocket and durable Lambda flow
 - [GAME_LOGIC.md](GAME_LOGIC.md) - Game flow and mechanics
 - [DATABASE_GUIDE.md](DATABASE_GUIDE.md) - Database layer
 
@@ -64,6 +65,7 @@ docs/
 ├── DEPLOYMENT_GUIDE.md             # Deploy to AWS
 ├── TESTING_GUIDE.md                # Testing guide
 ├── ARCHITECTURE.md                 # System design
+├── EXAM_DURABLE_FLOW.md            # Exam durable flow
 ├── GAME_LOGIC.md                   # Game mechanics
 ├── DATABASE_GUIDE.md               # Database layer
 ├── MANIFEST_GUIDE.md               # Task configuration

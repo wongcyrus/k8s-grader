@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 from common.services.task_service import TaskService
 from common.database.repositories import TaskStateRepository, NpcRepository
 from common.services.test_runner import TestRunner
-from common.models.task_state import TaskState, TaskStatus, PhaseStatus
+from common.models.task_state import TaskState, TaskStatus, PhaseStatus, PhaseState
 from common.status import TestResult
 
 
@@ -115,6 +115,18 @@ class TestTaskService:
         
         # Should return existing state
         assert state.current_phase_id == 'challenge'
+
+    def test_start_exam_task(self, task_service, sample_manifest):
+        """Test starting an exam task without NPC assignment"""
+        with patch('common.services.task_service.TaskManifest.load', return_value=sample_manifest), \
+             patch('common.services.task_service.generate_session', return_value={'key': 'value'}):
+            state = task_service.start_exam_task('student@test.com', 'exam01', 'exam_task_01', 'EXAM-001')
+
+        assert state.mode == 'exam'
+        assert state.exam_code == 'EXAM-001'
+        assert state.npc == 'exam'
+        assert state.status == TaskStatus.IN_PROGRESS
+        assert task_service.npc_repo.get_assigned_npc('student@test.com', 'exam01') is None
     
     def test_execute_phase_success(self, task_service, sample_manifest, in_progress_task_state):
         """Test executing phase successfully"""
@@ -227,6 +239,28 @@ class TestTaskService:
                 in_progress_task_state.game
             )
             assert assigned is None
+
+    def test_complete_exam_task_does_not_lock_npc(self, task_service, sample_manifest, in_progress_task_state):
+        """Test completing an exam task skips NPC locking"""
+        in_progress_task_state.mode = 'exam'
+        in_progress_task_state.exam_code = 'EXAM-001'
+        in_progress_task_state.phase_states['setup'] = PhaseState('setup', PhaseStatus.PASSED)
+        in_progress_task_state.phase_states['challenge'] = PhaseState('challenge', PhaseStatus.PASSED)
+        in_progress_task_state.phase_states['check'] = PhaseState('check', PhaseStatus.PASSED)
+        task_service.task_repo.save(in_progress_task_state)
+
+        with patch('common.services.task_service.TaskManifest.load', return_value=sample_manifest):
+            result = task_service.complete_task(
+                in_progress_task_state.email,
+                in_progress_task_state.game,
+                in_progress_task_state.task_id
+            )
+
+        assert result['success'] is True
+        assert task_service.npc_repo.get_assigned_npc(
+            in_progress_task_state.email,
+            in_progress_task_state.game
+        ) is None
     
     def test_complete_task_not_ready(self, task_service, sample_manifest, in_progress_task_state):
         """Test completing task when not ready"""
@@ -335,4 +369,3 @@ class TestTaskService:
         """Test abandoning task when state not found"""
         with pytest.raises(ValueError, match="Task state not found"):
             task_service.abandon_task('user@test.com', 'game01', '01_task', 'reason')
-

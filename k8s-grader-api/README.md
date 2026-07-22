@@ -67,6 +67,29 @@ Or manually:
 venv/bin/python -m pytest tests/ -v --cov=common
 ```
 
+### Seed exam code with validation
+Use the validator tool to fail fast before enabling exam mode:
+
+```bash
+python scripts/seed_exam_code.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --exam-code GAME02-EXAM-20260721 \
+  --game game02 \
+  --game-tests-root ../../k8s-game-rule/tests \
+  --task-folder . \
+  --order-mode numeric_prefix \
+  --starts-at 2026-01-01T00:00:00+00:00 \
+  --ends-at 2026-12-31T23:59:59+00:00 \
+  --max-attempts 3
+```
+
+Then apply after the dry-run output looks correct:
+
+```bash
+python scripts/seed_exam_code.py ... --apply
+```
+
 ## 🎯 Key Concepts
 
 ### Session Data & Personalization

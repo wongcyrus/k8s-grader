@@ -33,6 +33,40 @@ That's it! The deployment script will:
 # No manual setup needed - fully self-contained!
 ```
 
+### Exam Code (Validate first, then apply)
+```bash
+# Dry-run validation
+python scripts/seed_exam_code.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --exam-code GAME02-EXAM-20260721 \
+  --game game02 \
+  --game-tests-root ../../k8s-game-rule/tests \
+  --task-folder . \
+  --order-mode numeric_prefix \
+  --starts-at 2026-01-01T00:00:00+00:00 \
+  --ends-at 2026-12-31T23:59:59+00:00 \
+  --max-attempts 3
+
+# Apply after dry-run output looks correct
+python scripts/seed_exam_code.py ... --apply
+```
+
+### Reset Task Stage (DB state fix)
+```bash
+# Dry-run reset to CHECK phase (no write)
+python scripts/reset_task_stage.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --email student@example.com \
+  --game game02 \
+  --task 087_kustomize_configuration \
+  --phase-id check
+
+# Apply
+python scripts/reset_task_stage.py ... --apply
+```
+
 ## 🎯 Key Concepts
 
 ### Task Manifest

@@ -133,6 +133,41 @@ class TaskService:
             # Rollback assignment on any error
             self.npc_repo.clear_assignment(email, game)
             raise
+
+    def start_exam_task(self, email: str, game: str, task_id: str, exam_code: str) -> TaskState:
+        """Start an exam task without NPC assignment or locking."""
+        existing = self.task_repo.get(email, game, task_id)
+        if existing:
+            if existing.mode != 'exam' or existing.exam_code != exam_code:
+                raise ValueError("Exam task already started with a different exam code")
+            logger.info(f"Exam task {task_id} already started for {email}")
+            return existing
+
+        manifest = TaskManifest.load(game, task_id)
+        session_data = generate_session(email, game, task_id)
+        session_data['$instruction'] = manifest.description
+        session_data['$exam_code'] = exam_code
+
+        state = TaskState(
+            email=email,
+            game=game,
+            task_id=task_id,
+            npc='exam',
+            mode='exam',
+            status=TaskStatus.NOT_STARTED,
+            current_phase_id=None,
+            session_data=session_data,
+            exam_code=exam_code
+        )
+
+        sm = TaskStateMachine(manifest, state)
+        success, error = sm.start_task()
+        if not success:
+            raise ValueError(f"Failed to start exam task: {error}")
+
+        self.task_repo.save(state)
+        logger.info(f"Started exam task {task_id} for {email} with code {exam_code}")
+        return state
     
     def execute_phase(self, email: str, game: str, task_id: str, 
                      phase_id: Optional[str] = None) -> Dict[str, Any]:
@@ -254,11 +289,12 @@ class TaskService:
         # Save state
         self.task_repo.save(state)
         
-        # Lock NPC for 30 minutes
-        self.npc_repo.lock_npc(email, game, state.npc, minutes=30)
-        
-        # Clear assigned task
-        self.npc_repo.clear_assignment(email, game)
+        if state.mode != 'exam':
+            # Lock NPC for 30 minutes
+            self.npc_repo.lock_npc(email, game, state.npc, minutes=30)
+            
+            # Clear assigned task
+            self.npc_repo.clear_assignment(email, game)
         
         logger.info(f"Completed task {task_id} for {email}")
         
@@ -319,8 +355,9 @@ class TaskService:
         # Save state
         self.task_repo.save(state)
         
-        # Clear NPC assignment (don't lock - allow immediate retry)
-        self.npc_repo.clear_assignment(email, game)
+        if state.mode != 'exam':
+            # Clear NPC assignment (don't lock - allow immediate retry)
+            self.npc_repo.clear_assignment(email, game)
         
         logger.warning(f"Abandoned task {task_id} for {email}: {reason}")
         

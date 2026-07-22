@@ -12,6 +12,9 @@ from .repositories import (
     NpcLockRepository,
     ConversationRepository,
     GameSourceRepository,
+    GameAccessRepository,
+    ExamCodeRepository,
+    ExamSessionRepository,
 )
 
 __all__ = [
@@ -27,6 +30,9 @@ __all__ = [
     'NpcLockRepository',
     'ConversationRepository',
     'GameSourceRepository',
+    'GameAccessRepository',
+    'ExamCodeRepository',
+    'ExamSessionRepository',
     # Backward-compatible function exports
     'save_game_source',
     'save_npc_background',
@@ -122,7 +128,12 @@ def is_endpoint_exist(email: str, endpoint: str) -> bool:
     return _get_account_repo().is_endpoint_exist(email, endpoint)
 
 
-def save_account(email: str, endpoint: str, client_certificate: str, client_key: str) -> None:
+def save_account(
+    email: str,
+    endpoint: str,
+    client_certificate: str | None,
+    client_key: str | None,
+) -> None:
     """Save account (backward-compatible wrapper)"""
     _get_account_repo().save(email, endpoint, client_certificate, client_key)
 
@@ -140,4 +151,3 @@ def get_ai_instruction_template(game: str, task: str, npc: str):
 def get_ai_random_chat(npc: str):
     """Get AI random chat (backward-compatible wrapper)"""
     return _get_conversation_repo().get_random_chat(npc)
-
