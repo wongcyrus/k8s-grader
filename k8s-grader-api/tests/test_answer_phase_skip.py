@@ -1,15 +1,16 @@
 """
-Behavior test to verify answer phase is skipped in production.
+Behavior tests for answer phase execution.
 
 This test ensures that:
-1. Answer phase returns NO_TESTS_COLLECTED (skipped)
-2. Setup and check phases run normally
-3. Players must do actual work to pass
+1. Answer phase runs test_03_answer.py
+2. Setup, answer, and check phases all execute normally
+3. The phase mapping stays aligned with the standard task files
 """
 import pytest
 import os
 import sys
-from unittest.mock import patch
+import subprocess
+from unittest.mock import MagicMock, patch
 
 # Add common layer to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common-layer'))
@@ -18,17 +19,15 @@ from common.status import GamePhrase, TestResult
 from common.pytest import run_tests
 
 
-class TestAnswerPhaseSkipBehavior:
-    """Test that answer phase is skipped and players must do actual work"""
+class TestAnswerPhaseExecutionBehavior:
+    """Test that answer phase executes the standard answer test file"""
     
-    def test_answer_phase_returns_no_tests_collected(self):
+    def test_answer_phase_runs_standard_answer_test(self):
         """
-        CRITICAL TEST: Answer phase must be skipped
-        
-        This ensures players cannot auto-complete tasks.
+        Answer phase must execute test_03_answer.py.
         """
-        # Mock get_tests to avoid downloading
-        with patch('common.pytest.get_tests'):
+        with patch('common.pytest.get_tests'), \
+             patch('common.pytest.subprocess.run', return_value=MagicMock(returncode=0)) as mock_subprocess_run:
             result = run_tests(
                 test_phase=GamePhrase.ANSWER,
                 game='game01',
@@ -36,17 +35,16 @@ class TestAnswerPhaseSkipBehavior:
                 timeout=30
             )
         
-        # Answer phase MUST be skipped
-        assert result == TestResult.NO_TESTS_COLLECTED, \
-            "❌ CRITICAL: Answer phase should return NO_TESTS_COLLECTED (skipped). " \
-            "If this fails, players can auto-complete tasks without doing work!"
+        assert result == TestResult.OK
+        call_args = mock_subprocess_run.call_args[0][0]
+        assert 'test_03_answer.py' in call_args[-1]
     
     def test_setup_phase_runs_normally(self):
         """
         Test that setup phase still runs (not skipped)
         """
         with patch('common.pytest.get_tests'), \
-             patch('common.pytest.pytest.main', return_value=0):
+             patch('common.pytest.subprocess.run', return_value=MagicMock(returncode=0)):
             result = run_tests(
                 test_phase=GamePhrase.SETUP,
                 game='game01',
@@ -62,7 +60,7 @@ class TestAnswerPhaseSkipBehavior:
         Test that check phase still runs (not skipped)
         """
         with patch('common.pytest.get_tests'), \
-             patch('common.pytest.pytest.main', return_value=0):
+             patch('common.pytest.subprocess.run', return_value=MagicMock(returncode=0)):
             result = run_tests(
                 test_phase=GamePhrase.CHECK,
                 game='game01',
@@ -78,7 +76,7 @@ class TestAnswerPhaseSkipBehavior:
         Test that challenge phase still runs (not skipped)
         """
         with patch('common.pytest.get_tests'), \
-             patch('common.pytest.pytest.main', return_value=0):
+             patch('common.pytest.subprocess.run', return_value=MagicMock(returncode=0)):
             result = run_tests(
                 test_phase=GamePhrase.CHALLENGE,
                 game='game01',
@@ -89,14 +87,14 @@ class TestAnswerPhaseSkipBehavior:
         assert result == TestResult.OK, \
             "Challenge phase should run normally and return OK"
     
-    def test_only_answer_phase_is_skipped(self):
+    def test_all_standard_phases_run(self):
         """
-        Verify that ONLY answer phase is skipped, all others run
+        Verify that the standard phase files all run, including answer.
         """
         phases_to_test = [
             (GamePhrase.SETUP, TestResult.OK, "Setup should run"),
             (GamePhrase.READY, TestResult.OK, "Ready should run"),
-            (GamePhrase.ANSWER, TestResult.NO_TESTS_COLLECTED, "Answer should be SKIPPED"),
+            (GamePhrase.ANSWER, TestResult.OK, "Answer should run"),
             (GamePhrase.CHALLENGE, TestResult.OK, "Challenge should run"),
             (GamePhrase.CHECK, TestResult.OK, "Check should run"),
             (GamePhrase.CLEANUP, TestResult.OK, "Cleanup should run"),
@@ -104,7 +102,7 @@ class TestAnswerPhaseSkipBehavior:
         
         for phase, expected_result, message in phases_to_test:
             with patch('common.pytest.get_tests'), \
-                 patch('common.pytest.pytest.main', return_value=0):
+                 patch('common.pytest.subprocess.run', return_value=MagicMock(returncode=0)):
                 result = run_tests(
                     test_phase=phase,
                     game='game01',
@@ -144,6 +142,20 @@ class TestGame01Task02ExpectedBehavior:
         expected = "Create a namespace called 'blissfularyabhata2developer'."
         assert rendered == expected, \
             f"Template should render correctly. Got: {rendered}"
+
+
+class TestPytestExecution:
+    def test_timeout_returns_timeout_result(self):
+        with patch('common.pytest.get_tests'), \
+             patch('common.pytest.subprocess.run', side_effect=subprocess.TimeoutExpired(cmd=["pytest"], timeout=30)):
+            result = run_tests(
+                test_phase=GamePhrase.CHECK,
+                game='game01',
+                task='02_create_namespace',
+                timeout=30
+            )
+
+        assert result == TestResult.TIME_OUT
     
     def test_expected_flow_description(self):
         """
@@ -156,17 +168,9 @@ class TestGame01Task02ExpectedBehavior:
         
         1. Player talks to NPC
         2. Setup phase runs → OK
-        3. Answer phase SKIPPED → Shows instruction
-           Message: "Create a namespace called 'blissfularyabhata2developer'."
-        4. Player must manually run:
-           kubectl create namespace blissfularyabhata2developer
-        5. Player talks to NPC again
-        6. Check phase runs → Validates player's work
-           - If namespace exists: PASS ✅
-           - If namespace missing: FAIL ❌ (show instruction again)
-        7. If passed: Task complete, player earns points
-        
-        CRITICAL: Player MUST do the work manually!
+        3. Answer phase runs → Executes test_03_answer.py
+        4. Check phase runs → Validates the task result
+        5. If passed: Task complete, player earns points
         """
         
         # This test always passes - it's documentation
@@ -204,4 +208,3 @@ class TestGame01Task01ExpectedBehavior:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v', '--tb=short'])
-

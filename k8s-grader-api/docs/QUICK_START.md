@@ -67,6 +67,24 @@ python scripts/reset_task_stage.py \
 python scripts/reset_task_stage.py ... --apply
 ```
 
+### Reset all tasks for one game
+```bash
+# Dry-run reset every saved game02 task back to setup
+python scripts/reset_task_stage.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --email student@example.com \
+  --game game02 \
+  --all-tasks \
+  --phase-id setup \
+  --clear-all-phases
+
+# Apply
+python scripts/reset_task_stage.py ... --apply
+```
+
+This reset regenerates the task `session_data` with the same deterministic per-student generator used by the Lambda exam flow, so local reset/admin reset values stay aligned with runtime values.
+
 ## 🎯 Key Concepts
 
 ### Task Manifest

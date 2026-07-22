@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>K8s Exam Web</title>
+    <title>Kubernetes Exam Web</title>
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
   </head>
   <body>
     <main>
-      <h1>K8s Exam Test Web</h1>
-      <p>Save your K8s account first, then run exam APIs.</p>
+      <h1>Kubernetes Exam Test Web</h1>
+      <p>Submit your Kubernetes login first, then take the exam.</p>
 
       <section class="card">
         <label>API Key
@@ -26,7 +26,7 @@
 
       <section id="panelSetup">
         <section class="card">
-          <h2>Student K8s Account</h2>
+          <h2>Step 1: Submit Kubernetes Login</h2>
           <label>Endpoint
             <input id="endpoint" placeholder="https://xxxx:6443" />
           </label>
@@ -37,17 +37,17 @@
             <input id="clientKey" type="file" accept=".key,.pem" />
           </label>
           <div class="actions">
-            <button data-action="save-account">Save K8s Account</button>
+            <button data-action="save-account">Submit Kubernetes Login</button>
           </div>
         </section>
 
         <section class="card">
-          <h2>Exam Access</h2>
+          <h2>Step 2: Take Exam</h2>
           <label>Exam Code
             <input id="examCode" placeholder="EXAM-001" />
           </label>
           <div class="actions">
-            <button data-action="verify">Verify Code</button>
+            <button data-action="verify">Open Exam Access</button>
           </div>
         </section>
 
@@ -62,50 +62,14 @@
 
       <section id="panelExam" class="hidden">
         <section class="card">
-          <h2>Exam Flow</h2>
+          <h2>Exam Flow & Usage</h2>
           <ol class="flow-list">
             <li>Wait for Connection: <strong>Connected</strong></li>
-            <li>Start</li>
-            <li>Solve the task, then Run</li>
-            <li>Use Status / Records any time</li>
+            <li>Use the exam buttons in order: <strong>Start → Run</strong></li>
+            <li>Solve the task, then click <strong>Run</strong></li>
+            <li>Use <strong>Attempt History</strong> or <strong>Reset Task</strong> only when needed</li>
           </ol>
-          <p class="flow-note">Exam buttons unlock in order after the exam session is connected.</p>
-        </section>
-
-        <section class="card">
-          <h2>How to Use</h2>
-          <p>After Setup verification, use the exam buttons in order: <strong>Start → Run</strong>.</p>
-          <p><strong>Status</strong> and <strong>Records</strong> are available after the exam session is connected.</p>
-          <p>Click <strong>Reconnect Exam</strong> only if the connection banner shows disconnected.</p>
-        </section>
-
-        <section class="card">
-          <h2>State Machine</h2>
-          <p><strong>Current phase</strong>: <span id="phaseStateLabel" class="state-badge">setup</span></p>
-          <p><strong>Task status</strong>: <span id="taskStatusLabel" class="state-badge">NOT_STARTED</span></p>
-          <div id="uiStateMachine" class="state-machine">
-            <div class="state-step" data-phase="setup">
-              <strong>setup</strong>
-              <span>Prepare the K8s account and verify the exam code.</span>
-            </div>
-            <div class="state-step" data-phase="ready">
-              <strong>ready</strong>
-              <span>The exam is verified and waiting for Start.</span>
-            </div>
-            <div class="state-step" data-phase="challenge">
-              <strong>challenge</strong>
-              <span>Work on the task and run the challenge checks.</span>
-            </div>
-            <div class="state-step" data-phase="check">
-              <strong>check</strong>
-              <span>Review the result and confirm the answer passes.</span>
-            </div>
-            <div class="state-step" data-phase="cleanup">
-              <strong>cleanup</strong>
-              <span>Clean up and finish the task.</span>
-            </div>
-          </div>
-          <p class="flow-note">The UI highlights the current backend phase, not a made-up shortcut state.</p>
+          <p class="flow-note">Exam buttons unlock in order after the exam session is connected. Click <strong>Reconnect Exam</strong> only if the connection banner shows disconnected.</p>
         </section>
 
         <section id="examScope" class="card hidden">
@@ -120,10 +84,16 @@
 
         <section class="card">
           <h2>Current Question & Mark</h2>
-          <p id="nextStepOutput"><strong>Next step:</strong> Verify exam code in Setup.</p>
+          <p class="summary-line">
+            <strong>Task status</strong>: <span id="taskStatusLabel" class="state-badge">NOT_STARTED</span>
+            <span class="summary-separator">•</span>
+            <strong>Current phase</strong>: <span id="phaseStateLabel" class="state-badge">setup</span>
+          </p>
+          <p id="nextStepOutput"><strong>Next step:</strong> Complete Step 2: Take Exam first.</p>
           <p><strong>Question</strong></p>
           <div id="questionOutput" class="markdown-body">Press Start to load the question.</div>
-          <p><strong>Mark</strong>: <span id="markOutput">0</span></p>
+          <p><strong>Task score</strong>: <span id="markOutput">0</span></p>
+          <p><strong>Exam score</strong>: <span id="examScoreOutput">0</span></p>
           <p id="phaseOutput">Phase: -</p>
         </section>
 
@@ -131,15 +101,20 @@
           <button data-action="reconnect" class="exam-action" disabled>Reconnect Exam</button>
           <button data-action="start" class="exam-action" disabled>Start</button>
           <button data-action="run" class="exam-action" disabled>Run</button>
-          <button data-action="status" class="exam-action" disabled>Status</button>
-          <button data-action="records" class="exam-action" disabled>Records</button>
-          <button data-action="reset" class="exam-action" disabled>Reset Task</button>
           <p class="flow-note">If a button is greyed out, the previous step has not been completed yet.</p>
         </section>
 
         <section class="card">
           <h2>Exam Response</h2>
           <div id="output" class="response-body">Ready.</div>
+        </section>
+
+        <section class="card">
+          <h2>Exam Tools</h2>
+          <div class="actions">
+            <button data-action="records" class="exam-action secondary-btn" disabled>Attempt History</button>
+            <button data-action="reset" class="exam-action secondary-btn" disabled>Reset Task</button>
+          </div>
         </section>
       </section>
     </main>

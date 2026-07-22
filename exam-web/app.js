@@ -2,6 +2,7 @@ const output = document.getElementById("output");
 const setupOutput = document.getElementById("setupOutput");
 const questionOutput = document.getElementById("questionOutput");
 const markOutput = document.getElementById("markOutput");
+const examScoreOutput = document.getElementById("examScoreOutput");
 const phaseOutput = document.getElementById("phaseOutput");
 const connectionStatus = document.getElementById("connectionStatus");
 const gameLabel = document.getElementById("gameLabel");
@@ -16,11 +17,10 @@ const panelSetup = document.getElementById("panelSetup");
 const panelExam = document.getElementById("panelExam");
 const phaseStateLabel = document.getElementById("phaseStateLabel");
 const taskStatusLabel = document.getElementById("taskStatusLabel");
-const phaseSteps = document.querySelectorAll("[data-phase]");
 const BASE_URL = "https://vqq060loek.execute-api.us-east-1.amazonaws.com/Prod";
 const STORAGE_KEY = "k8s-exam-web-state-v1";
 const EXAM_ACTION_COOLDOWN_MS = 1500;
-const RUN_RESPONSE_TIMEOUT_MS = 45000;
+const RUN_RESPONSE_TIMEOUT_MS = 360000;
 
 let examFlowState = "unverified";
 let lastExamActionAt = 0;
@@ -35,6 +35,8 @@ let backendTaskStatus = "NOT_STARTED";
 let backendNextAction = null;
 let taskStarted = false;
 let runResponseTimer = null;
+let statusSyncPending = false;
+let examHasRemainingTasks = true;
 const verifyButton = document.querySelector('button[data-action="verify"]');
 
 function wsDebug(event, data = null) {
@@ -59,7 +61,7 @@ function startRunResponseWatchdog() {
     runInFlight = false;
     updateExamButtons();
     write(
-      `Run response timeout after ${RUN_RESPONSE_TIMEOUT_MS / 1000}s. No WebSocket run result received. Check browser console [ExamWS] logs and backend logs, then click Run or Status again.`,
+      `Run response timeout after ${RUN_RESPONSE_TIMEOUT_MS / 1000}s. No WebSocket run result received. Check browser console [ExamWS] logs and backend logs, then click Run again.`,
       output
     );
     wsDebug("run response timeout");
@@ -102,7 +104,7 @@ function setBusy(isBusy) {
 function setExamTabEnabled(enabled) {
   examTabUnlocked = enabled;
   tabExam.disabled = !enabled;
-  tabExam.title = enabled ? "" : "Verify Code in Setup first";
+  tabExam.title = enabled ? "" : "Complete Step 1: Submit Kubernetes Login first.";
   updateStateMachineUI();
 }
 
@@ -141,9 +143,6 @@ function updateStateMachineUI() {
   if (taskStatusLabel) {
     taskStatusLabel.textContent = backendTaskStatus;
   }
-  phaseSteps.forEach((step) => {
-    step.classList.toggle("active", step.dataset.phase === currentPhaseState);
-  });
 }
 
 function escapeHtml(value) {
@@ -210,13 +209,40 @@ function renderExamResponse(json, action = "") {
   }
   if (testResult) lines.push(`<p><strong>Test result:</strong> ${escapeHtml(testResult)}</p>`);
   if (json.task_id) lines.push(`<p><strong>Task:</strong> ${escapeHtml(json.task_id)}</p>`);
+  if (Array.isArray(json.executed_phases) && json.executed_phases.length > 0) {
+    const phaseLines = json.executed_phases.map((phase, index) => {
+      const phaseLabel = phase.phase_name || phase.phase_id || `Phase ${index + 1}`;
+      const resultLabel = phase.test_result || (phase.success ? "OK" : "UNKNOWN");
+      const reportLink = phase.report_url
+        ? `, Report: ${buildLinkHtml(phase.report_url, "Open report")}`
+        : "";
+      return `<li>#${index + 1} ${escapeHtml(phaseLabel)}: ${escapeHtml(resultLabel)}${reportLink}</li>`;
+    });
+    lines.push("<p><strong>Run details:</strong></p>");
+    lines.push(`<ul class="response-link-list">${phaseLines.join("")}</ul>`);
+  }
+  if (json.cleanup_triggered) {
+    lines.push("<p><strong>Cleanup:</strong> triggered automatically</p>");
+  }
 
   const normalizedMessage = typeof json.message === "string" ? json.message.trim() : "";
   const normalizedTaskDescription = typeof json.task_description === "string" ? json.task_description.trim() : "";
   if (normalizedMessage) {
-    if (normalizedTaskDescription && normalizedMessage === normalizedTaskDescription) {
+    const repeatsTaskDescription =
+      normalizedTaskDescription &&
+      (normalizedMessage === normalizedTaskDescription ||
+        normalizedMessage.endsWith(normalizedTaskDescription));
+    const messageSummary = repeatsTaskDescription
+      ? normalizedMessage.slice(0, normalizedMessage.length - normalizedTaskDescription.length).trim()
+      : normalizedMessage;
+
+    if (messageSummary) {
+      lines.push(`<p><strong>Message:</strong></p><div class="markdown-body">${renderMarkdown(messageSummary)}</div>`);
+    }
+    if (repeatsTaskDescription) {
       lines.push("<p><strong>Message:</strong> Same as the current question above.</p>");
-    } else {
+    }
+    if (!messageSummary && !repeatsTaskDescription) {
       lines.push(`<p><strong>Message:</strong></p><div class="markdown-body">${renderMarkdown(json.message)}</div>`);
     }
   }
@@ -233,14 +259,22 @@ function renderExamResponse(json, action = "") {
   }
 
   if (action === "records" && Array.isArray(json.records)) {
-    const recordLines = json.records.map((record, index) => {
-      const recordStatus = record.status || "-";
-      const recordPhase = record.current_phase || record.phase || "-";
-      const recordResult = record.test_result || "-";
-      const recordPoints = typeof record.points !== "undefined" ? record.points : typeof record.total_points !== "undefined" ? record.total_points : "-";
-      return `<li>#${index + 1} Status: ${escapeHtml(recordStatus)}, Phase: ${escapeHtml(recordPhase)}, Result: ${escapeHtml(recordResult)}, Points: ${escapeHtml(recordPoints)}</li>`;
-    });
-    lines.push(`<p><strong>Records:</strong></p><ul class="response-link-list">${recordLines.join("")}</ul>`);
+    if (json.records.length === 0) {
+      lines.push("<p><strong>Attempt history:</strong> No recorded exam runs yet.</p>");
+    } else {
+      const recordLines = json.records.map((record, index) => {
+        const taskId = record.task_id || record.task || "-";
+        const phase = record.phase || record.current_phase || record.gamePhase || "-";
+        const result = record.test_result || record.testResult || "-";
+        const time = record.time || "-";
+        const reportLink = record.report_url || record.reportUrl
+          ? `, Report: ${buildLinkHtml(record.report_url || record.reportUrl, "Open report")}`
+          : "";
+        return `<li>#${index + 1} Task: ${escapeHtml(taskId)}, Phase: ${escapeHtml(phase)}, Result: ${escapeHtml(result)}, Time: ${escapeHtml(time)}${reportLink}</li>`;
+      });
+      lines.push("<p><strong>Attempt history:</strong> Each row is one saved grading run for this exam code.</p>");
+      lines.push(`<ul class="response-link-list">${recordLines.join("")}</ul>`);
+    }
   }
 
   if (lines.length === 0) {
@@ -380,6 +414,7 @@ function connectExamSocket() {
     };
     wsDebug("sending subscribe", subscribePayload);
     socket.send(JSON.stringify(subscribePayload));
+    refreshCurrentTaskStatus();
   };
 
   socket.onerror = (event) => {
@@ -441,6 +476,41 @@ function sendExamActionViaSocket(action) {
   write(`Sent exam/${action} via WebSocket ...`);
 }
 
+function refreshCurrentTaskStatus() {
+  if (!examTabUnlocked) {
+    return;
+  }
+  if (!examSocket || !examSocketReady || examSocket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  const task = document.getElementById("task").value;
+  if (!task) {
+    statusSyncPending = false;
+    updateExamButtons();
+    return;
+  }
+  statusSyncPending = true;
+  const payload = { action: "status" };
+  wsDebug("sending auto status refresh", payload);
+  examSocket.send(JSON.stringify(payload));
+  updateExamButtons();
+}
+
+function showLoadingSelectedTaskState() {
+  backendNextAction = null;
+  taskStarted = false;
+  backendTaskStatus = "NOT_STARTED";
+  statusSyncPending = true;
+  setCurrentPhaseState("ready");
+  writeMarkdown("Restoring task state...", questionOutput);
+  markOutput.textContent = "0";
+  examScoreOutput.textContent = "-";
+  phaseOutput.textContent = "Phase: Loading...";
+  setNextStep("Restoring task state from the server...");
+  updateExamButtons();
+  updateStateMachineUI();
+}
+
 function saveState(partial = {}) {
   const current = loadState();
   const next = { ...current, ...partial };
@@ -483,7 +553,7 @@ function setExamReady(isReady) {
 
 function switchTab(tabName) {
   if (tabName === "exam" && !examTabUnlocked) {
-    setNextStep("Verify Code in Setup first.");
+    setNextStep("Complete Step 1: Submit Kubernetes Login first.");
     return;
   }
   const setupActive = tabName === "setup";
@@ -493,16 +563,24 @@ function switchTab(tabName) {
   tabExam.classList.toggle("active", !setupActive);
 }
 
-function updateTaskOptions(tasks) {
+function updateTaskOptions(tasks, preferredTask = "") {
   if (!Array.isArray(tasks)) return;
+  examHasRemainingTasks = tasks.length > 0;
   const taskSelect = document.getElementById("task");
+  const previousValue = preferredTask || taskSelect.value;
   taskSelect.innerHTML = "";
 
   if (tasks.length === 0) {
     const empty = document.createElement("option");
     empty.value = "";
-    empty.textContent = "No tasks allowed";
+    empty.textContent = "No remaining tasks";
     taskSelect.appendChild(empty);
+    taskSelect.value = "";
+    saveState({ allowedTasks: tasks, task: "" });
+    if (previousValue !== taskSelect.value) {
+      closeExamSocket();
+      setConnectionStatus("Disconnected");
+    }
     return;
   }
 
@@ -513,7 +591,16 @@ function updateTaskOptions(tasks) {
     taskSelect.appendChild(option);
   });
 
+  if (previousValue && tasks.includes(previousValue)) {
+    taskSelect.value = previousValue;
+  } else {
+    taskSelect.value = tasks[0];
+  }
+
   saveState({ allowedTasks: tasks, task: taskSelect.value });
+  if (previousValue !== taskSelect.value && examTabUnlocked) {
+    connectExamSocket();
+  }
 }
 
 function setGameValue(game) {
@@ -526,7 +613,52 @@ function setNextStep(message) {
   nextStepOutput.innerHTML = `<strong>Next step:</strong> ${message}`;
 }
 
+function renderExamCompletionReport(data = {}) {
+  const taskSummaries = Array.isArray(data.task_summaries) ? data.task_summaries : [];
+  const finishedTasks = Array.isArray(data.finished_tasks) ? data.finished_tasks : [];
+  const examScore = typeof data.exam_score !== "undefined" ? data.exam_score : examScoreOutput.textContent;
+
+  const lines = [
+    "# Exam completed",
+    "",
+    `- Final exam score: **${examScore}**`,
+    `- Finished tasks: **${finishedTasks.length} / ${taskSummaries.length || finishedTasks.length}**`,
+  ];
+
+  if (taskSummaries.length > 0) {
+    lines.push("", "| Task | Status | Score |", "| --- | --- | ---: |");
+    taskSummaries.forEach((task) => {
+      lines.push(
+        `| ${task.task_id || "-"} | ${task.status || "-"} | ${typeof task.total_points !== "undefined" ? task.total_points : "-"} |`
+      );
+    });
+  }
+
+  return lines.join("\n");
+}
+
+function showExamCompletionReport(data = {}) {
+  examHasRemainingTasks = false;
+  taskStarted = false;
+  statusSyncPending = false;
+  backendTaskStatus = "COMPLETED";
+  backendNextAction = null;
+  setCurrentPhaseState("cleanup");
+  writeMarkdown(renderExamCompletionReport(data), questionOutput);
+  markOutput.textContent = "-";
+  if (typeof data.exam_score !== "undefined") {
+    examScoreOutput.textContent = String(data.exam_score);
+  }
+  phaseOutput.textContent = "Phase: Exam completed";
+  setNextStep("Exam completed. Review the report below.");
+  updateExamButtons();
+  updateStateMachineUI();
+}
+
 function setActionLock(button, locked, reason = "") {
+  if (!button) {
+    return;
+  }
   const baseLabel = button.dataset.baseLabel || button.textContent.trim();
   button.disabled = locked;
   button.classList.toggle("locked", locked);
@@ -535,6 +667,9 @@ function setActionLock(button, locked, reason = "") {
 }
 
 function setActionVisible(button, visible) {
+  if (!button) {
+    return;
+  }
   button.classList.toggle("hidden", !visible);
 }
 
@@ -545,7 +680,7 @@ function updateExamButtons() {
   updateStateMachineUI();
   if (examScope.classList.contains("hidden")) {
     examActionButtons.forEach((btn) => {
-      setActionLock(btn, true, "Verify Code first.");
+      setActionLock(btn, true, "Complete Step 1: Submit Kubernetes Login first.");
       setActionVisible(btn, false);
     });
     return;
@@ -555,28 +690,34 @@ function updateExamButtons() {
   const startBtn = document.querySelector('button[data-action="start"]');
   const resetBtn = document.querySelector('button[data-action="reset"]');
   const runBtn = document.querySelector('button[data-action="run"]');
-  const statusBtn = document.querySelector('button[data-action="status"]');
   const recordsBtn = document.querySelector('button[data-action="records"]');
 
   const disconnected = !examSocketReady;
   const completed = backendTaskStatus === "COMPLETED";
   const abandoned = backendTaskStatus === "ABANDONED";
   const started = taskStarted && !completed && !abandoned;
+  const restoring = statusSyncPending;
 
-  setActionVisible(reconnectBtn, disconnected && !examScope.classList.contains("hidden"));
-  setActionVisible(startBtn, !taskStarted);
-  setActionVisible(resetBtn, taskStarted && !completed);
-  setActionVisible(runBtn, taskStarted && !completed && !abandoned);
-  setActionVisible(statusBtn, taskStarted || completed || abandoned);
-  setActionVisible(recordsBtn, taskStarted || completed || abandoned);
+  setActionVisible(reconnectBtn, examHasRemainingTasks && disconnected && !examScope.classList.contains("hidden"));
+  setActionVisible(startBtn, examHasRemainingTasks && !taskStarted);
+  setActionVisible(resetBtn, examHasRemainingTasks && taskStarted && !completed);
+  setActionVisible(runBtn, examHasRemainingTasks && taskStarted && !completed && !abandoned);
+  setActionVisible(recordsBtn, examHasRemainingTasks && (taskStarted || completed || abandoned));
 
   setActionLock(reconnectBtn, false);
-  setActionLock(startBtn, !examSocketReady || taskStarted, !examSocketReady ? "Wait until the exam session is connected." : "Task already started.");
-  setActionLock(resetBtn, !examSocketReady || !taskStarted || completed, !examSocketReady ? "Wait until the exam session is connected." : "Start the task first.");
-  setActionLock(runBtn, !examSocketReady || !started || runInFlight, !examSocketReady ? "Wait until the exam session is connected." : runInFlight ? "Run is processing. Wait for result." : "Start the task first.");
-  setActionLock(statusBtn, !examSocketReady || !taskStarted, !examSocketReady ? "Wait until the exam session is connected." : "Start the task first.");
-  setActionLock(recordsBtn, !taskStarted && !completed && !abandoned, "Start the task first.");
+  setActionLock(startBtn, restoring || !examSocketReady || taskStarted, restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Task already started.");
+  setActionLock(resetBtn, restoring || !examSocketReady || !taskStarted || completed, restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Start the task first.");
+  setActionLock(runBtn, restoring || !examSocketReady || !started || runInFlight, restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : runInFlight ? "Run is processing. Wait for result." : "Start the task first.");
+  setActionLock(recordsBtn, restoring || (!taskStarted && !completed && !abandoned), restoring ? "Restoring task state from the server." : "Start the task first.");
 
+  if (!examHasRemainingTasks) {
+    setNextStep("Exam completed. Review the report below.");
+    return;
+  }
+  if (restoring) {
+    setNextStep("Restoring task state from the server...");
+    return;
+  }
   if (!taskStarted) {
     setNextStep(examSocketReady ? "Click Start to begin the task." : "Connect the exam session first.");
     return;
@@ -636,6 +777,18 @@ function updateExamSummary(json, action) {
   } else if (typeof json.points !== "undefined") {
     markOutput.textContent = String(json.points);
   }
+  if (typeof json.exam_score !== "undefined") {
+    examScoreOutput.textContent = String(json.exam_score);
+  }
+
+  if (Array.isArray(json.remaining_tasks)) {
+    const selectedTask = document.getElementById("task").value;
+    updateTaskOptions(json.remaining_tasks, selectedTask);
+    if (json.remaining_tasks.length === 0) {
+      showExamCompletionReport(json);
+      return;
+    }
+  }
 
   if (action === "records" && Array.isArray(json.records)) {
     phaseOutput.textContent = `Records: ${json.records.length}`;
@@ -686,6 +839,9 @@ function updateExamSummary(json, action) {
 function showResponse(text, target = output, action = "") {
   try {
     const json = JSON.parse(text);
+    if (action === "status") {
+      statusSyncPending = false;
+    }
     backendNextAction = json && json.next_action ? json.next_action : null;
     if (action === "save-account") {
       k8sAccountReady = json.status === "OK";
@@ -700,7 +856,7 @@ function showResponse(text, target = output, action = "") {
       if (json.game) {
         setGameValue(json.game);
       }
-      updateTaskOptions(json.allowed_tasks);
+      updateTaskOptions(Array.isArray(json.remaining_tasks) ? json.remaining_tasks : json.allowed_tasks, document.getElementById("task").value);
       setExamReady(true);
       setExamTabEnabled(true);
       switchTab("exam");
@@ -708,32 +864,48 @@ function showResponse(text, target = output, action = "") {
         examCode: document.getElementById("examCode").value.trim(),
         game: json.game || "",
         allowedTasks: Array.isArray(json.allowed_tasks) ? json.allowed_tasks : [],
+        remainingTasks: Array.isArray(json.remaining_tasks) ? json.remaining_tasks : [],
         task: document.getElementById("task").value,
         websocketUrl: json.websocket_url || "",
         examReady: true,
       });
+      markOutput.textContent = "0";
+      if (typeof json.exam_score !== "undefined") {
+        examScoreOutput.textContent = String(json.exam_score);
+      } else {
+        examScoreOutput.textContent = "0";
+      }
       if (json.websocket_url) {
         examSocketBaseUrl = json.websocket_url;
       }
       examFlowState = "ready_to_start";
       examSocketReady = false;
       taskStarted = false;
+      statusSyncPending = false;
       backendNextAction = null;
       setCurrentPhaseState("ready");
       updateExamButtons();
       backendTaskStatus = "NOT_STARTED";
       updateStateMachineUI();
-      connectExamSocket();
+      if (Array.isArray(json.remaining_tasks) && json.remaining_tasks.length === 0) {
+        showExamCompletionReport(json);
+      } else {
+        connectExamSocket();
+      }
     } else if (json && action === "verify" && json.status === "ERROR") {
       setExamReady(false);
       setExamTabEnabled(false);
       saveState({ examReady: false });
+      statusSyncPending = false;
+      markOutput.textContent = "0";
+      examScoreOutput.textContent = "0";
       closeExamSocket();
     }
 
     if (json && action === "start") {
       runInFlight = false;
       taskStarted = true;
+      statusSyncPending = false;
       if (json.status === "STARTED" || json.status === "OK") {
         examFlowState = "started";
         backendTaskStatus = "IN_PROGRESS";
@@ -760,16 +932,15 @@ function showResponse(text, target = output, action = "") {
 
     if (json && action === "reset") {
       runInFlight = false;
-      taskStarted = true;
-      if (json.status === "STARTED" || json.status === "OK") {
-        examFlowState = "started";
-        backendTaskStatus = "IN_PROGRESS";
-        if (json.current_phase || json.phase_name) {
-          setCurrentPhaseState(json.phase_name || json.current_phase);
-        } else {
-          setCurrentPhaseState("challenge");
-        }
-      }
+      taskStarted = false;
+      statusSyncPending = false;
+      examFlowState = "ready_to_start";
+      backendTaskStatus = "NOT_STARTED";
+      backendNextAction = null;
+      setCurrentPhaseState("ready");
+      phaseOutput.textContent = "Phase: -";
+      markOutput.textContent = "0";
+      examScoreOutput.textContent = "0";
       if (json.message) {
         writeMarkdown(json.message, questionOutput);
       }
@@ -786,6 +957,7 @@ function showResponse(text, target = output, action = "") {
         stopRunResponseWatchdog();
       }
       taskStarted = true;
+      statusSyncPending = false;
       if (json.status === "COMPLETED") {
         examFlowState = "completed";
         backendTaskStatus = "COMPLETED";
@@ -845,7 +1017,7 @@ async function callApi(action) {
     }
 
     setBusy(true);
-    write("Saving K8s account ...", setupOutput);
+    write("Submitting Kubernetes login ...", setupOutput);
     try {
       const res = await fetch(`${BASE_URL}/save-k8s-account`, {
         method: "POST",
@@ -948,6 +1120,7 @@ document.getElementById("endpoint").addEventListener("input", (e) => {
 document.getElementById("examCode").addEventListener("input", (e) => saveState({ examCode: e.target.value }));
 document.getElementById("task").addEventListener("change", (e) => {
   saveState({ task: e.target.value });
+  showLoadingSelectedTaskState();
   connectExamSocket();
 });
 resetStateButton.addEventListener("click", () => {
@@ -967,6 +1140,7 @@ resetStateButton.addEventListener("click", () => {
   document.getElementById("task").innerHTML = "";
   writeMarkdown("Press Start to load the question.", questionOutput);
   markOutput.textContent = "0";
+  examScoreOutput.textContent = "0";
   phaseOutput.textContent = "Phase: -";
   setConnectionStatus("Disconnected");
   examFlowState = "unverified";
@@ -1016,8 +1190,9 @@ if (restored.examReady) {
   examSocketReady = false;
   setConnectionStatus("Disconnected");
   setExamTabEnabled(true);
-  setCurrentPhaseState("ready");
-  updateExamButtons();
+  if (document.getElementById("task").value) {
+    showLoadingSelectedTaskState();
+  }
   connectExamSocket();
 }
 updateStateMachineUI();

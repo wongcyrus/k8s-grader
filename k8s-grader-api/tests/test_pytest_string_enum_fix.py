@@ -15,10 +15,10 @@ class TestStringEnumConversion:
     """Test that run_tests handles both string and enum inputs"""
     
     @patch('common.pytest.get_tests')
-    @patch('common.pytest.pytest.main')
-    def test_run_tests_with_string_phase(self, mock_pytest_main, mock_get_tests):
+    @patch('common.pytest.subprocess.run')
+    def test_run_tests_with_string_phase(self, mock_subprocess_run, mock_get_tests):
         """Test run_tests accepts string phase ID"""
-        mock_pytest_main.return_value = 0
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
         mock_get_tests.return_value = None
         
         # Pass string instead of enum (this is what test_runner.py does)
@@ -26,42 +26,48 @@ class TestStringEnumConversion:
         
         # Should convert string to enum and work correctly
         assert result == TestResult.OK
-        assert mock_pytest_main.called
+        assert mock_subprocess_run.called
     
     @patch('common.pytest.get_tests')
-    @patch('common.pytest.pytest.main')
-    def test_run_tests_with_enum_phase(self, mock_pytest_main, mock_get_tests):
+    @patch('common.pytest.subprocess.run')
+    def test_run_tests_with_enum_phase(self, mock_subprocess_run, mock_get_tests):
         """Test run_tests still accepts enum phase"""
-        mock_pytest_main.return_value = 0
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
         mock_get_tests.return_value = None
         
         # Pass enum (backward compatibility)
         result = run_tests(GamePhrase.CHECK, 'game01', '01_default_namespace')
         
         assert result == TestResult.OK
-        assert mock_pytest_main.called
+        assert mock_subprocess_run.called
     
     @patch('common.pytest.get_tests')
-    def test_run_tests_with_string_answer_phase(self, mock_get_tests):
-        """Test answer phase skip works with string input"""
+    @patch('common.pytest.subprocess.run')
+    def test_run_tests_with_string_answer_phase(self, mock_subprocess_run, mock_get_tests):
+        """Test answer phase runs with string input"""
         mock_get_tests.return_value = None
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
         
         # Pass 'answer' as string
         result = run_tests('answer', 'game01', '02_create_namespace')
         
-        # Should skip and return NO_TESTS_COLLECTED
-        assert result == TestResult.NO_TESTS_COLLECTED
+        assert result == TestResult.OK
+        call_args = mock_subprocess_run.call_args[0][0]
+        assert 'test_03_answer.py' in call_args[-1]
     
     @patch('common.pytest.get_tests')
-    def test_run_tests_with_enum_answer_phase(self, mock_get_tests):
-        """Test answer phase skip works with enum input"""
+    @patch('common.pytest.subprocess.run')
+    def test_run_tests_with_enum_answer_phase(self, mock_subprocess_run, mock_get_tests):
+        """Test answer phase runs with enum input"""
         mock_get_tests.return_value = None
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
         
         # Pass GamePhrase.ANSWER enum
         result = run_tests(GamePhrase.ANSWER, 'game01', '02_create_namespace')
         
-        # Should skip and return NO_TESTS_COLLECTED
-        assert result == TestResult.NO_TESTS_COLLECTED
+        assert result == TestResult.OK
+        call_args = mock_subprocess_run.call_args[0][0]
+        assert 'test_03_answer.py' in call_args[-1]
     
     @patch('common.pytest.get_tests')
     def test_run_tests_with_invalid_string(self, mock_get_tests):
@@ -98,6 +104,17 @@ class TestStringEnumConversion:
         result = get_next_game_phrase('game01', '01_default_namespace', GamePhrase.SETUP)
         
         assert result == GamePhrase.READY
+
+    @patch('common.pytest.get_tests')
+    @patch('common.pytest.os.path.exists')
+    def test_get_next_game_phrase_from_ready_prefers_answer(self, mock_exists, mock_get_tests):
+        """Test next phase after ready is answer when the answer test exists"""
+        mock_get_tests.return_value = None
+        mock_exists.return_value = True
+
+        result = get_next_game_phrase('game01', '02_create_namespace', 'ready')
+
+        assert result == GamePhrase.ANSWER
     
     @patch('common.pytest.get_tests')
     def test_get_next_game_phrase_with_invalid_string(self, mock_get_tests):
@@ -115,15 +132,15 @@ class TestRealWorldScenario:
     """Test the actual scenario from test_runner.py"""
     
     @patch('common.pytest.get_tests')
-    @patch('common.pytest.pytest.main')
-    def test_test_runner_scenario(self, mock_pytest_main, mock_get_tests):
+    @patch('common.pytest.subprocess.run')
+    def test_test_runner_scenario(self, mock_subprocess_run, mock_get_tests):
         """
         Simulate what test_runner.py does:
         - PhaseConfig.id is a string ('check', 'cleanup', etc.)
         - test_runner passes phase.id to run_tests()
         - run_tests must handle the string
         """
-        mock_pytest_main.return_value = 0
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
         mock_get_tests.return_value = None
         
         # Simulate PhaseConfig with string id
@@ -134,8 +151,21 @@ class TestRealWorldScenario:
         
         # Should work without KeyError
         assert result == TestResult.OK
-        assert mock_pytest_main.called
+        assert mock_subprocess_run.called
         
         # Verify the correct test file path was used
-        call_args = mock_pytest_main.call_args[0][0]
+        call_args = mock_subprocess_run.call_args[0][0]
         assert 'test_05_check.py' in call_args[-1]
+
+    @patch('common.pytest.get_tests')
+    @patch('common.pytest.subprocess.run')
+    def test_run_tests_passes_pythonpath_to_subprocess(self, mock_subprocess_run, mock_get_tests):
+        mock_subprocess_run.return_value = MagicMock(returncode=0)
+        mock_get_tests.return_value = None
+
+        run_tests('check', 'game01', '02_create_namespace')
+
+        kwargs = mock_subprocess_run.call_args.kwargs
+        assert 'env' in kwargs
+        assert 'PYTHONPATH' in kwargs['env']
+        assert kwargs['env']['PYTHONPATH']

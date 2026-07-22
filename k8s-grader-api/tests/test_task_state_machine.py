@@ -150,6 +150,24 @@ class TestTaskStateMachine:
         # Complete check (50 points)
         sm.execute_phase("check", TestResult.OK, "https://report3.url")
         assert in_progress_task_state.total_points == 150
+
+    def test_exam_mode_awards_points_only_for_check(self, exam_manifest, exam_task_state):
+        """Test exam mode only earns marks when check passes"""
+        exam_task_state.status = TaskStatus.IN_PROGRESS
+        exam_task_state.current_phase_id = "setup"
+        sm = TaskStateMachine(exam_manifest, exam_task_state)
+
+        sm.execute_phase("setup", TestResult.OK, "https://report1.url")
+        assert exam_task_state.total_points == 0
+        assert exam_task_state.get_phase_state("setup").points_earned == 0
+
+        sm.execute_phase("challenge", TestResult.OK, "https://report2.url")
+        assert exam_task_state.total_points == 0
+        assert exam_task_state.get_phase_state("challenge").points_earned == 0
+
+        sm.execute_phase("check", TestResult.OK, "https://report3.url")
+        assert exam_task_state.total_points == 100
+        assert exam_task_state.get_phase_state("check").points_earned == 100
     
     def test_can_complete_task_not_ready(self, sample_manifest, in_progress_task_state):
         """Test checking if task can be completed - not ready"""

@@ -264,16 +264,35 @@ python scripts/reset_task_stage.py \
 python scripts/reset_task_stage.py ... --apply
 ```
 
+- Reset every saved task for one game:
+
+```bash
+# Dry run
+python scripts/reset_task_stage.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --email student@example.com \
+  --game game02 \
+  --all-tasks \
+  --phase-id setup \
+  --clear-all-phases
+
+# Apply
+python scripts/reset_task_stage.py ... --apply
+```
+
 - Resets `status` to `in_progress`
 - Sets `current_phase_id` to `--phase-id`
 - Clears target/later standard phase states (`setup→ready→answer→challenge→check→cleanup`)
 - Recomputes `total_points` from remaining passed phases
+- Regenerates `session_data` with the same deterministic per-student generator used by the Lambda runtime, so reset values match the real exam/session flow
 
 ---
 
 ## Student Reset Logic (Exam UI)
 
 - Student reset requires explicit confirmation in UI.
+- Student reset deletes the current task state and returns the UI to a **click Start again** state.
 - Reset is allowed only when task status is:
   - `in_progress`
   - `abandoned`

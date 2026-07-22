@@ -2,7 +2,8 @@ import json
 import logging
 import os
 import shutil
-import threading
+import subprocess
+import sys
 import urllib.request
 import zipfile
 from typing import Dict, List, Optional, Tuple
@@ -10,7 +11,6 @@ from urllib.parse import urlparse
 
 import boto3
 from botocore.exceptions import ClientError
-import pytest
 from common.database import get_game_source
 from common.status import GamePhrase, TestResult
 from jinja2 import Environment
@@ -31,6 +31,7 @@ MAPPING = {
 GAME_PHRASE_ORDER = [
     GamePhrase.SETUP,
     GamePhrase.READY,
+    GamePhrase.ANSWER,
     GamePhrase.CHALLENGE,
     GamePhrase.CHECK,
     GamePhrase.CLEANUP,
@@ -45,13 +46,26 @@ def get_test_base_path(game: str) -> str:
     return f"/tmp/{game}/tests"
 
 
+def build_pytest_env() -> Dict[str, str]:
+    env = os.environ.copy()
+    python_paths: List[str] = []
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    if existing_pythonpath:
+        python_paths.extend([path for path in existing_pythonpath.split(os.pathsep) if path])
+
+    for path in sys.path:
+        if path and path not in python_paths:
+            python_paths.append(path)
+
+    if python_paths:
+        env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    return env
+
+
 def run_tests(test_phase, game: str, task: str, timeout: int = None) -> TestResult:
     """
     Run pytest tests for a specific phase.
-    
-    CRITICAL: Answer phase is SKIPPED in production.
-    The answer phase auto-deploys solutions and is ONLY for development/testing.
-    
+
     Args:
         test_phase: Either a GamePhrase enum or a string ('setup', 'check', etc.)
         game: Game identifier
@@ -65,40 +79,36 @@ def run_tests(test_phase, game: str, task: str, timeout: int = None) -> TestResu
         except ValueError:
             logger.error(f"Invalid test phase: {test_phase}")
             return TestResult.USAGE_ERROR
-    
-    # ============================================================
-    # SKIP ANSWER PHASE - Never run in production
-    # ============================================================
-    if test_phase == GamePhrase.ANSWER:
-        logger.info(f"Skipping answer phase for {game}/{task} - answer phase is for development only")
-        return TestResult.NO_TESTS_COLLECTED
-    # ============================================================
-    
-    get_tests(game)
-    retcode = TestResult.OK.value
-    result_container = [retcode]
 
-    def run_pytest():
-        result_container[0] = pytest.main(
+    timeout_seconds = timeout if timeout is not None else PYTEST_TIMEOUT_SECONDS
+    get_tests(game)
+    env = build_pytest_env()
+
+    try:
+        completed = subprocess.run(
             [
+                sys.executable,
+                "-m",
+                "pytest",
                 f"--rootdir={get_root_path(game)}",
                 "--import-mode=importlib",
                 "--html=/tmp/report.html",
                 "--self-contained-html",
                 "-x",
                 f"{get_test_base_path(game)}/{game}/{task}/test_{MAPPING[test_phase]}.py",
-            ]
+            ],
+            env=env,
+            timeout=timeout_seconds,
+            check=False,
         )
-
-    thread = threading.Thread(target=run_pytest)
-    thread.start()
-    # Use provided timeout or fall back to default
-    timeout_seconds = timeout if timeout is not None else PYTEST_TIMEOUT_SECONDS
-    thread.join(timeout=timeout_seconds)
-
-    if thread.is_alive():
+    except subprocess.TimeoutExpired:
         return TestResult.TIME_OUT
-    return TestResult(result_container[0])
+
+    try:
+        return TestResult(completed.returncode)
+    except ValueError:
+        logger.error(f"Unexpected pytest exit code: {completed.returncode}")
+        return TestResult.INTERNAL_ERROR
 
 
 def get_archive_root(archive_path: str) -> str:

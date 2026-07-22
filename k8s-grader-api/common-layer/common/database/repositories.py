@@ -624,14 +624,22 @@ class TestRecordRepository:
             logger.error(f"Failed to save test record: {e}")
             return False
 
-    def list_by_email(self, email: str, exam_code: Optional[str] = None) -> List[Dict[str, Any]]:
-        """List test records for a user, optionally filtered by exam code"""
+    def list_by_email(self, email: str, exam_code: Optional[str] = None, task_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List test records for a user, optionally filtered by exam code and task"""
         try:
             kwargs = {
                 'KeyConditionExpression': Key('email').eq(email)
             }
+            filters = []
             if exam_code:
-                kwargs['FilterExpression'] = Attr('examCode').eq(exam_code)
+                filters.append(Attr('examCode').eq(exam_code))
+            if task_id:
+                filters.append(Attr('task').eq(task_id))
+            if filters:
+                filter_expression = filters[0]
+                for extra_filter in filters[1:]:
+                    filter_expression = filter_expression & extra_filter
+                kwargs['FilterExpression'] = filter_expression
             response = self.table.query(**kwargs)
             return response.get('Items', [])
         except Exception as e:

@@ -227,34 +227,16 @@ pre {
   font-size: 0.95rem;
 }
 
-.state-machine {
-  display: grid;
+.summary-line {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 12px;
+  align-items: center;
+  margin: 0 0 12px;
 }
 
-.state-step {
-  border: 1px solid #314062;
-  border-radius: 6px;
-  background: #0a1120;
-  padding: 10px 12px;
-  color: #b7c4dc;
-  display: grid;
-  gap: 4px;
-}
-
-.state-step strong {
-  color: #e7ecf3;
-}
-
-.state-step.active {
-  border-color: #74a4ff;
-  background: #1b2f5e;
-  color: #fff;
-}
-
-.state-step.active strong {
-  color: #fff;
+.summary-separator {
+  color: #6d7891;
 }
 
 .state-badge {

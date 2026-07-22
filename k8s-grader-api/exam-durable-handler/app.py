@@ -25,7 +25,8 @@ from common.status import TestResult
 logging.setLogRecordFactory(logging.LogRecord)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-DURABLE_HANDLER_REVISION = "2026-07-22-5"
+DURABLE_HANDLER_REVISION = "2026-07-22-7"
+AUTO_CHAIN_EXAM_PHASES = {"setup": "ready"}
 
 setup_paths()
 
@@ -140,6 +141,25 @@ def broadcast_exam_response(email: str, exam_code: str, game: Optional[str], tas
     broadcast_exam_update(email, exam_code, game, task_id, source_action, payload)
 
 
+def with_exam_overview(response: Dict[str, Any], email: str, exam_code: str, game: Optional[str]) -> Dict[str, Any]:
+    if not game:
+        return response
+    body = response.get("body")
+    if not isinstance(body, str):
+        return response
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return response
+    exam_service = get_exam_service()
+    session = exam_service.exam_session_repo.get(email, exam_code) or {}
+    allowed_tasks = payload.get("allowed_tasks") or session.get("allowedTasks", [])
+    overview = exam_service.get_exam_overview(email, game, allowed_tasks)
+    payload.update(overview)
+    response["body"] = json.dumps(payload, cls=DecimalEncoder)
+    return response
+
+
 def task_started_response(state, manifest) -> Dict[str, Any]:
     current_phase = manifest.get_phase(state.current_phase_id)
     phase_message = current_phase.description if current_phase else "Task started!"
@@ -163,6 +183,116 @@ def task_started_response(state, manifest) -> Dict[str, Any]:
             cls=DecimalEncoder,
         ),
     }
+
+
+def should_auto_chain_exam_phase(phase_id: Optional[str], next_phase_id: Optional[str]) -> bool:
+    if not phase_id or not next_phase_id:
+        return False
+    return AUTO_CHAIN_EXAM_PHASES.get(phase_id) == next_phase_id
+
+
+def cleanup_triggered_for_manifest(manifest) -> bool:
+    cleanup_phase = manifest.get_phase("cleanup") if manifest else None
+    return bool(cleanup_phase and cleanup_phase.auto_run)
+
+
+def advance_exam_answer_phase(state, manifest, task_repo) -> bool:
+    if not state or state.current_phase_id != "answer":
+        return False
+
+    next_phase = manifest.get_next_phase("answer") if manifest else None
+    phase_state = state.get_or_create_phase_state("answer")
+    phase_status = getattr(phase_state.status, "value", phase_state.status)
+    if phase_status != "passed":
+        phase_state.mark_passed("", 0)
+    state.current_phase_id = next_phase.id if next_phase else None
+    task_repo.save(state)
+    logger.info(
+        "Advanced exam answer phase for %s/%s to %s without running test_03_answer.py",
+        state.game,
+        state.task_id,
+        state.current_phase_id,
+    )
+    return True
+
+
+def append_exam_phase_execution(executed_phases, phase_id, manifest, result) -> None:
+    phase = manifest.get_phase(phase_id) if manifest and phase_id else None
+    test_result = result.get("test_result")
+    executed_phases.append(
+        {
+            "phase_id": phase_id,
+            "phase_name": phase.name if phase else phase_id or "",
+            "success": bool(result.get("success")),
+            "test_result": test_result.name if test_result else "UNKNOWN",
+            "report_url": result.get("report_url", ""),
+        }
+    )
+
+
+def save_exam_test_record(email: str, exam_code: str, game: str, task_id: str, phase_id: str, result: Dict[str, Any]) -> None:
+    test_result = result.get("test_result")
+    if not test_result:
+        return
+
+    from common.database.repositories import TestRecordRepository
+
+    test_record_repo = TestRecordRepository()
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    report_url = result.get("report_url", "")
+    bucket = os.getenv("TestResultBucket", "") if report_url else ""
+    key = f"{game}/{email}/{task_id}/test_report_{phase_id}_{now_str}.html" if bucket and report_url else ""
+    test_record_repo.save(
+        email=email,
+        game=game,
+        current_task=task_id,
+        game_phase=phase_id or "unknown",
+        test_result=test_result.name,
+        bucket=bucket,
+        key=key,
+        report_url=report_url,
+        now_str=now_str,
+        exam_code=exam_code,
+        mode="exam",
+    )
+
+
+def _phase_execution_message(executed_phase: Dict[str, Any]) -> str:
+    phase_label = executed_phase.get("phase_name") or executed_phase.get("phase_id") or "Phase"
+    test_result = executed_phase.get("test_result", "UNKNOWN")
+    if executed_phase.get("success"):
+        if test_result == "NO_TESTS_COLLECTED":
+            return f"{phase_label} skipped."
+        return f"{phase_label} passed."
+    return f"{phase_label} failed ({test_result})."
+
+
+def attach_exam_run_details(response: Dict[str, Any], executed_phases, cleanup_triggered: bool = False) -> Dict[str, Any]:
+    body = response.get("body")
+    if not isinstance(body, str):
+        return response
+
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return response
+
+    if executed_phases:
+        payload["executed_phases"] = executed_phases
+
+    if cleanup_triggered:
+        payload["cleanup_triggered"] = True
+
+    summary_lines = [_phase_execution_message(phase) for phase in executed_phases]
+    if cleanup_triggered:
+        summary_lines.append("Cleanup ran automatically.")
+    summary = "\n".join(summary_lines).strip()
+    if summary:
+        message = payload.get("message", "").strip()
+        payload["message"] = f"{summary}\n\n{message}".strip() if message else summary
+
+    response["body"] = json.dumps(payload, cls=DecimalEncoder)
+    return response
 
 
 def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
@@ -206,13 +336,14 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
 
 
 def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
-    phase_state = state.get_phase_state(state.current_phase_id)
-    current_phase = manifest.get_phase(state.current_phase_id)
+    updated_state = result.get("state") or state
+    phase_state = updated_state.get_phase_state(updated_state.current_phase_id)
+    current_phase = manifest.get_phase(updated_state.current_phase_id)
     phase_message = current_phase.description if current_phase else "Tests failed. Check the report."
-    phase_message = render_template(phase_message, state.session_data)
+    phase_message = render_template(phase_message, updated_state.session_data)
     manifest_description = getattr(manifest, "description", None)
     task_description_src = manifest_description if isinstance(manifest_description, str) and manifest_description else phase_message
-    task_description = render_template(task_description_src, state.session_data)
+    task_description = render_template(task_description_src, updated_state.session_data)
     test_result = result.get("test_result", TestResult.TESTS_FAILED)
     easter_egg = get_easter_egg_link(test_result)
 
@@ -222,9 +353,9 @@ def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
         "body": json.dumps(
             {
                 "status": "FAILED",
-                "current_phase": state.current_phase_id,
+                "current_phase": updated_state.current_phase_id,
                 "phase_name": current_phase.name if current_phase else "",
-                "next_phase": state.current_phase_id,
+                "next_phase": updated_state.current_phase_id,
                 "message": phase_message,
                 "task_description": task_description,
                 "report_url": result.get("report_url", ""),
@@ -320,6 +451,7 @@ def handle_exam_start(email: str, exam_code: str, game: Optional[str], task_id: 
         response = task_completed_response({"state": state}, state.get_phase_state(state.current_phase_id).report_url if state.current_phase_id else "")
     else:
         response = task_started_response(state, manifest)
+    response = with_exam_overview(response, email, exam_code, game)
     broadcast_exam_response(email, exam_code, game, task_id, "start", response)
     return response
 
@@ -341,34 +473,24 @@ def handle_exam_reset(email: str, exam_code: str, game: Optional[str], task_id: 
     if existing.status not in (TaskStatus.IN_PROGRESS, TaskStatus.ABANDONED):
         return error_response(f"Reset is not allowed for status '{existing.status.value}'.")
 
-    user_data = get_user_data(email)
-    if not user_data:
-        return error_response("User account not found")
-
-    client_certificate, client_key, endpoint = extract_k8s_credentials(user_data)
-    if not all([client_certificate, client_key, endpoint]):
-        return error_response("K8s credentials missing or incomplete")
-
-    clear_tmp_directory()
-    write_user_files(client_certificate, client_key)
-
     exam_service.task_repo.delete(email, game, task_id)
-    state = exam_service.task_service.start_exam_task(email, game, task_id, exam_code)
-    state.session_data["$endpoint"] = endpoint
-    state.session_data["$client_certificate"] = client_certificate
-    state.session_data["$client_key"] = client_key
-    state.session_data["$email"] = email
-    state.session_data["$exam_code"] = exam_code
-    exam_service.task_repo.save(state)
-
-    manifest = TaskManifest.load(game, task_id)
-    response = task_started_response(state, manifest)
-    body = json.loads(response["body"])
-    body["message"] = (
-        f"{body.get('message', '')}\n\nTask was reset to phase 1 by student confirmation. "
-        "Attempt history remains in Records."
-    ).strip()
-    response["body"] = json.dumps(body, cls=DecimalEncoder)
+    response = {
+        "statusCode": 200,
+        "headers": cors_headers(),
+        "body": json.dumps(
+            {
+                "status": "RESET",
+                "task_id": task_id,
+                "current_phase": None,
+                "phase_name": "",
+                "message": "Task reset. Click Start to begin again. Attempt history remains in Records.",
+                "total_points": 0,
+                "progress": 0.0,
+            },
+            cls=DecimalEncoder,
+        ),
+    }
+    response = with_exam_overview(response, email, exam_code, game)
     broadcast_exam_response(email, exam_code, game, task_id, "reset", response)
     return response
 
@@ -387,6 +509,7 @@ def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Op
         return error_response("Task is not started. Click Start first.")
 
     manifest = TaskManifest.load(game, task_id)
+    advance_exam_answer_phase(state, manifest, exam_service.task_repo)
     from common.state_machine.task_state_machine import TaskStateMachine
 
     sm = TaskStateMachine(manifest, state)
@@ -395,12 +518,14 @@ def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Op
     if next_action["action"] == "complete_task":
         completion_result = get_task_service().complete_task(email, game, task_id, state)
         response = task_completed_response(completion_result, "")
+        response = with_exam_overview(response, email, exam_code, game)
         broadcast_exam_response(email, exam_code, game, task_id, "run", response)
         return response
 
     if next_action["action"] == "max_attempts_reached":
         abandon_result = get_task_service().abandon_task(email, game, task_id, f"Maximum attempts reached for phase '{next_action['phase_id']}'")
         response = task_abandoned_response(abandon_result, "")
+        response = with_exam_overview(response, email, exam_code, game)
         broadcast_exam_response(email, exam_code, game, task_id, "run", response)
         return response
 
@@ -426,64 +551,61 @@ def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Op
 
     if state.status == TaskStatus.COMPLETED:
         response = task_completed_response({"state": state}, state.get_phase_state(state.current_phase_id).report_url if state.current_phase_id else "")
+        response = with_exam_overview(response, email, exam_code, game)
         broadcast_exam_response(email, exam_code, game, task_id, "run", response)
         return response
 
+    executed_phases = []
     exam_service = get_exam_service()
-    result = exam_service.run_phase(email, exam_code, game, task_id)
 
-    if result.get("test_result"):
-        from common.database.repositories import TestRecordRepository
-
-        test_record_repo = TestRecordRepository()
-        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-        report_url = result.get("report_url", "")
-        bucket = os.getenv("TestResultBucket", "") if report_url else ""
-        key = f"{game}/{email}/{task_id}/test_report_{state.current_phase_id}_{now_str}.html" if bucket and report_url else ""
-        test_record_repo.save(
-            email=email,
-            game=game,
-            current_task=task_id,
-            game_phase=state.current_phase_id or "unknown",
-            test_result=result["test_result"].name,
-            bucket=bucket,
-            key=key,
-            report_url=report_url,
-            now_str=now_str,
-            exam_code=exam_code,
-            mode="exam",
-        )
-
-    if not result["success"]:
-        from common.state_machine.task_state_machine import TaskStateMachine
-
+    while True:
+        executed_phase_id = state.current_phase_id
+        result = exam_service.run_phase(email, exam_code, game, task_id)
         manifest = result["manifest"] or manifest
-        sm = TaskStateMachine(manifest, result["state"])
-        next_action = sm.get_next_action()
-        if next_action["action"] == "max_attempts_reached":
-            abandon_result = get_task_service().abandon_task(email, game, task_id, f"Maximum attempts reached for phase '{next_action['phase_id']}'")
-            response = task_abandoned_response(abandon_result, result.get("report_url", ""))
+        state = result["state"]
+
+        append_exam_phase_execution(executed_phases, executed_phase_id, manifest, result)
+        if executed_phase_id:
+            save_exam_test_record(email, exam_code, game, task_id, executed_phase_id, result)
+
+        if not result["success"]:
+            from common.state_machine.task_state_machine import TaskStateMachine
+
+            sm = TaskStateMachine(manifest, state)
+            next_action = sm.get_next_action()
+            if next_action["action"] == "max_attempts_reached":
+                abandon_result = get_task_service().abandon_task(email, game, task_id, f"Maximum attempts reached for phase '{next_action['phase_id']}'")
+                response = task_abandoned_response(abandon_result, result.get("report_url", ""))
+                response = attach_exam_run_details(response, executed_phases, cleanup_triggered=cleanup_triggered_for_manifest(manifest))
+                response = with_exam_overview(response, email, exam_code, game)
+                broadcast_exam_response(email, exam_code, game, task_id, "run", response)
+                return response
+            response = phase_failed_response(result, state, manifest)
+            response = attach_exam_run_details(response, executed_phases)
+            response = with_exam_overview(response, email, exam_code, game)
             broadcast_exam_response(email, exam_code, game, task_id, "run", response)
             return response
-        response = phase_failed_response(result, state, manifest)
+
+        from common.state_machine.task_state_machine import TaskStateMachine
+
+        sm = TaskStateMachine(manifest, state)
+        can_complete, _ = sm.can_complete_task()
+        if can_complete:
+            completion_result = get_task_service().complete_task(email, game, task_id, state)
+            response = task_completed_response(completion_result, result["report_url"])
+            response = attach_exam_run_details(response, executed_phases, cleanup_triggered=cleanup_triggered_for_manifest(manifest))
+            response = with_exam_overview(response, email, exam_code, game)
+            broadcast_exam_response(email, exam_code, game, task_id, "run", response)
+            return response
+
+        if should_auto_chain_exam_phase(executed_phase_id, state.current_phase_id):
+            continue
+
+        response = phase_passed_response(result, state, manifest)
+        response = attach_exam_run_details(response, executed_phases)
+        response = with_exam_overview(response, email, exam_code, game)
         broadcast_exam_response(email, exam_code, game, task_id, "run", response)
         return response
-
-    manifest = result["manifest"]
-    state = result["state"]
-    from common.state_machine.task_state_machine import TaskStateMachine
-
-    sm = TaskStateMachine(manifest, state)
-    can_complete, _ = sm.can_complete_task()
-    if can_complete:
-        completion_result = get_task_service().complete_task(email, game, task_id, state)
-        response = task_completed_response(completion_result, result["report_url"])
-        broadcast_exam_response(email, exam_code, game, task_id, "run", response)
-        return response
-
-    response = phase_passed_response(result, state, manifest)
-    broadcast_exam_response(email, exam_code, game, task_id, "run", response)
-    return response
 
 
 def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id: Optional[str]) -> Dict[str, Any]:
@@ -499,6 +621,13 @@ def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id:
             from common.state_machine.task_state_machine import TaskStateMachine
 
             next_action = TaskStateMachine(manifest, state).get_next_action()
+            if state.current_phase_id == "answer":
+                next_phase = manifest.get_next_phase("answer")
+                next_action = {
+                    "action": "execute_phase",
+                    "phase_id": next_phase.id if next_phase else None,
+                    "message": "Solve the task, then click Run to continue.",
+                }
             task_description = render_template(manifest.description or "", state.session_data)
         response = {
             "statusCode": 200,
@@ -515,6 +644,7 @@ def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id:
                 cls=DecimalEncoder,
             ),
         }
+        response = with_exam_overview(response, email, exam_code, game)
         broadcast_exam_response(email, exam_code, game, task_id, "status", response)
         return response
     except ValueError as err:
@@ -522,13 +652,14 @@ def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id:
 
 
 def handle_exam_records(email: str, exam_code: str, game: Optional[str], task_id: Optional[str]) -> Dict[str, Any]:
-    records = get_exam_service().list_records(email, exam_code)
+    records = get_exam_service().list_records(email, exam_code, task_id=task_id)
     response = {
         "statusCode": 200,
         "headers": cors_headers(),
         "body": json.dumps({"status": "OK", "records": records}, cls=DecimalEncoder),
     }
     if game and task_id:
+        response = with_exam_overview(response, email, exam_code, game)
         broadcast_exam_response(email, exam_code, game, task_id, "records", response)
     return response
 

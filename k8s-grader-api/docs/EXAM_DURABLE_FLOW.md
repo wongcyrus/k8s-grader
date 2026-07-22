@@ -36,6 +36,8 @@ It does **not** describe the normal non-exam `/task` flow in detail.
   - `run`
   - `status`
   - `records`
+- browser does **not** store task/question text in browser storage
+- on reconnect/refresh, browser restores exam context and auto-requests `status`
 
 ### `exam-ws-handler/app.py`
 
@@ -119,6 +121,12 @@ Stores actual task progress for the exam task:
 
 Stores phase execution records for exam history / records view.
 
+Current behavior:
+
+- records are saved per phase execution
+- the exam UI records view is filtered by the current `task_id`
+- auto-chained `setup -> ready` saves separate records for both phases when both execute in one `run`
+
 ### `AccountTable`
 
 Stores the student Kubernetes endpoint and client credentials used during `start`, `reset`, and `run`.
@@ -182,6 +190,7 @@ Snapshot result:
   - current task status
   - current phase
   - total points
+  - rendered task description
 
 This is why the UI can reconnect and still recover current status.
 
@@ -307,15 +316,15 @@ Detailed flow:
 5. reload K8s credentials
 6. clear `/tmp`
 7. delete existing task state
-8. recreate exam task from scratch
-9. restore session runtime data
-10. return `STARTED` response with an extra reset note
-11. broadcast to WebSocket subscribers
+8. return `RESET` response telling the student to click **Start**
+9. broadcast to WebSocket subscribers
 
 Important behavior:
 
 - reset clears current state
 - records history remains in `TestRecordTable`
+- reset does **not** auto-start the task again
+- the next **Start** recreates the state with deterministic per-student `session_data`
 
 ## 7.3 `run`
 
@@ -351,17 +360,33 @@ Possible branches:
 4. update runtime session data
 5. save state
 6. run phase via `ExamService.run_phase(...)`
-7. if there is a test result:
-   - save a record to `TestRecordTable`
-8. if phase execution failed:
+7. if the current exam phase is `answer`:
+   - skip `test_03_answer.py`
+   - silently advance to the next real grading phase
+   - do not expose answer as a normal scoring step for students
+8. if the executed phase was `setup` and it passed into `ready`:
+   - automatically run `ready` in the same exam `run` request
+   - save records for both `setup` and `ready`
+   - return both phase results in `executed_phases`
+9. if phase execution failed:
    - if max attempts now reached -> `ABANDONED`
    - else -> `FAILED`
-9. if phase execution succeeded:
+10. if phase execution succeeded:
    - if task can now complete -> `COMPLETED`
    - else -> `OK` with next-phase information
-10. broadcast result
+11. if the task completed or was abandoned and manifest cleanup is `auto_run`:
+   - cleanup is triggered automatically
+12. broadcast result
 
 This is the main grading path.
+
+Important UX behavior:
+
+- a single exam `run` now auto-chains `setup -> ready`
+- exam mode awards points only for a passed `check` phase
+- the browser response includes `executed_phases`, so the student can see both results
+- `ready` failure stops the chain and leaves the task on `ready` for retry
+- `check` pass and max-attempt abandonment still rely on task completion / abandonment paths, where cleanup is triggered automatically
 
 ## 7.4 `status`
 
@@ -376,18 +401,26 @@ Returns:
 - rendered task description
 - next action from state machine
 - allowed task list for the exam session
+- exam overview fields such as `remaining_tasks`, `finished_tasks`, and `exam_score`
 
 This is the best endpoint for reviewing whether the UI and state machine agree on the current stage.
+It is also the browser-safe restore path after refresh because it does not consume attempts.
 
 ## 7.5 `records`
 
 Purpose:
 
-- return saved test history for the student and exam code
+- return saved test history for the current student, exam code, and selected task
 
 Source:
 
 - `TestRecordTable`
+
+Current behavior:
+
+- records are filtered by `email + exam_code + current task_id`
+- records are normalized before being sent back to the browser
+- records are returned through the same WebSocket response path as other exam actions
 
 Result is also broadcast over WebSocket when `game` and `task` are present.
 
@@ -433,6 +466,7 @@ This means the browser receives:
 
 - the action source (`start`, `run`, `status`, etc.)
 - the current logical payload
+- enough information to rebuild the visible question and scores after refresh
 
 So the UI can distinguish:
 
@@ -570,4 +604,3 @@ Helpful related files:
 - `tests/test_exam_ws_handler.py`
 - `tests/test_exam_durable_handler.py`
 - `tests/test_durable_invoker.py`
-

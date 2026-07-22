@@ -1,5 +1,45 @@
 # Changelog
 
+## Recent Changes (July 2026)
+
+### 1. Exam Mode Logic and UI Refresh
+
+The exam flow was tightened to match real student usage instead of developer shortcuts.
+
+**Backend / grading changes**
+
+- exam mode no longer runs `test_03_answer.py` as a student-visible grading phase
+- when exam flow reaches `answer`, the handler silently advances to the next real grading phase
+- exam scoring now awards marks only for a passed `check` phase
+- stale saved exam points from earlier logic are normalized on status / overview reads
+- exam reset now deletes the current task state and requires the student to click **Start** again
+- task records are preserved across reset
+
+**Session / reset changes**
+
+- `scripts/reset_task_stage.py` now regenerates `session_data` with the same logic as `common.session.generate_session(...)`
+- reset session values are deterministic per student again
+- local `k8s-game-rule` test rendering now uses `EMAIL` from the environment for `student_id`
+
+**Local testing fixes**
+
+- local pytest no longer switches into Lambda-mode just because `/tmp/json_input.json` exists
+- local fixture now prefers project-contained K8s certs in `k8s-configure/`, then workspace minikube cert bundle, then `~/.minikube`
+- local fixture reads `k8s-configure/endpoint.txt` from the project root
+- local fixture only injects the minikube `ca.crt` for localhost/private-IP endpoints
+- shared deploy helpers now fail the test when `kubectl apply` fails instead of logging the error and still passing
+
+**Exam web UI changes**
+
+- removed the redundant **Status** button from the main action row
+- moved **Attempt History** and **Reset Task** into a separate **Exam Tools** area
+- removed the large internal state-machine explainer and kept a compact status/phase summary
+- switching tasks now clears stale scores immediately and auto-syncs fresh task status over WebSocket
+- page refresh now restores the current question from backend `status` without requiring students to click **Run**
+- when no tasks remain, the UI shows an exam-completion report instead of an empty task selector
+
+---
+
 ## Recent Changes (February 2026)
 
 ### 1. Task Completion Bug Fixes 🔥 CRITICAL

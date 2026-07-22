@@ -114,12 +114,13 @@ class TaskStateMachine:
         
         # Update based on result
         if test_result == TestResult.OK or test_result == TestResult.NO_TESTS_COLLECTED:
-            # NO_TESTS_COLLECTED means phase was skipped (e.g., answer phase in production)
-            # Treat as success and move to next phase
+            # NO_TESTS_COLLECTED means there was no runnable test file for the phase.
+            # Treat it as success and move to the next phase.
             if test_result == TestResult.OK:
-                phase_state.mark_passed(report_url, phase.points)
-                self.state.total_points += phase.points
-                logger.info(f"Phase '{phase_id}' passed (+{phase.points} points)")
+                awarded_points = self._awarded_points_for_phase(phase)
+                phase_state.mark_passed(report_url, awarded_points)
+                self.state.total_points += awarded_points
+                logger.info(f"Phase '{phase_id}' passed (+{awarded_points} points)")
             else:
                 # Phase skipped - no points awarded
                 phase_state.mark_passed(report_url, 0)
@@ -143,6 +144,11 @@ class TaskStateMachine:
             
             # Stay on current phase for retry
             return False, f"Tests failed: {test_result.name}"
+
+    def _awarded_points_for_phase(self, phase) -> int:
+        if getattr(self.state, "mode", "exercise") == "exam" and phase.id != "check":
+            return 0
+        return phase.points
     
     def can_complete_task(self) -> Tuple[bool, Optional[str]]:
         """

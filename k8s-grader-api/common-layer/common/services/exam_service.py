@@ -65,6 +65,7 @@ class ExamService:
             session_id=session_id,
         )
         self.game_access_repo.save(game=game, mode="exam", allowed_tasks=allowed_tasks)
+        overview = self.get_exam_overview(email, game, allowed_tasks)
         return {
             "email": email,
             "exam_code": exam_code,
@@ -72,6 +73,7 @@ class ExamService:
             "game": game,
             "allowed_tasks": allowed_tasks,
             "max_attempts": exam.get("maxAttempts", 3),
+            **overview,
         }
 
     def authorize(self, email: str, exam_code: str, game: str, task_id: str) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
@@ -126,14 +128,90 @@ class ExamService:
             raise ValueError(error)
         state = self.task_repo.get(email, game, task_id)
         manifest = TaskManifest.load(game, task_id)
+        self.normalize_exam_points(state, manifest)
+        overview = self.get_exam_overview(email, game, context["session"].get("allowedTasks", []))
         return {
             "state": state,
             "manifest": manifest,
             "allowed_tasks": context["session"].get("allowedTasks", []),
+            **overview,
         }
 
-    def list_records(self, email: str, exam_code: str) -> List[Dict[str, Any]]:
+    def list_records(self, email: str, exam_code: str, task_id: Optional[str] = None) -> List[Dict[str, Any]]:
         from common.database.repositories import TestRecordRepository
 
         repo = TestRecordRepository()
-        return repo.list_by_email(email, exam_code=exam_code)
+        records = repo.list_by_email(email, exam_code=exam_code, task_id=task_id)
+        normalized_records = []
+        for item in sorted(records, key=lambda record: record.get("time", ""), reverse=True):
+            normalized_records.append({
+                "task_id": item.get("task", ""),
+                "phase": item.get("gamePhase", ""),
+                "test_result": item.get("testResult", ""),
+                "time": item.get("time", ""),
+                "report_url": item.get("reportUrl", ""),
+                "mode": item.get("mode", ""),
+            })
+        return normalized_records
+
+    def normalize_exam_points(self, state: Optional[TaskState], manifest: Optional[TaskManifest] = None) -> int:
+        if not state:
+            return 0
+        if state.mode != "exam":
+            return state.total_points
+
+        manifest = manifest or TaskManifest.load(state.game, state.task_id)
+        normalized_points = 0
+        changed = False
+
+        for phase in manifest.phases:
+            phase_state = state.get_phase_state(phase.id)
+            if not phase_state:
+                continue
+
+            phase_status = getattr(phase_state.status, "value", phase_state.status)
+            expected_points = phase.points if phase.id == "check" and phase_status == "passed" else 0
+            if phase_state.points_earned != expected_points:
+                phase_state.points_earned = expected_points
+                changed = True
+            if phase_status == "passed":
+                normalized_points += expected_points
+
+        if state.total_points != normalized_points:
+            state.total_points = normalized_points
+            changed = True
+
+        if changed:
+            self.task_repo.save(state)
+
+        return normalized_points
+
+    def get_exam_overview(self, email: str, game: str, allowed_tasks: List[str]) -> Dict[str, Any]:
+        task_summaries = []
+        exam_score = 0
+        finished_statuses = {TaskStatus.COMPLETED.value, TaskStatus.ABANDONED.value}
+
+        for task_id in allowed_tasks:
+            state = self.task_repo.get(email, game, task_id)
+            status = state.status.value if state else TaskStatus.NOT_STARTED.value
+            manifest = TaskManifest.load(game, task_id) if state else None
+            total_points = self.normalize_exam_points(state, manifest) if state else 0
+            exam_score += total_points
+            task_summaries.append(
+                {
+                    "task_id": task_id,
+                    "status": status,
+                    "total_points": total_points,
+                    "current_phase": state.current_phase_id if state else None,
+                }
+            )
+
+        finished_tasks = [item["task_id"] for item in task_summaries if item["status"] in finished_statuses]
+        remaining_tasks = [task_id for task_id in allowed_tasks if task_id not in finished_tasks]
+
+        return {
+            "task_summaries": task_summaries,
+            "finished_tasks": finished_tasks,
+            "remaining_tasks": remaining_tasks,
+            "exam_score": exam_score,
+        }

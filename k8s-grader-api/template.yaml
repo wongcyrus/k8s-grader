@@ -775,6 +775,7 @@ Resources:
     Properties:
       FunctionName: !Sub "${AWS::StackName}-exam-command-durable"
       CodeUri: exam-durable-handler/
+      Timeout: 360
       AutoPublishAlias: live
       AutoPublishAliasAllProperties: true
       DurableConfig:
