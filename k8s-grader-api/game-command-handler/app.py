@@ -237,13 +237,31 @@ def _task_abandoned_payload(abandon_result: Dict[str, Any], report_url: str) -> 
     }
 
 
+def _handle_game_skip(email: str, game: str) -> Dict[str, Any]:
+    current_task = task_service.get_current_task(email, game)
+    if not current_task:
+        return _build_game_status_payload(email, game)
+
+    task_service.skip_task(email, game, current_task)
+    payload = _build_game_status_payload(email, game)
+    payload["message"] = f"Skipped {current_task}."
+    payload["skipped_task"] = current_task
+    return payload
+
+
 def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
+    total_score = task_service.get_total_score(email, game)
+    completed_tasks = task_service.get_completed_tasks(email, game)
+    skipped_tasks = task_service.get_skipped_tasks(email, game)
     current_task = task_service.get_current_task(email, game)
     if not current_task:
         return {
             "status": "COMPLETED",
             "message": "🎉 Congratulations! You've completed all tasks!",
             "progress": 1.0,
+            "total_score": total_score,
+            "completed_tasks": completed_tasks,
+            "skipped_tasks": skipped_tasks,
             "next_game_phrase": "",
         }
 
@@ -258,6 +276,9 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
             "task_id": current_task,
             "message": rendered_description,
             "task_description": rendered_description,
+            "total_score": total_score,
+            "completed_tasks": completed_tasks,
+            "skipped_tasks": skipped_tasks,
             "next_game_phrase": _phase_hint(first_phase.id if first_phase else None),
         }
 
@@ -285,6 +306,9 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
         "message": _render_template(phase_message, state.session_data),
         "task_description": _render_template(task_description_source, state.session_data),
         "total_points": state.total_points,
+        "total_score": total_score,
+        "completed_tasks": completed_tasks,
+        "skipped_tasks": skipped_tasks,
         "progress": state.calculate_progress(manifest),
         "next_game_phrase": _phase_hint(state.current_phase_id),
     }
@@ -377,6 +401,8 @@ def execute_game_command(
         return _handle_game_talk(email, game, npc, endpoint, connection_id)
     if action == "status":
         return _build_game_status_payload(email, game)
+    if action == "skip":
+        return _handle_game_skip(email, game)
     return _error_payload(f"Unsupported game action: {action}")
 
 

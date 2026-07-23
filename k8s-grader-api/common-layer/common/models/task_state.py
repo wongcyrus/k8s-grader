@@ -92,6 +92,7 @@ class TaskState:
     phase_states: Dict[str, PhaseState] = field(default_factory=dict)
     session_data: Dict[str, Any] = field(default_factory=dict)
     total_points: int = 0
+    skipped: bool = False
     exam_code: Optional[str] = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -151,6 +152,7 @@ class TaskState:
             'phase_states': {k: v.to_dict() for k, v in self.phase_states.items()},
             'session_data': self.session_data,
             'total_points': self.total_points,
+            'skipped': self.skipped,
             'exam_code': self.exam_code,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
@@ -174,6 +176,7 @@ class TaskState:
             },
             session_data=data.get('session_data', {}),
             total_points=data.get('total_points', 0),
+            skipped=data.get('skipped', False),
             exam_code=data.get('exam_code'),
             created_at=data['created_at'],
             updated_at=data['updated_at'],

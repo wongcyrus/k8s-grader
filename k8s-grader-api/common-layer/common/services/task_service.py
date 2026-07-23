@@ -61,6 +61,115 @@ class TaskService:
         except Exception as e:
             logger.error(f"Failed to get current task: {e}")
             return None
+
+    def get_completed_tasks(self, email: str, game: str) -> list[str]:
+        """
+        Get completed tasks for a user in game order.
+
+        Args:
+            email: User email
+            game: Game identifier
+
+        Returns:
+            Ordered list of completed task IDs
+        """
+        try:
+            from common.pytest import get_tasks
+
+            all_tasks = get_tasks(game)
+            states = {
+                state.task_id: state
+                for state in self.task_repo.list_by_game(email, game)
+                if state.status == TaskStatus.COMPLETED and not getattr(state, "skipped", False)
+            }
+            return [task_id for task_id in all_tasks if task_id in states]
+        except Exception as e:
+            logger.error(f"Failed to get completed tasks: {e}")
+            return []
+
+    def get_skipped_tasks(self, email: str, game: str) -> list[str]:
+        """
+        Get skipped tasks for a user in game order.
+
+        Args:
+            email: User email
+            game: Game identifier
+
+        Returns:
+            Ordered list of skipped task IDs
+        """
+        try:
+            from common.pytest import get_tasks
+
+            all_tasks = get_tasks(game)
+            states = {
+                state.task_id: state
+                for state in self.task_repo.list_by_game(email, game)
+                if state.status == TaskStatus.COMPLETED and getattr(state, "skipped", False)
+            }
+            return [task_id for task_id in all_tasks if task_id in states]
+        except Exception as e:
+            logger.error(f"Failed to get skipped tasks: {e}")
+            return []
+
+    def get_total_score(self, email: str, game: str) -> int:
+        """
+        Get cumulative score across all saved task states for a game.
+
+        Args:
+            email: User email
+            game: Game identifier
+
+        Returns:
+            Total points accumulated across the game's task states
+        """
+        try:
+            states = self.task_repo.list_by_game(email, game)
+            return sum(int(getattr(state, "total_points", 0) or 0) for state in states)
+        except Exception as e:
+            logger.error(f"Failed to get total score: {e}")
+            return 0
+
+    def skip_task(self, email: str, game: str, task_id: str, npc: str = "portal") -> Dict[str, Any]:
+        """
+        Skip a task by marking it completed with zero points.
+
+        Args:
+            email: User email
+            game: Game identifier
+            task_id: Task identifier
+            npc: Fallback NPC/source name when no state exists yet
+
+        Returns:
+            Dictionary containing the updated state
+        """
+        state = self.task_repo.get(email, game, task_id)
+        if not state:
+            state = TaskState(
+                email=email,
+                game=game,
+                task_id=task_id,
+                npc=npc,
+                status=TaskStatus.NOT_STARTED,
+                current_phase_id=None,
+            )
+
+        state.total_points = 0
+        state.skipped = True
+        state.current_phase_id = None
+        state.mark_completed()
+        self.task_repo.save(state)
+
+        if state.mode != 'exam':
+            self.npc_repo.clear_assignment(email, game)
+
+        logger.info(f"Skipped task {task_id} for {email}")
+        return {
+            'success': True,
+            'state': state,
+            'total_points': 0,
+            'skipped': True,
+        }
     
     def start_task(self, email: str, game: str, task_id: str, npc: str) -> TaskState:
         """

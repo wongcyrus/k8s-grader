@@ -15,6 +15,26 @@ main {
   padding: 0 16px;
 }
 
+.page-links {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.page-link {
+  border: 1px solid #4560a7;
+  background: #1a2a4f;
+  color: #dbe8ff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  text-decoration: none;
+}
+
+.page-link.active {
+  background: #264488;
+  color: #fff;
+}
+
 h1 {
   margin: 0 0 8px 0;
 }

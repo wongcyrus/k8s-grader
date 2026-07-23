@@ -36,9 +36,45 @@ The RPG game path was refactored away from synchronous request/response behavior
 - important backend errors are mapped into player-facing guidance
 - report URLs continue to open in a popup when present
 
+### 1. Split Exercise Portal and Exam Page
+
+The hosted frontend is now split into separate pages instead of one tabbed portal.
+
+**Frontend split**
+
+- `exam-web/index.html` is now exercise-only
+- `exam-web/exam.html` now contains the exam UI and exam WebSocket flow
+- the exercise page no longer shows the exam tab
+- the exercise page keeps the RPG launch, score check, and skip-task controls
+
+**Documentation / usage updates**
+
+- deployment and quick-start docs now point exercise users to `StudentPortalUrl`
+- exam docs now point exam users to `StudentPortalUrl/exam.html`
+- same-origin localStorage sharing between the exercise page and RPG page is unchanged
+
 ---
 
-### 2. Exam Mode Logic and UI Refresh
+### 2. Student Portal and Same-Origin RPG Launch
+
+The old exam-only web UI was expanded into a student portal that can launch both exam and RPG exercise flows from one origin.
+
+**Portal / hosting changes**
+
+- `exam-web` now presents a student portal flow for saving the API key, Kubernetes login, exercise game, and exam code
+- the portal opens the RPG client under `/game/index.html` on the same site instead of relying on a GitHub Pages origin
+- deployment now uploads both the portal and the `k8s-isekai` web assets into the same S3/CloudFront site
+- CloudFormation now exposes `StudentPortalUrl` alongside the direct `GameUrl`
+
+**RPG launch changes**
+
+- the RPG plugin now reads `apiKey`, `game`, and `wsUrl` from same-origin portal localStorage when they are not present in the page URL
+- the portal can query exercise status over the existing game WebSocket `status` action
+- reset-state now clears the saved API key and cached portal/game launch state
+
+---
+
+### 3. Exam Mode Logic and UI Refresh
 
 The exam flow was tightened to match real student usage instead of developer shortcuts.
 

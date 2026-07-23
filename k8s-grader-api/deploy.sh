@@ -210,15 +210,21 @@ seed_game_source_table() {
 }
 
 deploy_exam_website() {
-    print_header "Deploying Exam Website"
+    print_header "Deploying Student Portal"
 
-    local stack_name region exam_web_dir bucket website_url
+    local stack_name region exam_web_dir game_web_dir bucket website_url
     stack_name="$(get_stack_name || echo "k8s-grader-api-dev")"
     region="$(get_region || echo "us-east-1")"
     exam_web_dir="$(cd ../exam-web && pwd)"
+    game_web_dir="$(cd ../../k8s-isekai && pwd)"
 
     if [ ! -d "$exam_web_dir" ]; then
         print_error "Exam web directory not found at $exam_web_dir"
+        exit 1
+    fi
+
+    if [ ! -d "$game_web_dir" ]; then
+        print_error "Game web directory not found at $game_web_dir"
         exit 1
     fi
 
@@ -234,19 +240,34 @@ deploy_exam_website() {
         exit 1
     fi
 
-    print_info "Uploading exam web files to s3://${bucket}"
-    aws s3 sync "$exam_web_dir" "s3://${bucket}" --delete --no-cli-pager >/dev/null
-    print_success "Exam website uploaded"
+    print_info "Uploading student portal files to s3://${bucket}"
+    aws s3 sync "$exam_web_dir" "s3://${bucket}" --delete --exclude "game/*" --no-cli-pager >/dev/null
+    print_success "Student portal uploaded"
+
+    print_info "Uploading RPG game files to s3://${bucket}/game"
+    aws s3 sync "$game_web_dir" "s3://${bucket}/game" \
+        --delete \
+        --exclude ".git/*" \
+        --exclude ".github/*" \
+        --exclude ".devcontainer/*" \
+        --exclude ".vscode/*" \
+        --exclude "python_tools/*" \
+        --exclude "package*.json" \
+        --exclude ".prettierrc.json" \
+        --exclude "README.md" \
+        --no-cli-pager >/dev/null
+    print_success "RPG game uploaded"
 
     website_url=$(aws cloudformation describe-stacks \
         --stack-name "$stack_name" \
         --region "$region" \
-        --query 'Stacks[0].Outputs[?OutputKey==`ExamWebsiteUrl`].OutputValue' \
+        --query 'Stacks[0].Outputs[?OutputKey==`StudentPortalUrl`].OutputValue' \
         --output text \
         --no-cli-pager)
 
     if [ -n "$website_url" ] && [ "$website_url" != "None" ]; then
-        echo "Exam Website URL: ${website_url}"
+        echo "Student Portal URL: ${website_url}"
+        echo "RPG Game URL: ${website_url%/}/game/index.html"
     fi
 }
 
@@ -312,8 +333,18 @@ show_next_steps() {
         echo "1. Generate an API key:"
         echo "   curl \"${BASE_URL}keygen?secret=YOUR_SECRET&email=YOUR_EMAIL\""
         echo ""
-        echo "2. Open the published game URL with wsUrl or use the exam endpoints:"
-        echo "   ${BASE_URL}exam/verify-code?examCode=YOUR_EXAM_CODE"
+        STUDENT_PORTAL_URL=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --query 'Stacks[0].Outputs[?OutputKey==`StudentPortalUrl`].OutputValue' \
+            --output text \
+            --no-cli-pager 2>/dev/null || echo "")
+        echo "2. Open the exercise portal, save the API key and Kubernetes login, then use:"
+        if [ -n "$STUDENT_PORTAL_URL" ] && [ "$STUDENT_PORTAL_URL" != "None" ]; then
+            echo "   Exercise: ${STUDENT_PORTAL_URL}"
+            echo "   Exam:     ${STUDENT_PORTAL_URL}/exam.html"
+        else
+            echo "   ${BASE_URL}exam/verify-code?examCode=YOUR_EXAM_CODE"
+        fi
         echo ""
         echo "Monitoring:"
         echo ""

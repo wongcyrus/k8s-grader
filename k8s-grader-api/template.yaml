@@ -70,7 +70,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: !Sub "${AWS::StackName} exam website"
+        Comment: !Sub "${AWS::StackName} student portal"
         DefaultRootObject: index.html
         HttpVersion: http2
         IPV6Enabled: true
@@ -1156,16 +1156,19 @@ Outputs:
     Description: "Base API Gateway endpoint URL (for integration tests)"
     Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
   GameUrl:
-    Description: "Game URL and you need to replace the Student Individual API key."
-    Value: !Sub "https://wongcyrus.github.io/k8s-isekai/index.html?wsUrl=wss://${GameWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}&game=game01&apiKey=INDIVIDUAL_API_KEY"
+    Description: "RPG game URL hosted under the student portal site. Open the portal first so it can save the API key in same-origin localStorage."
+    Value: !Sub "https://${ExamWebsiteCloudFrontDistribution.DomainName}/game/index.html?wsUrl=wss://${GameWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}&game=game01"
+  StudentPortalUrl:
+    Description: "HTTPS CloudFront URL for the student portal UI"
+    Value: !Sub "https://${ExamWebsiteCloudFrontDistribution.DomainName}"
   ExamWebsiteBucket:
-    Description: "Name of the exam website S3 bucket"
+    Description: "Name of the student portal website S3 bucket"
     Value: !Ref ExamWebsiteBucket
   ExamWebsiteUrl:
-    Description: "Public S3 static website URL for exam web UI"
+    Description: "Public S3 static website URL for the student portal UI"
     Value: !Sub "http://${ExamWebsiteBucket}.s3-website-${AWS::Region}.amazonaws.com"
   ExamWebsiteHttpsUrl:
-    Description: "HTTPS CloudFront URL for exam web UI"
+    Description: "HTTPS CloudFront URL for the student portal UI (legacy output key)"
     Value: !Sub "https://${ExamWebsiteCloudFrontDistribution.DomainName}"
   ExamWebSocketUrl:
     Description: "WebSocket URL for exam real-time updates"

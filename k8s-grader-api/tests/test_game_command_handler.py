@@ -151,11 +151,17 @@ def test_status_action_returns_completed_when_all_tasks_finished():
     module = load_module()
 
     with patch.object(module, "task_service") as mock_task_service:
+        mock_task_service.get_total_score.return_value = 12
+        mock_task_service.get_completed_tasks.return_value = ["01_task", "02_task"]
+        mock_task_service.get_skipped_tasks.return_value = ["03_task"]
         mock_task_service.get_current_task.return_value = None
         payload = module._build_game_status_payload("student@example.com", "game01")
 
     assert payload["status"] == "COMPLETED"
     assert payload["progress"] == 1.0
+    assert payload["total_score"] == 12
+    assert payload["completed_tasks"] == ["01_task", "02_task"]
+    assert payload["skipped_tasks"] == ["03_task"]
 
 
 def test_status_action_redirects_stale_check_snapshot_back_to_challenge():
@@ -165,6 +171,9 @@ def test_status_action_redirects_stale_check_snapshot_back_to_challenge():
 
     with patch.object(module, "task_service") as mock_task_service, \
          patch.object(module.TaskManifest, "load", return_value=manifest):
+        mock_task_service.get_total_score.return_value = 9
+        mock_task_service.get_completed_tasks.return_value = ["01_task", "02_task"]
+        mock_task_service.get_skipped_tasks.return_value = ["03_task"]
         mock_task_service.get_current_task.return_value = "01_task"
         mock_task_service.task_repo.get.return_value = state
         payload = module._build_game_status_payload("student@example.com", "game01")
@@ -174,6 +183,9 @@ def test_status_action_redirects_stale_check_snapshot_back_to_challenge():
     assert payload["message"] == "Solve namespace"
     assert payload["task_description"] == "Solve namespace"
     assert payload["next_game_phrase"] == "CHALLENGE"
+    assert payload["total_score"] == 9
+    assert payload["completed_tasks"] == ["01_task", "02_task"]
+    assert payload["skipped_tasks"] == ["03_task"]
 
 
 def test_status_action_skips_answer_phase_to_challenge():
@@ -190,6 +202,9 @@ def test_status_action_skips_answer_phase_to_challenge():
 
     with patch.object(module, "task_service") as mock_task_service, \
          patch.object(module.TaskManifest, "load", return_value=manifest):
+        mock_task_service.get_total_score.return_value = 4
+        mock_task_service.get_completed_tasks.return_value = ["01_task"]
+        mock_task_service.get_skipped_tasks.return_value = ["02_task"]
         mock_task_service.get_current_task.return_value = "01_task"
         mock_task_service.task_repo.get.return_value = state
         payload = module._build_game_status_payload("student@example.com", "game01")
@@ -198,6 +213,9 @@ def test_status_action_skips_answer_phase_to_challenge():
     assert state.current_phase_id == "challenge"
     assert payload["current_phase"] == "challenge"
     assert payload["next_game_phrase"] == "CHALLENGE"
+    assert payload["total_score"] == 4
+    assert payload["completed_tasks"] == ["01_task"]
+    assert payload["skipped_tasks"] == ["02_task"]
 
 
 def test_talk_action_maps_npc_access_errors_to_player_message():
@@ -237,6 +255,28 @@ def test_talk_action_maps_missing_account_to_player_message():
         )
 
     assert result == {"status": "ERROR", "message": "Please save your Kubernetes account first."}
+
+
+def test_skip_action_marks_task_skipped_and_returns_updated_status():
+    module = load_module()
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "_build_game_status_payload", return_value={"status": "NOT_STARTED", "total_score": 5, "completed_tasks": ["01_task"], "skipped_tasks": ["02_task"]}) as mock_status:
+        mock_task_service.get_current_task.return_value = "01_task"
+
+        result = module.execute_game_command(
+            "skip",
+            "student@example.com",
+            "game01",
+            "",
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    mock_task_service.skip_task.assert_called_once_with("student@example.com", "game01", "01_task")
+    mock_status.assert_called_once_with("student@example.com", "game01")
+    assert result["skipped_task"] == "01_task"
+    assert result["message"] == "Skipped 01_task."
 
 
 def test_talk_action_runs_multi_phase_flow_until_completion():

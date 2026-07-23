@@ -78,6 +78,101 @@ class TestTaskService:
             current = task_service.get_current_task('user@test.com', 'game01')
             
             assert current is None
+
+    def test_get_total_score_sums_saved_task_points(self, task_service):
+        for task_id, points, status in [
+            ('01_task', 2, TaskStatus.COMPLETED),
+            ('02_task', 3, TaskStatus.COMPLETED),
+            ('03_task', 0, TaskStatus.IN_PROGRESS),
+        ]:
+            state = TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id=task_id,
+                npc='npc1',
+                status=status,
+                current_phase_id=None,
+                total_points=points,
+            )
+            task_service.task_repo.save(state)
+
+        assert task_service.get_total_score('user@test.com', 'game01') == 5
+
+    def test_get_completed_tasks_returns_game_order(self, task_service):
+        for task_id in ['02_task', '01_task']:
+            state = TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id=task_id,
+                npc='npc1',
+                status=TaskStatus.COMPLETED,
+                current_phase_id=None,
+            )
+            task_service.task_repo.save(state)
+
+        with patch('common.pytest.get_tasks', return_value=['01_task', '02_task', '03_task']):
+            completed = task_service.get_completed_tasks('user@test.com', 'game01')
+
+        assert completed == ['01_task', '02_task']
+
+    def test_get_skipped_tasks_returns_only_skipped_tasks(self, task_service):
+        saved_states = [
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='01_task',
+                npc='npc1',
+                status=TaskStatus.COMPLETED,
+                skipped=False,
+                current_phase_id=None,
+            ),
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='02_task',
+                npc='npc1',
+                status=TaskStatus.COMPLETED,
+                skipped=True,
+                current_phase_id=None,
+            ),
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='03_task',
+                npc='npc1',
+                status=TaskStatus.COMPLETED,
+                skipped=True,
+                current_phase_id=None,
+            ),
+        ]
+        for state in saved_states:
+            task_service.task_repo.save(state)
+
+        with patch('common.pytest.get_tasks', return_value=['01_task', '02_task', '03_task']):
+            skipped = task_service.get_skipped_tasks('user@test.com', 'game01')
+
+        assert skipped == ['02_task', '03_task']
+
+    def test_skip_task_marks_existing_task_completed_with_zero_points(self, task_service):
+        state = TaskState(
+            email='user@test.com',
+            game='game01',
+            task_id='01_task',
+            npc='npc1',
+            status=TaskStatus.IN_PROGRESS,
+            current_phase_id='challenge',
+            total_points=25,
+        )
+        task_service.task_repo.save(state)
+
+        result = task_service.skip_task('user@test.com', 'game01', '01_task')
+        saved = task_service.task_repo.get('user@test.com', 'game01', '01_task')
+
+        assert result['success'] is True
+        assert saved.status == TaskStatus.COMPLETED
+        assert saved.total_points == 0
+        assert saved.skipped is True
+        assert saved.current_phase_id is None
     
     def test_start_task_new(self, task_service, sample_manifest):
         """Test starting a new task"""

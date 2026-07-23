@@ -193,6 +193,29 @@ class TaskStateRepository:
             logger.error(f"Failed to get in-progress task: {e}")
             return None
 
+    def list_by_game(self, email: str, game: str) -> List[Any]:
+        """
+        List all task states for a user within one game.
+
+        Args:
+            email: User email
+            game: Game identifier
+
+        Returns:
+            List of TaskState instances
+        """
+        from common.models.task_state import TaskState
+
+        try:
+            response = self.table.query(
+                KeyConditionExpression=Key('email').eq(email) & Key('gameTask').begins_with(f"{game}#")
+            )
+            items = response.get('Items', [])
+            return [TaskState.from_dict(item) for item in items]
+        except Exception as e:
+            logger.error(f"Failed to list task states for game: {e}")
+            return []
+
 
 class NpcRepository:
     """Repository for NPC-related data"""

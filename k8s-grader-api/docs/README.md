@@ -54,6 +54,7 @@ Welcome to the K8s Grader API documentation! All documentation has been organize
 - ✅ Game mode documented as WebSocket + durable Lambda
 - ✅ Legacy game `/task` API removed from current architecture
 - ✅ Shared account storage and current RPG UX rules documented
+- ✅ Split exercise portal + `exam.html` flow documented
 - ✅ Self-contained tests available for backend changes
 
 ## 🗺️ Documentation Map
@@ -90,6 +91,7 @@ docs/
 - ✅ Documented game WebSocket durable flow
 - ✅ Documented current RPG player-message mapping
 - ✅ Documented shared account storage and no-lockout retry behavior
+- ✅ Documented split exercise portal, exam page, and same-origin `/game/` hosting flow
 
 **February 2026**:
 - ✅ Moved all documentation to `docs/` folder

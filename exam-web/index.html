@@ -3,15 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kubernetes Exam Web</title>
+    <title>Kubernetes Exercise Portal</title>
     <link rel="stylesheet" href="./styles.css" />
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
   </head>
   <body>
     <main>
-      <h1>Kubernetes Exam Test Web</h1>
-      <p>Submit your Kubernetes login first, then take the exam.</p>
+      <h1>Kubernetes Exercise Portal</h1>
+      <p>Save your Kubernetes login, launch the exercise game, and check your exercise progress here.</p>
 
       <section class="card">
         <label>API Key
@@ -19,106 +17,50 @@
         </label>
       </section>
 
-      <section class="tabs">
-        <button id="tabSetup" class="tab-btn active" type="button">Setup</button>
-        <button id="tabExam" class="tab-btn" type="button">Exam</button>
+      <section class="card">
+        <h2>Step 1: Save Kubernetes Login</h2>
+        <label>Endpoint
+          <input id="endpoint" placeholder="https://xxxx:6443" />
+        </label>
+        <label>Client Certificate (.crt/.pem, auto-filled for minikube)
+          <input id="clientCertificate" type="file" accept=".crt,.pem,.cer" />
+        </label>
+        <label>Client Key (.key/.pem, auto-filled for minikube)
+          <input id="clientKey" type="file" accept=".key,.pem" />
+        </label>
+        <div class="actions">
+          <button data-action="save-account">Submit Kubernetes Login</button>
+        </div>
       </section>
 
-      <section id="panelSetup">
-        <section class="card">
-          <h2>Step 1: Submit Kubernetes Login</h2>
-          <label>Endpoint
-            <input id="endpoint" placeholder="https://xxxx:6443" />
-          </label>
-          <label>Client Certificate (.crt/.pem, auto-filled for minikube)
-            <input id="clientCertificate" type="file" accept=".crt,.pem,.cer" />
-          </label>
-          <label>Client Key (.key/.pem, auto-filled for minikube)
-            <input id="clientKey" type="file" accept=".key,.pem" />
-          </label>
-          <div class="actions">
-            <button data-action="save-account">Submit Kubernetes Login</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Step 2: Take Exam</h2>
-          <label>Exam Code
-            <input id="examCode" placeholder="EXAM-001" />
-          </label>
-          <div class="actions">
-            <button data-action="verify">Open Exam Access</button>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>Setup Result</h2>
-          <pre id="setupOutput">Ready.</pre>
-          <div class="actions">
-            <button id="resetState" class="secondary-btn" type="button">Reset Saved Form Data</button>
-          </div>
-        </section>
+      <section class="card">
+        <h2>Step 2: Launch Exercise Game</h2>
+        <label>Exercise Game
+          <select id="exerciseGame">
+            <option value="game01">game01</option>
+          </select>
+        </label>
+        <p><strong>Exercise connection</strong>: <span id="exerciseConnectionStatus">Disconnected</span></p>
+        <p><strong>Total score</strong>: <span id="exerciseScoreLabel">0</span></p>
+        <p><strong>Completed tasks</strong>: <span id="exerciseCompletedTasksLabel">-</span></p>
+        <p><strong>Skipped tasks</strong>: <span id="exerciseSkippedTasksLabel">-</span></p>
+        <div class="actions">
+          <button data-action="open-game">Open Exercise Game</button>
+          <button data-action="exercise-status" class="secondary-btn" type="button">Check Total Score</button>
+          <button data-action="exercise-skip" class="secondary-btn" type="button">Skip Current Task</button>
+        </div>
+        <pre id="exerciseOutput">Choose a game, open it from the portal, then use Check Total Score.</pre>
       </section>
 
-      <section id="panelExam" class="hidden">
-        <section class="card">
-          <h2>Exam Flow & Usage</h2>
-          <ol class="flow-list">
-            <li>Wait for Connection: <strong>Connected</strong></li>
-            <li>Use the exam buttons in order: <strong>Start → Run</strong></li>
-            <li>Solve the task, then click <strong>Run</strong></li>
-            <li>Use <strong>Attempt History</strong> or <strong>Reset Task</strong> only when needed</li>
-          </ol>
-          <p class="flow-note">Exam buttons unlock in order after the exam session is connected. Click <strong>Reconnect Exam</strong> only if the connection banner shows disconnected.</p>
-        </section>
-
-        <section id="examScope" class="card hidden">
-          <h2>Verified Exam Scope</h2>
-          <p><strong>Connection</strong>: <span id="connectionStatus">Disconnected</span></p>
-          <p><strong>Game</strong>: <span id="gameLabel">-</span></p>
-          <input id="game" type="hidden" />
-          <label>Task
-            <select id="task"></select>
-          </label>
-        </section>
-
-        <section class="card">
-          <h2>Current Question & Mark</h2>
-          <p class="summary-line">
-            <strong>Task status</strong>: <span id="taskStatusLabel" class="state-badge">NOT_STARTED</span>
-            <span class="summary-separator">•</span>
-            <strong>Current phase</strong>: <span id="phaseStateLabel" class="state-badge">setup</span>
-          </p>
-          <p id="nextStepOutput"><strong>Next step:</strong> Complete Step 2: Take Exam first.</p>
-          <p><strong>Question</strong></p>
-          <div id="questionOutput" class="markdown-body">Press Start to load the question.</div>
-          <p><strong>Task score</strong>: <span id="markOutput">0</span></p>
-          <p><strong>Exam score</strong>: <span id="examScoreOutput">0</span></p>
-          <p id="phaseOutput">Phase: -</p>
-        </section>
-
-        <section class="card actions">
-          <button data-action="reconnect" class="exam-action" disabled>Reconnect Exam</button>
-          <button data-action="start" class="exam-action" disabled>Start</button>
-          <button data-action="run" class="exam-action" disabled>Run</button>
-          <p class="flow-note">If a button is greyed out, the previous step has not been completed yet.</p>
-        </section>
-
-        <section class="card">
-          <h2>Exam Response</h2>
-          <div id="output" class="response-body">Ready.</div>
-        </section>
-
-        <section class="card">
-          <h2>Exam Tools</h2>
-          <div class="actions">
-            <button data-action="records" class="exam-action secondary-btn" disabled>Attempt History</button>
-            <button data-action="reset" class="exam-action secondary-btn" disabled>Reset Task</button>
-          </div>
-        </section>
+      <section class="card">
+        <h2>Portal Result</h2>
+        <pre id="setupOutput">Ready.</pre>
+        <div class="actions">
+          <button id="resetState" class="secondary-btn" type="button">Reset Saved Form Data</button>
+        </div>
       </section>
     </main>
 
     <script src="./app.js"></script>
   </body>
-  </html>
+</html>

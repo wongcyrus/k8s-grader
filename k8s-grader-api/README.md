@@ -195,6 +195,8 @@ Each phase tracks:
 
 ### Runtime Entry Points
 
+- **Exercise portal:** static frontend hosted with the stack at `StudentPortalUrl`; saves the API key/Kubernetes login and launches the RPG flow from `index.html`
+- **Exam page:** same hosted site at `StudentPortalUrl/exam.html`; used for exam verify/start/run flows
 - **Game mode:** WebSocket-only via `game-ws-handler/` and `game-command-handler/`
 - **Exam mode:** REST `/exam/*` plus exam WebSocket updates
 - **Account setup:** `/save-k8s-account/`

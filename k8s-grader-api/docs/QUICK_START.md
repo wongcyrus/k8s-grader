@@ -119,7 +119,9 @@ NOT_STARTED → IN_PROGRESS → COMPLETED
 
 ### Runtime Endpoints
 
-- **Game mode:** use the published `GameUrl` output with `wsUrl`
+- **Exercise portal:** use the published `StudentPortalUrl` output for `index.html`, save the API key once, then launch the RPG game from that page
+- **Exam page:** open `StudentPortalUrl/exam.html` for exam verify/start/run flows
+- **Game mode:** the published `GameUrl` still works for direct same-origin access after the exercise portal has saved the API key
 - **Exam mode:** use `/exam/verify-code`, `/exam/start`, `/exam/run`, `/exam/status`, and `/exam/records`
 - **Legacy note:** the old game `/task` request/response API has been removed
 

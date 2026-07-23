@@ -66,7 +66,7 @@ def _handle_default(event: Dict[str, Any]) -> Dict[str, Any]:
             return _error_response(401, str(err))
         return _response(200, {"status": "SUBSCRIBED", "game": game})
 
-    if action not in {"talk", "status"}:
+    if action not in {"talk", "status", "skip"}:
         return _response(200, {"status": "OK"})
 
     if not api_key or not game:

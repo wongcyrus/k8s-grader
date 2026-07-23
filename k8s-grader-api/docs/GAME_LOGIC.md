@@ -6,16 +6,17 @@ Game mode now uses a **WebSocket-only durable flow**. The RPG client sends `talk
 
 This is different from the older REST-style game flow:
 
-- the client must have `wsUrl` in the page URL
+- the client must know the game WebSocket URL, either from the exercise portal's saved same-origin state or from a direct `wsUrl` page parameter
 - task progression is streamed over WebSocket
 - game mode uses the same saved Kubernetes account data as exam mode
 - RPG mode does **not** abandon a task after repeated failures
 
 ## Current End-to-End Flow
 
-1. The RPG page loads with `wsUrl`, `apiKey`, and `game`.
-2. `NpcK8sPluginCommand.js` opens the game WebSocket and sends `subscribe`.
-3. When the player talks to an NPC, the plugin sends:
+1. The student opens the **exercise portal** (`index.html`), saves their API key and Kubernetes login, and launches the RPG page on the same origin.
+2. The RPG page loads `game` from the page URL or shared exercise-portal state, and reads `apiKey` plus `wsUrl` from same-origin localStorage when they are not present in the URL.
+3. `NpcK8sPluginCommand.js` opens the game WebSocket and sends `subscribe`.
+4. When the player talks to an NPC, the plugin sends:
 
    ```json
    {
@@ -26,9 +27,9 @@ This is different from the older REST-style game flow:
    }
    ```
 
-4. `game-ws-handler/app.py` validates the request and queues the durable game command Lambda.
-5. `game-command-handler/app.py` starts or resumes the current task, runs task phases, and pushes `game_status` updates back over WebSocket.
-6. The RPG plugin converts backend statuses into player-facing text and shows reports in a popup when available.
+5. `game-ws-handler/app.py` validates the request and queues the durable game command Lambda.
+6. `game-command-handler/app.py` starts or resumes the current task, runs task phases, and pushes `game_status` updates back over WebSocket.
+7. The RPG plugin shows player-facing text from the backend and opens reports in a popup when available.
 
 ## Durable Game Rules
 
@@ -57,7 +58,7 @@ The RPG plugin intentionally hides backend jargon like raw phase/status combinat
 
 ## Error Message Mapping
 
-`NpcK8sPluginCommand.js` rewrites the most important backend errors into player-facing text:
+Player-facing errors are normalized in Python before they reach the RPG client. `NpcK8sPluginCommand.js` displays those backend-safe `ERROR` messages directly:
 
 | Backend error | Player-facing text |
 | --- | --- |

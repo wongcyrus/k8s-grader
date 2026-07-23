@@ -327,7 +327,9 @@ aws cloudformation describe-stacks \
 
 **Important outputs**:
 - `BaseUrl` - API base URL
-- `GameUrl` - Published RPG game URL with WebSocket parameters
+- `StudentPortalUrl` - Published exercise portal URL (`index.html`)
+- `StudentPortalUrl/exam.html` - Published exam page URL
+- `GameUrl` - Published RPG game URL under the same portal origin
 - `TaskStateTable` - New task state table name
 - `NpcAssignmentTable` - New NPC assignment table name
 
@@ -676,9 +678,10 @@ aws cloudformation wait stack-delete-complete \
    - Test with different task types
 
 4. **Update Frontend**
-   - Modify RPG Maker plugin
-   - Use the published `GameUrl` / `GameWebSocketUrl`
-   - Test in game
+   - Publish the student portal and `/game/` assets together on the same origin
+   - Open `StudentPortalUrl`, save the API key and Kubernetes login, then launch the RPG game from the exercise portal
+   - Open `StudentPortalUrl/exam.html` for exam access and exam WebSocket actions
+   - Use `GameUrl` only for direct same-origin debugging after the portal state already exists
 
 5. **Documentation**
    - Update API documentation
@@ -726,6 +729,7 @@ sam local invoke TaskHandlerFunction -e events/event.json
 
 After deployment, save these:
 - Base URL: From `BaseUrl` output
+- Student portal URL: From `StudentPortalUrl` output
 - Game URL: From `GameUrl` output
 - Keygen: `{BaseUrl}keygen?secret={SecretHash}&email={email}`
 
