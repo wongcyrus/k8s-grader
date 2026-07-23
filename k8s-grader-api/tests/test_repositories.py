@@ -2,7 +2,7 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from common.database.repositories import TaskStateRepository, NpcRepository
+from common.database.repositories import AccountRepository, NpcRepository, TaskStateRepository, normalize_endpoint
 from common.models.task_state import TaskState, TaskStatus, PhaseState, PhaseStatus
 
 
@@ -315,3 +315,37 @@ class TestNpcRepository:
         assigned_npc = repo.get_assigned_npc("user@test.com", "game01")
         assert assigned_npc == "npc2"
 
+
+class TestAccountRepository:
+    """Test AccountRepository"""
+
+    def test_normalize_endpoint_trims_trailing_slash(self):
+        assert normalize_endpoint("https://fuzzy-capybara-6ppxv9grwqc4xp4-8001.app.github.dev/") == (
+            "https://fuzzy-capybara-6ppxv9grwqc4xp4-8001.app.github.dev"
+        )
+
+    def test_is_endpoint_exist_treats_trailing_slash_as_same_endpoint(self, dynamodb_tables):
+        repo = AccountRepository()
+        repo.save(
+            "student1@example.com",
+            "https://fuzzy-capybara-6ppxv9grwqc4xp4-8001.app.github.dev/",
+            "cert",
+            "key",
+        )
+
+        assert repo.is_endpoint_exist(
+            "student2@example.com",
+            "https://fuzzy-capybara-6ppxv9grwqc4xp4-8001.app.github.dev",
+        ) is True
+
+    def test_save_persists_normalized_endpoint(self, dynamodb_tables):
+        repo = AccountRepository()
+        repo.save(
+            "student1@example.com",
+            "https://fuzzy-capybara-6ppxv9grwqc4xp4-8001.app.github.dev/",
+            "cert",
+            "key",
+        )
+
+        stored = repo.get("student1@example.com")
+        assert stored["endpoint"] == "https://fuzzy-capybara-6ppxv9grwqc4xp4-8001.app.github.dev"

@@ -387,6 +387,20 @@ Resources:
       StageName: !Ref StageName
       AutoDeploy: true
 
+  GameWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub "${AWS::StackName}-game-ws"
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: "$request.body.action"
+
+  GameWebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref GameWebSocketApi
+      StageName: !Ref StageName
+      AutoDeploy: true
+
   LibLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
@@ -820,6 +834,12 @@ Resources:
         - Statement:
             - Effect: Allow
               Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: !Sub "arn:aws:s3:::${TestResultBucket}/*"
+        - Statement:
+            - Effect: Allow
+              Action:
                 - logs:CreateLogGroup
                 - logs:CreateLogStream
                 - logs:PutLogEvents
@@ -876,7 +896,7 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ExamWsConnectionTable
-        - DynamoDBReadPolicy:
+        - DynamoDBCrudPolicy:
             TableName: !Ref TaskStateTable
         - Statement:
             - Effect: Allow
@@ -941,6 +961,134 @@ Resources:
       ApiId: !Ref ExamWebSocketApi
       RouteKey: $default
       Target: !Sub "integrations/${ExamWebSocketIntegration}"
+
+  GameCommandFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-game-command-durable"
+      CodeUri: game-command-handler/
+      Timeout: 360
+      AutoPublishAlias: live
+      AutoPublishAliasAllProperties: true
+      DurableConfig:
+        ExecutionTimeout: 3600
+        RetentionPeriodInDays: 14
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicDurableExecutionRolePolicy
+        - DynamoDBReadPolicy:
+            TableName: !Ref NpcBackgroundTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref AccountTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref GameAccessTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TaskStateTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref GameSourceTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcAssignmentTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref NpcLockTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - execute-api:ManageConnections
+              Resource: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${GameWebSocketApi}/${StageName}/POST/@connections/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+              Resource: !Sub "arn:aws:s3:::${GameSourceBucket}/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: !Sub "arn:aws:s3:::${TestResultBucket}/*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
+      Layers:
+        - !Ref LibLayer
+        - !Ref CommonLayer
+      Environment:
+        Variables:
+          TaskStateTable: !Ref TaskStateTable
+          AccountTable: !Ref AccountTable
+          NpcBackgroundTable: !Ref NpcBackgroundTable
+          GameAccessTable: !Ref GameAccessTable
+          GameSourceTable: !Ref GameSourceTable
+          NpcLockTable: !Ref NpcLockTable
+          NpcAssignmentTable: !Ref NpcAssignmentTable
+          TestResultBucket: !Ref TestResultBucket
+          EasterEggSheetId: !Ref EasterEggSheetId
+          SecretHash: !Ref SecretHash
+
+  GameWebSocketHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: game-ws-handler/
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource:
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-game-command-durable:live"
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-game-command-durable:live:*"
+        - Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: "*"
+      Layers:
+        - !Ref CommonLayer
+      Environment:
+        Variables:
+          SecretHash: !Ref SecretHash
+          GameCommandDurableFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-game-command-durable:live"
+
+  GameWebSocketHandlerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GameWebSocketHandlerFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${GameWebSocketApi}/*"
+
+  GameWebSocketIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref GameWebSocketApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GameWebSocketHandlerFunction.Arn}/invocations"
+
+  GameWebSocketConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref GameWebSocketApi
+      RouteKey: $connect
+      Target: !Sub "integrations/${GameWebSocketIntegration}"
+
+  GameWebSocketDisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref GameWebSocketApi
+      RouteKey: $disconnect
+      Target: !Sub "integrations/${GameWebSocketIntegration}"
+
+  GameWebSocketDefaultRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref GameWebSocketApi
+      RouteKey: $default
+      Target: !Sub "integrations/${GameWebSocketIntegration}"
 
   PostDeploymentCustomResource:
     Type: AWS::CloudFormation::CustomResource
@@ -1025,7 +1173,7 @@ Outputs:
     Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/task"
   GameUrl:
     Description: "Game URL and you need to replace the Student Individual API key."
-    Value: !Sub "https://wongcyrus.github.io/k8s-isekai/index.html?baseUrl=https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/&game=game01&apiKey=INDIVIDUAL_API_KEY"
+    Value: !Sub "https://wongcyrus.github.io/k8s-isekai/index.html?baseUrl=https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/&wsUrl=wss://${GameWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}&game=game01&apiKey=INDIVIDUAL_API_KEY"
   ExamWebsiteBucket:
     Description: "Name of the exam website S3 bucket"
     Value: !Ref ExamWebsiteBucket
@@ -1041,6 +1189,9 @@ Outputs:
   ExamWebSocketConnectUrlTemplate:
     Description: "WebSocket connect URL template with required query parameters"
     Value: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}?apiKey=YOUR_API_KEY&examCode=YOUR_EXAM_CODE&game=YOUR_GAME&task=YOUR_TASK"
+  GameWebSocketUrl:
+    Description: "WebSocket URL for game real-time task updates"
+    Value: !Sub "wss://${GameWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
   ExamCommandDurableFunctionArn:
     Description: "Qualified ARN of the Lambda durable exam command function"
     Value: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"

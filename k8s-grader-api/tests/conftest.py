@@ -28,6 +28,7 @@ def aws_credentials(monkeypatch):
     monkeypatch.setenv('GameAccessTable', 'GameAccessTable')
     monkeypatch.setenv('ExamCodeTable', 'ExamCodeTable')
     monkeypatch.setenv('ExamSessionTable', 'ExamSessionTable')
+    monkeypatch.setenv('AccountTable', 'AccountTable')
     # Add SECRET_HASH for handler tests
     monkeypatch.setenv('SecretHash', '2M540grRh05JjA0N0f3ptfGqSq-AN6v1zym1rKEIk-g=')
 
@@ -123,6 +124,25 @@ def dynamodb_tables(aws_credentials):
             ],
             BillingMode='PAY_PER_REQUEST'
         )
+
+        account_table = dynamodb.create_table(
+            TableName='AccountTable',
+            KeySchema=[
+                {'AttributeName': 'email', 'KeyType': 'HASH'}
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'email', 'AttributeType': 'S'},
+                {'AttributeName': 'endpoint', 'AttributeType': 'S'}
+            ],
+            GlobalSecondaryIndexes=[{
+                'IndexName': 'EndpointIndex',
+                'KeySchema': [
+                    {'AttributeName': 'endpoint', 'KeyType': 'HASH'}
+                ],
+                'Projection': {'ProjectionType': 'ALL'}
+            }],
+            BillingMode='PAY_PER_REQUEST'
+        )
         
         yield {
             'task_table': task_table,
@@ -131,6 +151,7 @@ def dynamodb_tables(aws_credentials):
             'game_access_table': game_access_table,
             'exam_code_table': exam_code_table,
             'exam_session_table': exam_session_table
+            ,'account_table': account_table
         }
 
 

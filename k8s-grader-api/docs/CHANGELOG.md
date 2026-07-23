@@ -2,7 +2,43 @@
 
 ## Recent Changes (July 2026)
 
-### 1. Exam Mode Logic and UI Refresh
+### 1. Game WebSocket Durable Flow and RPG UX Refresh
+
+The RPG game path was refactored away from synchronous request/response behavior and now mirrors the durable WebSocket model used by exam mode.
+
+**Backend / infrastructure changes**
+
+- added `game-ws-handler/app.py` to accept game WebSocket actions
+- added `game-command-handler/app.py` as the durable RPG task worker
+- added game WebSocket resources and outputs in `template.yaml`
+- fixed game durable Lambda permissions for:
+  - `NpcBackgroundTable`
+  - `GameSourceTable`
+  - `TaskStateTable` write access
+  - `TestResultBucket` `s3:PutObject`
+  - `TestResultBucket` `s3:GetObject`
+- added `Decimal`-safe JSON encoding for WebSocket payloads
+- fixed the Python 3.14 logging crash by resetting the log-record factory
+
+**Game flow behavior changes**
+
+- game mode is now **WebSocket-only**; the RPG plugin requires `wsUrl`
+- `talk` queues durable work and receives live `RUNNING` plus terminal updates
+- answer phase is skipped in game mode
+- challenge is enforced before check
+- game mode no longer abandons tasks after repeated failures
+- task flow is prioritized over random flavor-chat preemption
+
+**Player-facing UI changes**
+
+- the RPG plugin now shows instruction-first messages instead of raw backend phase jargon
+- failures are shown as `No mark yet. ... Try again.`
+- important backend errors are mapped into player-facing guidance
+- report URLs continue to open in a popup when present
+
+---
+
+### 2. Exam Mode Logic and UI Refresh
 
 The exam flow was tightened to match real student usage instead of developer shortcuts.
 

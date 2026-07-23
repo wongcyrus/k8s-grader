@@ -15,6 +15,7 @@ from .repositories import (
     GameAccessRepository,
     ExamCodeRepository,
     ExamSessionRepository,
+    normalize_endpoint,
 )
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     'GameAccessRepository',
     'ExamCodeRepository',
     'ExamSessionRepository',
+    'normalize_endpoint',
     # Backward-compatible function exports
     'save_game_source',
     'save_npc_background',
@@ -43,6 +45,7 @@ __all__ = [
     'is_endpoint_exist',
     'save_account',
     'get_user_data',
+    'normalize_endpoint_url',
     'get_ai_instruction_template',
     'get_ai_random_chat',
 ]
@@ -141,6 +144,11 @@ def save_account(
 def get_user_data(email: str):
     """Get user data (backward-compatible wrapper)"""
     return _get_account_repo().get(email)
+
+
+def normalize_endpoint_url(endpoint: str) -> str:
+    """Normalize account endpoints (backward-compatible wrapper)."""
+    return normalize_endpoint(endpoint)
 
 
 def get_ai_instruction_template(game: str, task: str, npc: str):

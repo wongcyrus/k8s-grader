@@ -3,57 +3,63 @@
 ## System Design
 
 The K8s Grader API is a serverless application built on AWS using:
-- **AWS Lambda** - Serverless compute
-- **API Gateway** - REST API endpoints
-- **DynamoDB** - NoSQL database
-- **S3** - Test report storage
+- **AWS Lambda** - REST handlers, WebSocket handlers, and durable command workers
+- **API Gateway** - REST endpoints and WebSocket APIs
+- **DynamoDB** - task state, accounts, NPC state, and subscriptions
+- **S3** - test report storage and private game source archives
 - **SAM** - Infrastructure as Code
 
 ## Architecture Diagram
 
 ```
 ┌─────────────┐
-│   Browser   │
-│   (Game)    │
+│ Browser /   │
+│ RPG Client  │
 └──────┬──────┘
-       │ HTTPS
+       │ HTTPS + WebSocket
        ▼
-┌─────────────────────────────────────┐
-│       API Gateway                   │
-│  /task, /keygen, /save-k8s-account  │
-└──────┬──────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│ API Gateway                                            │
+│ REST: /task, /keygen, /save-k8s-account                │
+│ WS:   exam updates, game updates                       │
+└──────┬─────────────────────────────────────────────────┘
        │
        ▼
-┌─────────────────────────────────────┐
-│         Lambda Functions            │
-│  ┌──────────────────────────────┐   │
-│  │  TaskHandler (Unified)       │   │
-│  │  - Start task                │   │
-│  │  - Execute phases            │   │
-│  │  - Complete task             │   │
-│  └──────────────────────────────┘   │
-│  ┌──────────────────────────────┐   │
-│  │  Keygen                      │   │
-│  │  - Generate encrypted keys   │   │
-│  └──────────────────────────────┘   │
-│  ┌──────────────────────────────┐   │
-│  │  SaveK8sAccount              │   │
-│  │  - Register K8s credentials  │   │
-│  └──────────────────────────────┘   │
-└──────┬──────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│ Lambda Functions                                        │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │ TaskHandler                                      │   │
+│  │ - legacy /task REST task flow                    │   │
+│  └──────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │ ExamWebSocketHandler + ExamCommandDurable        │   │
+│  │ - queue exam actions                             │   │
+│  │ - push live exam status                          │   │
+│  └──────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │ GameWebSocketHandler + GameCommandFunction       │   │
+│  │ - queue RPG talk/status actions                  │   │
+│  │ - run durable multi-phase game flow              │   │
+│  │ - push live game status                          │   │
+│  └──────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │ Keygen / SaveK8sAccount                          │   │
+│  │ - generate API keys                              │   │
+│  │ - store shared Kubernetes account data           │   │
+│  └──────────────────────────────────────────────────┘   │
+└──────┬─────────────────────────────────────────────────┘
        │
        ▼
-┌─────────────────────────────────────┐
-│         DynamoDB Tables             │
-│  - TaskStateTable                   │
-│  - AccountTable                     │
-│  - ApiKeyTable                      │
-│  - NpcLockTable                     │
-│  - NpcAssignmentTable               │
-│  - NpcBackgroundTable               │
-│  - GameSourceTable                  │
-│  - TestRecordTable                  │
-└─────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│ DynamoDB + S3                                          │
+│ - TaskStateTable                                       │
+│ - AccountTable                                         │
+│ - ApiKeyTable                                          │
+│ - NpcLockTable / NpcAssignmentTable / NpcBackgroundTable│
+│ - GameSourceTable                                      │
+│ - Exam WebSocket connection table                      │
+│ - TestResultBucket                                     │
+└────────────────────────────────────────────────────────┘
 ```
 
 ## Core Components
@@ -63,6 +69,17 @@ The K8s Grader API is a serverless application built on AWS using:
 Exam mode uses a separate WebSocket + durable Lambda path so the browser can queue actions and receive pushed status updates without direct Lambda-to-Lambda orchestration between grading steps.
 
 See [EXAM_DURABLE_FLOW.md](EXAM_DURABLE_FLOW.md) for the full exam-specific flow, state transitions, and runtime-fix history.
+
+### Game Mode
+
+Game mode now uses its own WebSocket + durable Lambda path as well:
+
+- `game-ws-handler/app.py` queues `talk` and `status`
+- `game-command-handler/app.py` runs the durable RPG task flow
+- the RPG Maker plugin consumes pushed `game_status` messages
+- the worker reads Kubernetes credentials from the same `AccountTable` used by exam mode
+
+See [GAME_LOGIC.md](GAME_LOGIC.md) for the current game-mode flow, player message mapping, and gameplay rules.
 
 ### 1. Lambda Functions
 

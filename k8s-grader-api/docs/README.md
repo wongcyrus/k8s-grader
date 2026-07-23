@@ -18,7 +18,7 @@ Welcome to the K8s Grader API documentation! All documentation has been organize
 ### Architecture & Design
 - [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
 - [EXAM_DURABLE_FLOW.md](EXAM_DURABLE_FLOW.md) - Exam WebSocket and durable Lambda flow
-- [GAME_LOGIC.md](GAME_LOGIC.md) - Game flow and mechanics
+- [GAME_LOGIC.md](GAME_LOGIC.md) - Game WebSocket flow and player-facing message rules
 - [DATABASE_GUIDE.md](DATABASE_GUIDE.md) - Database layer
 
 ### Development
@@ -50,10 +50,10 @@ Welcome to the K8s Grader API documentation! All documentation has been organize
 
 ## 📊 Project Status
 
-- ✅ **138 unit tests** passing (63% coverage)
-- ✅ **15 integration tests** passing (self-contained)
-- ✅ **All documentation** up-to-date
-- ✅ **Self-contained tests** - No manual setup required
+- ✅ Exam mode documented as WebSocket + durable Lambda
+- ✅ Game mode documented as WebSocket + durable Lambda
+- ✅ Shared account storage and current RPG UX rules documented
+- ✅ Self-contained tests available for backend changes
 
 ## 🗺️ Documentation Map
 
@@ -66,7 +66,7 @@ docs/
 ├── TESTING_GUIDE.md                # Testing guide
 ├── ARCHITECTURE.md                 # System design
 ├── EXAM_DURABLE_FLOW.md            # Exam durable flow
-├── GAME_LOGIC.md                   # Game mechanics
+├── GAME_LOGIC.md                   # Game durable WebSocket flow
 ├── DATABASE_GUIDE.md               # Database layer
 ├── MANIFEST_GUIDE.md               # Task configuration
 ├── SECRET_HASH_GUIDE.md            # Security
@@ -85,10 +85,14 @@ docs/
 
 ## 🔄 Recent Updates
 
+**July 2026**:
+- ✅ Documented game WebSocket durable flow
+- ✅ Documented current RPG player-message mapping
+- ✅ Documented shared account storage and no-lockout retry behavior
+
 **February 2026**:
 - ✅ Moved all documentation to `docs/` folder
 - ✅ Self-contained integration tests (no manual setup)
-- ✅ All 15 integration tests passing
 - ✅ Automatic API key generation
 - ✅ Comprehensive cleanup (9 tables + API Gateway)
 

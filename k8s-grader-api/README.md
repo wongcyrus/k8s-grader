@@ -6,10 +6,13 @@ A serverless Kubernetes learning game grading system built with AWS SAM, Lambda,
 
 A serverless Kubernetes learning game grading system with clean architecture:
 - **Single unified endpoint** (`/task`) for all task operations
+- **WebSocket + durable Lambda flow** for exam mode
+- **WebSocket + durable Lambda flow** for RPG game mode
 - **Simplified database** using repository pattern
 - **State machine pattern** for explicit state transitions
 - **Declarative task configuration** via manifest.json files
-- **Progress tracking** with points system and retry limits
+- **Shared Kubernetes account storage** across exam and game flows
+- **Progress tracking** with points system and game-specific retry behavior
 
 ### Architecture Highlights
 
@@ -31,6 +34,10 @@ k8s-grader-api/
 │   ├── database/                 # DynamoDB repositories
 │   ├── services/                 # Business logic
 │   └── handler.py                # Common utilities
+├── exam-durable-handler/         # Durable exam command worker
+├── exam-ws-handler/              # Exam WebSocket entrypoint
+├── game-command-handler/         # Durable RPG game command worker
+├── game-ws-handler/              # Game WebSocket entrypoint
 ├── task-handler/                 # Main task endpoint
 ├── keygen/                       # API key generation
 ├── save-k8s-account/             # Account registration

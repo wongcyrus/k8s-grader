@@ -200,18 +200,47 @@ def advance_exam_answer_phase(state, manifest, task_repo) -> bool:
     if not state or state.current_phase_id != "answer":
         return False
 
+    challenge_phase = manifest.get_phase("challenge") if manifest else None
+    challenge_state = state.get_phase_state("challenge") if challenge_phase else None
+    challenge_status = getattr(getattr(challenge_state, "status", None), "value", getattr(challenge_state, "status", None))
     next_phase = manifest.get_next_phase("answer") if manifest else None
     phase_state = state.get_or_create_phase_state("answer")
     phase_status = getattr(phase_state.status, "value", phase_state.status)
     if phase_status != "passed":
         phase_state.mark_passed("", 0)
-    state.current_phase_id = next_phase.id if next_phase else None
+    if challenge_phase and challenge_status != "passed":
+        state.current_phase_id = challenge_phase.id
+    else:
+        state.current_phase_id = next_phase.id if next_phase else None
     task_repo.save(state)
     logger.info(
         "Advanced exam answer phase for %s/%s to %s without running test_03_answer.py",
         state.game,
         state.task_id,
         state.current_phase_id,
+    )
+    return True
+
+
+def ensure_exam_challenge_before_check(state, manifest, task_repo) -> bool:
+    if not state or state.current_phase_id != "check" or not manifest:
+        return False
+
+    challenge_phase = manifest.get_phase("challenge")
+    if not challenge_phase:
+        return False
+
+    challenge_state = state.get_phase_state("challenge")
+    challenge_status = getattr(getattr(challenge_state, "status", None), "value", getattr(challenge_state, "status", None))
+    if challenge_status == "passed":
+        return False
+
+    state.current_phase_id = challenge_phase.id
+    task_repo.save(state)
+    logger.info(
+        "Redirected exam flow for %s/%s back to challenge before check",
+        state.game,
+        state.task_id,
     )
     return True
 
@@ -510,6 +539,7 @@ def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Op
 
     manifest = TaskManifest.load(game, task_id)
     advance_exam_answer_phase(state, manifest, exam_service.task_repo)
+    ensure_exam_challenge_before_check(state, manifest, exam_service.task_repo)
     from common.state_machine.task_state_machine import TaskStateMachine
 
     sm = TaskStateMachine(manifest, state)
@@ -620,9 +650,10 @@ def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id:
         if state:
             from common.state_machine.task_state_machine import TaskStateMachine
 
+            ensure_exam_challenge_before_check(state, manifest, get_exam_service().task_repo)
             next_action = TaskStateMachine(manifest, state).get_next_action()
             if state.current_phase_id == "answer":
-                next_phase = manifest.get_next_phase("answer")
+                next_phase = manifest.get_phase("challenge") or manifest.get_next_phase("answer")
                 next_action = {
                     "action": "execute_phase",
                     "phase_id": next_phase.id if next_phase else None,

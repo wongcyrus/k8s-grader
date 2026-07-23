@@ -104,28 +104,32 @@ class TestLambdaHandler:
             assert 'not found' in body['message']
     
     @patch('app.get_email_game_and_npc_from_event')
-    def test_random_chat(self, mock_get_email, api_event):
-        """Test random chat response"""
+    def test_talk_prioritizes_task_flow(self, mock_get_email, api_event, mock_user_data, sample_task_state, sample_manifest):
+        """Test task talk starts work instead of returning random chat"""
         mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
         
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
-             patch('app.random.random', return_value=0.1), \
-             patch('app.get_ai_random_chat', return_value='Hello there!'):
+             patch('app.get_user_data', return_value=mock_user_data), \
+             patch('app.extract_k8s_credentials', return_value=('cert', 'key', 'endpoint')), \
+             patch('app.clear_tmp_directory'), \
+             patch('app.write_user_files'), \
+             patch('app.task_service.get_current_task', return_value='01_task'), \
+             patch('app.task_service.start_task', return_value=sample_task_state), \
+             patch('common.models.task_manifest.TaskManifest.load', return_value=sample_manifest):
             
             response = lambda_handler(api_event, None)
             
             assert response['statusCode'] == 200
             body = json.loads(response['body'])
-            assert body['status'] == 'OK'
-            assert body['message'] == 'Hello there!'
+            assert body['status'] == 'STARTED'
+            assert body['task_id'] == '01_test_task'
     
     @patch('app.get_email_game_and_npc_from_event')
     def test_npc_locked(self, mock_get_email, api_event, dynamodb_tables):
         """Test with locked NPC"""
         mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
         
-        with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
-             patch('app.random.random', return_value=0.5):
+        with patch('app.get_npc_background', return_value={'name': 'npc1'}):
             
             # Lock the NPC
             from common.database.repositories import NpcRepository
@@ -144,8 +148,7 @@ class TestLambdaHandler:
         """Test with different NPC assigned"""
         mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
         
-        with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
-             patch('app.random.random', return_value=0.5):
+        with patch('app.get_npc_background', return_value={'name': 'npc1'}):
             
             # Assign task from different NPC
             from common.database.repositories import NpcRepository
@@ -165,7 +168,6 @@ class TestLambdaHandler:
         mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
         
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
-             patch('app.random.random', return_value=0.5), \
              patch('app.task_service.validate_npc_access', return_value=(True, None)), \
              patch('app.get_user_data', return_value=None):
             
@@ -182,7 +184,6 @@ class TestLambdaHandler:
         mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
         
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
-             patch('app.random.random', return_value=0.5), \
              patch('app.get_user_data', return_value=mock_user_data), \
              patch('app.extract_k8s_credentials', return_value=('cert', 'key', 'endpoint')), \
              patch('app.clear_tmp_directory'), \
@@ -202,7 +203,6 @@ class TestLambdaHandler:
         mock_get_email.return_value = ('test@example.com', 'game01', 'npc1')
         
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
-             patch('app.random.random', return_value=0.5), \
              patch('app.get_user_data', return_value=mock_user_data), \
              patch('app.extract_k8s_credentials', return_value=('cert', 'key', 'endpoint')), \
              patch('app.clear_tmp_directory'), \
@@ -237,7 +237,6 @@ class TestLambdaHandler:
         }
         
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
-             patch('app.random.random', return_value=0.5), \
              patch('app.get_user_data', return_value=mock_user_data), \
              patch('app.extract_k8s_credentials', return_value=('cert', 'key', 'endpoint')), \
              patch('app.clear_tmp_directory'), \
@@ -273,7 +272,6 @@ class TestLambdaHandler:
         }
         
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
-             patch('app.random.random', return_value=0.5), \
              patch('app.get_user_data', return_value=mock_user_data), \
              patch('app.extract_k8s_credentials', return_value=('cert', 'key', 'endpoint')), \
              patch('app.clear_tmp_directory'), \
@@ -317,7 +315,6 @@ class TestLambdaHandler:
         }
         
         with patch('app.get_npc_background', return_value={'name': 'npc1'}), \
-             patch('app.random.random', return_value=0.5), \
              patch('app.get_user_data', return_value=mock_user_data), \
              patch('app.extract_k8s_credentials', return_value=('cert', 'key', 'endpoint')), \
              patch('app.clear_tmp_directory'), \

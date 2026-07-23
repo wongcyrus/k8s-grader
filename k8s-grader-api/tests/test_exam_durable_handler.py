@@ -350,7 +350,7 @@ def test_handle_exam_run_reports_ready_failure_after_setup_pass():
     assert "Ready failed (TESTS_FAILED)." in body["message"]
 
 
-def test_handle_exam_run_skips_answer_and_runs_check():
+def test_handle_exam_run_skips_answer_and_runs_challenge_first():
     module = load_module()
     from common.models.task_state import TaskState, TaskStatus
 
@@ -359,6 +359,7 @@ def test_handle_exam_run_skips_answer_and_runs_check():
             FakePhase("setup", "Setup", "Prepare cluster"),
             FakePhase("ready", "Ready", "Validate baseline", count_attempts=True),
             FakePhase("answer", "Answer", "Student works on the task"),
+            FakePhase("challenge", "Challenge", "Solve the task"),
             FakePhase("check", "Check", "Verify solution", count_attempts=True, points=100),
             FakePhase("cleanup", "Cleanup", "Cleanup resources", auto_run=True, required=False),
         ]
@@ -380,11 +381,10 @@ def test_handle_exam_run_skips_answer_and_runs_check():
     mock_task_service = SimpleNamespace()
 
     def run_phase(*args, **kwargs):
-        assert state.current_phase_id == "check"
-        phase_state = state.get_or_create_phase_state("check")
-        phase_state.mark_passed("", 100)
-        state.total_points += 100
-        state.current_phase_id = None
+        assert state.current_phase_id == "challenge"
+        phase_state = state.get_or_create_phase_state("challenge")
+        phase_state.mark_passed("", 0)
+        state.current_phase_id = "check"
         return {
             "success": True,
             "state": state,
@@ -409,13 +409,74 @@ def test_handle_exam_run_skips_answer_and_runs_check():
 
     body = json.loads(response["body"])
     assert body["status"] == "OK"
-    assert body["points"] == 100
-    assert [phase["phase_id"] for phase in body["executed_phases"]] == ["check"]
+    assert body["current_phase"] == "check"
+    assert [phase["phase_id"] for phase in body["executed_phases"]] == ["challenge"]
     assert "Answer skipped." not in body["message"]
     assert mock_save_record.call_count == 1
-    assert mock_save_record.call_args.args[4] == "check"
+    assert mock_save_record.call_args.args[4] == "challenge"
     assert state.phase_states["answer"].points_earned == 0
     mock_broadcast.assert_called_once()
+
+
+def test_handle_exam_run_redirects_stale_check_back_to_challenge():
+    module = load_module()
+    from common.models.task_state import TaskState, TaskStatus
+
+    manifest = FakeManifest(
+        [
+            FakePhase("setup", "Setup", "Prepare cluster"),
+            FakePhase("answer", "Answer", "Student works on the task"),
+            FakePhase("challenge", "Challenge", "Solve the task"),
+            FakePhase("check", "Check", "Verify solution", count_attempts=True, points=100),
+        ]
+    )
+    state = TaskState(
+        email="student@example.com",
+        game="game02",
+        task_id="087_task",
+        npc="npc01",
+        status=TaskStatus.IN_PROGRESS,
+        current_phase_id="check",
+        mode="exam",
+        session_data={},
+    )
+    state.get_or_create_phase_state("setup").mark_passed("", 0)
+    state.get_or_create_phase_state("answer").mark_passed("", 0)
+    exam_service = SimpleNamespace(
+        authorize=lambda *args, **kwargs: (True, "", {}),
+        task_repo=SimpleNamespace(get=lambda *args, **kwargs: state, save=lambda s: True),
+    )
+
+    def run_phase(*args, **kwargs):
+        assert state.current_phase_id == "challenge"
+        phase_state = state.get_or_create_phase_state("challenge")
+        phase_state.mark_passed("", 0)
+        state.current_phase_id = "check"
+        return {
+            "success": True,
+            "state": state,
+            "manifest": manifest,
+            "test_result": module.TestResult.OK,
+            "report_url": "",
+        }
+
+    exam_service.run_phase = run_phase
+
+    with patch.object(module, "get_exam_service", return_value=exam_service), \
+         patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module, "get_user_data", return_value={"endpoint": "https://example", "client_certificate": "cert", "client_key": "key"}), \
+         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://example")), \
+         patch.object(module, "clear_tmp_directory"), \
+         patch.object(module, "write_user_files"), \
+         patch.object(module, "save_exam_test_record"), \
+         patch.object(module, "with_exam_overview", side_effect=lambda response, *_args: response), \
+         patch.object(module, "broadcast_exam_response"):
+        response = module.handle_exam_run("student@example.com", "EXAM-001", "game02", "087_task")
+
+    body = json.loads(response["body"])
+    assert body["status"] == "OK"
+    assert body["current_phase"] == "check"
+    assert [phase["phase_id"] for phase in body["executed_phases"]] == ["challenge"]
 
 
 def test_handle_exam_reset_deletes_state_and_requires_start():

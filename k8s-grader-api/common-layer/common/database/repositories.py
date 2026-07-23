@@ -7,8 +7,28 @@ from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timedelta, timezone
 from boto3.dynamodb.conditions import Key, Attr
 import logging
+from urllib.parse import urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_endpoint(endpoint: str) -> str:
+    """Normalize cluster endpoints so equivalent URLs share one identity."""
+    if not endpoint:
+        return endpoint
+
+    endpoint = endpoint.strip()
+    try:
+        parsed = urlsplit(endpoint)
+    except ValueError:
+        return endpoint
+
+    scheme = parsed.scheme.lower()
+    netloc = parsed.netloc.lower()
+    path = parsed.path.rstrip("/")
+    if path == "/":
+        path = ""
+    return urlunsplit((scheme, netloc, path, "", ""))
 
 
 def _get_dynamodb_resource():
@@ -394,9 +414,10 @@ class AccountRepository:
     def is_endpoint_exist(self, email: str, endpoint: str) -> bool:
         """Check if endpoint exists for a different user"""
         try:
+            normalized_endpoint = normalize_endpoint(endpoint)
             response = self.table.query(
                 IndexName="EndpointIndex",
-                KeyConditionExpression=Key("endpoint").eq(endpoint)
+                KeyConditionExpression=Key("endpoint").eq(normalized_endpoint)
             )
             items = response.get("Items", [])
             if items:
@@ -415,10 +436,11 @@ class AccountRepository:
     ) -> bool:
         """Save user account"""
         try:
+            normalized_endpoint = normalize_endpoint(endpoint)
             self.table.put_item(
                 Item={
                     "email": email,
-                    "endpoint": endpoint,
+                    "endpoint": normalized_endpoint,
                     "client_certificate": client_certificate,
                     "client_key": client_key,
                     "time": int(time.time()),

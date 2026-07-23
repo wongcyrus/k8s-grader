@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Last Updated:** July 22, 2026
+**Last Updated:** July 23, 2026
 
 This directory contains all documentation for the k8s-grader-api project.
 
@@ -25,7 +25,7 @@ This directory contains all documentation for the k8s-grader-api project.
 ### Development
 - **[Architecture](ARCHITECTURE.md)** - System design and components
 - **[Exam Durable Flow](EXAM_DURABLE_FLOW.md)** - Exam WebSocket + durable Lambda flow ⭐
-- **[Game Logic](GAME_LOGIC.md)** - How the game works
+- **[Game Logic](GAME_LOGIC.md)** - Game WebSocket + durable Lambda flow and player UX ⭐
 - **[Database Guide](DATABASE_GUIDE.md)** - DynamoDB tables and schema
 - **[Manifest Guide](MANIFEST_GUIDE.md)** - Task manifest format
 
@@ -51,6 +51,15 @@ This directory contains all documentation for the k8s-grader-api project.
   - `elapsed_delta` / `timedelta` logging crash
   - nested durable-step serialization error
 
+### Game Durable Flow (July 2026) ⭐
+- ✅ Updated [Game Logic](GAME_LOGIC.md) for the current WebSocket-only RPG flow
+- ✅ Documented `talk` / `status` durable processing
+- ✅ Documented player-facing status truth table and error-message mapping
+- ✅ Documented game-specific rules:
+  - answer phase is skipped
+  - challenge runs before check
+  - no max-attempt abandonment in RPG mode
+
 ### Bug Fixes ⭐
 - ✅ **Task Completion Bug** - All 4 bugs fixed and verified
   - See [Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)
@@ -69,7 +78,7 @@ This directory contains all documentation for the k8s-grader-api project.
 ### Architecture & Design
 - [Architecture](ARCHITECTURE.md) - System components
 - [Exam Durable Flow](EXAM_DURABLE_FLOW.md) - Exam-mode action flow and runtime fixes
-- [Game Logic](GAME_LOGIC.md) - Game mechanics
+- [Game Logic](GAME_LOGIC.md) - Game durable flow and player UX
 - [Database Guide](DATABASE_GUIDE.md) - Data model
 
 ### Development
@@ -110,5 +119,5 @@ This directory contains all documentation for the k8s-grader-api project.
 ---
 
 **Documentation Status:** ✅ Up to date  
-**Last Review:** February 2, 2026  
-**Next Review:** March 2, 2026
+**Last Review:** July 23, 2026  
+**Next Review:** August 23, 2026

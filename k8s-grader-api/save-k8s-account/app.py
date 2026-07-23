@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from common.database import is_endpoint_exist, save_account
+from common.database import is_endpoint_exist, normalize_endpoint_url, save_account
 from common.handler import (
     error_response,
     get_email_from_event,
@@ -183,7 +183,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # py
             except ValueError as exc:
                 return error_response(str(exc))
 
-            endpoint = fs["endpoint"].text
+            endpoint = normalize_endpoint_url(fs["endpoint"].text)
             client_certificate = fs.get("client-certificate").text if fs.get("client-certificate") else None
             client_key = fs.get("client-key").text if fs.get("client-key") else None
             if not client_certificate and not client_key:

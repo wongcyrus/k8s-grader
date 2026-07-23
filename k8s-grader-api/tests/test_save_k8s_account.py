@@ -142,3 +142,35 @@ class TestSaveK8sAccount:
             )
             == "Client certificate and client key must be provided together"
         )
+
+    def test_save_account_normalizes_endpoint_before_duplicate_check(self):
+        app = _load_module()
+        event = _multipart_event()
+
+        fs = {
+            "endpoint": type("Part", (), {"text": "https://cluster.example.com:6443/"})(),
+            "client-certificate": type("Part", (), {"text": "a" * 120})(),
+            "client-key": type("Part", (), {"text": "b" * 120})(),
+        }
+
+        with patch.object(app, "decode_post_data"), \
+             patch.object(app, "parse_multipart_data", return_value=fs), \
+             patch.object(app, "get_email_from_event", return_value="student@example.com"), \
+             patch.object(app, "is_endpoint_exist", return_value=False) as mock_exists, \
+             patch.object(app, "probe_endpoint", return_value=None) as mock_probe, \
+             patch.object(app, "save_account") as mock_save:
+            response = app.lambda_handler(event, None)
+
+        mock_exists.assert_called_once_with("student@example.com", "https://cluster.example.com:6443")
+        mock_probe.assert_called_once_with(
+            "https://cluster.example.com:6443",
+            "a" * 120,
+            "b" * 120,
+        )
+        mock_save.assert_called_once_with(
+            "student@example.com",
+            "https://cluster.example.com:6443",
+            "a" * 120,
+            "b" * 120,
+        )
+        assert response["statusCode"] == 200
