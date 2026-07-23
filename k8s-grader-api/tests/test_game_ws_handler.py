@@ -30,15 +30,19 @@ class TestGameWebSocketHandler:
     @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
     @patch("game_ws_app._queue_game_command", return_value="request-1")
     def test_talk_action_queues_game_command(self, mock_queue, _mock_email):
-        response = lambda_handler(
-            _ws_event({"action": "talk", "apiKey": "k", "game": "game01", "npc": "Aiden"}),
-            None,
-        )
+        with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "acquire", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "attach_request_id", return_value=True):
+            response = lambda_handler(
+                _ws_event({"action": "talk", "apiKey": "k", "game": "game01", "npc": "Aiden"}),
+                None,
+            )
 
         mock_queue.assert_called_once()
         queued_payload = mock_queue.call_args.args[0]
         assert queued_payload["action"] == "talk"
         assert queued_payload["npc"] == "Aiden"
+        assert queued_payload["execution_guard_key"] == "game#student@example.com#game01#talk"
 
         body = json.loads(response["body"])
         assert body["status"] == "QUEUED"
@@ -47,10 +51,11 @@ class TestGameWebSocketHandler:
     @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
     @patch("game_ws_app._queue_game_command", return_value="request-2")
     def test_status_action_queues_game_command(self, mock_queue, _mock_email):
-        response = lambda_handler(
-            _ws_event({"action": "status", "apiKey": "k", "game": "game01"}),
-            None,
-        )
+        with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True):
+            response = lambda_handler(
+                _ws_event({"action": "status", "apiKey": "k", "game": "game01"}),
+                None,
+            )
 
         queued_payload = mock_queue.call_args.args[0]
         assert queued_payload["action"] == "status"
@@ -62,10 +67,11 @@ class TestGameWebSocketHandler:
     @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
     @patch("game_ws_app._queue_game_command", return_value="request-3")
     def test_skip_action_queues_game_command(self, mock_queue, _mock_email):
-        response = lambda_handler(
-            _ws_event({"action": "skip", "apiKey": "k", "game": "game01"}),
-            None,
-        )
+        with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True):
+            response = lambda_handler(
+                _ws_event({"action": "skip", "apiKey": "k", "game": "game01"}),
+                None,
+            )
 
         queued_payload = mock_queue.call_args.args[0]
         assert queued_payload["action"] == "skip"
@@ -110,4 +116,53 @@ class TestGameWebSocketHandler:
         assert json.loads(response["body"]) == {
             "status": "ERROR",
             "message": "Your game link is invalid or expired. Please open a fresh game link.",
+        }
+
+    @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
+    @patch("game_ws_app._queue_game_command")
+    def test_talk_action_is_throttled_server_side(self, mock_queue, _mock_email):
+        with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=False):
+            response = lambda_handler(
+                _ws_event({"action": "talk", "apiKey": "k", "game": "game01", "npc": "Aiden"}),
+                None,
+            )
+
+        mock_queue.assert_not_called()
+        assert json.loads(response["body"]) == {
+            "status": "ERROR",
+            "message": "Please wait a moment before trying again.",
+        }
+
+    @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
+    @patch("game_ws_app._queue_game_command")
+    def test_talk_action_respects_active_execution_guard(self, mock_queue, _mock_email):
+        with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "acquire", return_value=False):
+            response = lambda_handler(
+                _ws_event({"action": "talk", "apiKey": "k", "game": "game01", "npc": "Aiden"}),
+                None,
+            )
+
+        mock_queue.assert_not_called()
+        assert json.loads(response["body"]) == {
+            "status": "ERROR",
+            "message": "A game task is already running for you. Please wait for it to finish.",
+        }
+
+    @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
+    @patch("game_ws_app._queue_game_command", side_effect=ValueError("queue failed"))
+    def test_talk_action_releases_guard_when_queue_fails(self, _mock_queue, _mock_email):
+        with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "acquire", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "release", return_value=True) as mock_release:
+            response = lambda_handler(
+                _ws_event({"action": "talk", "apiKey": "k", "game": "game01", "npc": "Aiden"}),
+                None,
+            )
+
+        mock_release.assert_called_once_with("game#student@example.com#game01#talk")
+        assert response["statusCode"] == 500
+        assert json.loads(response["body"]) == {
+            "status": "ERROR",
+            "message": "queue failed",
         }

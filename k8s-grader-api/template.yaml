@@ -24,6 +24,10 @@ Parameters:
     Type: String
     Description: "Python version for the Lambda functions"
     Default: "python3.14"
+  TeacherEmails:
+    Type: String
+    Description: "Comma-separated teacher email allowlist for the dashboard"
+    Default: ""
 Globals:
   Function:
     Timeout: 29
@@ -279,6 +283,34 @@ Resources:
               KeyType: "RANGE"
           Projection:
             ProjectionType: "ALL"
+
+  WebSocketThrottleTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "scope_key"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "scope_key"
+          KeyType: "HASH"
+      TimeToLiveSpecification:
+        AttributeName: "expires_at"
+        Enabled: true
+
+  WebSocketExecutionGuardTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "scope_key"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "scope_key"
+          KeyType: "HASH"
+      TimeToLiveSpecification:
+        AttributeName: "expires_at"
+        Enabled: true
 
   # New refactored tables
   TaskStateTable:
@@ -694,6 +726,7 @@ Resources:
           TestResultBucket: !Ref TestResultBucket
           SecretHash: !Ref SecretHash
           EasterEggSheetId: !Ref EasterEggSheetId
+          TeacherEmails: !Ref TeacherEmails
           ExamWebSocketManagementEndpoint: !Sub "https://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
           ExamWebSocketUrl: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
           ExamCommandDurableFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"
@@ -770,6 +803,30 @@ Resources:
             RestApiId: !Ref ApiGatewayApi
             Path: /exam/records
             Method: options
+        TeacherOverview:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /teacher/overview
+            Method: get
+        TeacherOverviewOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /teacher/overview
+            Method: options
+        TeacherStudent:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /teacher/student
+            Method: get
+        TeacherStudentOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /teacher/student
+            Method: options
 
   ExamCommandDurableFunction:
     Type: AWS::Serverless::Function
@@ -806,6 +863,8 @@ Resources:
             TableName: !Ref ExamSessionTable
         - DynamoDBCrudPolicy:
             TableName: !Ref ExamWsConnectionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketExecutionGuardTable
         - S3CrudPolicy:
             BucketName: !Ref TestResultBucket
         - Statement:
@@ -847,6 +906,7 @@ Resources:
           ExamCodeTable: !Ref ExamCodeTable
           ExamSessionTable: !Ref ExamSessionTable
           ExamWsConnectionTable: !Ref ExamWsConnectionTable
+          WebSocketExecutionGuardTable: !Ref WebSocketExecutionGuardTable
           TestResultBucket: !Ref TestResultBucket
           SecretHash: !Ref SecretHash
           EasterEggSheetId: !Ref EasterEggSheetId
@@ -885,6 +945,10 @@ Resources:
             TableName: !Ref ExamWsConnectionTable
         - DynamoDBCrudPolicy:
             TableName: !Ref TaskStateTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketThrottleTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketExecutionGuardTable
         - Statement:
             - Effect: Allow
               Action:
@@ -911,6 +975,8 @@ Resources:
           SecretHash: !Ref SecretHash
           ExamWsConnectionTable: !Ref ExamWsConnectionTable
           TaskStateTable: !Ref TaskStateTable
+          WebSocketThrottleTable: !Ref WebSocketThrottleTable
+          WebSocketExecutionGuardTable: !Ref WebSocketExecutionGuardTable
           ExamCommandDurableFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"
 
   ExamWebSocketHandlerInvokePermission:
@@ -976,6 +1042,8 @@ Resources:
             TableName: !Ref NpcAssignmentTable
         - DynamoDBCrudPolicy:
             TableName: !Ref NpcLockTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketExecutionGuardTable
         - Statement:
             - Effect: Allow
               Action:
@@ -1011,6 +1079,7 @@ Resources:
           GameSourceTable: !Ref GameSourceTable
           NpcLockTable: !Ref NpcLockTable
           NpcAssignmentTable: !Ref NpcAssignmentTable
+          WebSocketExecutionGuardTable: !Ref WebSocketExecutionGuardTable
           TestResultBucket: !Ref TestResultBucket
           EasterEggSheetId: !Ref EasterEggSheetId
           SecretHash: !Ref SecretHash
@@ -1020,6 +1089,10 @@ Resources:
     Properties:
       CodeUri: game-ws-handler/
       Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketThrottleTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketExecutionGuardTable
         - Statement:
             - Effect: Allow
               Action:
@@ -1039,6 +1112,8 @@ Resources:
       Environment:
         Variables:
           SecretHash: !Ref SecretHash
+          WebSocketThrottleTable: !Ref WebSocketThrottleTable
+          WebSocketExecutionGuardTable: !Ref WebSocketExecutionGuardTable
           GameCommandDurableFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-game-command-durable:live"
 
   GameWebSocketHandlerInvokePermission:

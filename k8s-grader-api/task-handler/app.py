@@ -18,6 +18,7 @@ from common.handler import (
 from common.database import get_user_data
 from common.services.task_service import TaskService
 from common.services.exam_service import ExamService
+from common.services.teacher_dashboard_service import TeacherDashboardService
 from common.models.task_manifest import TaskManifest
 from common.file import clear_tmp_directory, write_user_files
 from common.google_spreadsheet import get_easter_egg_link
@@ -54,6 +55,7 @@ def render_template(template: str, session_data: Dict[str, Any]) -> str:
 # Initialize service
 task_service = TaskService()
 exam_service = ExamService()
+teacher_dashboard_service = TeacherDashboardService()
 
 _dynamodb_resource = boto3.resource('dynamodb')
 
@@ -116,6 +118,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Route only exam REST endpoints; legacy game REST API has been removed."""
     try:
         path = (event.get('path') or event.get('resource') or '').rstrip('/')
+        if path.startswith('/teacher'):
+            return teacher_lambda_handler(event, context)
         if path.startswith('/exam'):
             return exam_lambda_handler(event, context)
         return error_response("The legacy game request API was removed. Use the game WebSocket endpoint.")
@@ -131,6 +135,74 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Handler error: {e}", exc_info=True)
         return error_response(f"Internal error: {str(e)}")
+
+
+def _teacher_allowlist() -> set[str]:
+    raw_value = os.getenv('TeacherEmails', '')
+    return {
+        item.strip().lower()
+        for item in raw_value.split(',')
+        if item.strip()
+    }
+
+
+def _authorize_teacher(email: str) -> Optional[str]:
+    allowlist = _teacher_allowlist()
+    if not allowlist:
+        return "Teacher access is not configured."
+    if email.strip().lower() not in allowlist:
+        return "Teacher access denied."
+    return None
+
+
+def teacher_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Handle teacher dashboard routes."""
+    path = (event.get('path') or event.get('resource') or '').rstrip('/')
+    params = event.get('queryStringParameters') or {}
+    teacher_email = get_email_from_event(event)
+
+    if not teacher_email:
+        return error_response("Missing required parameters: email")
+
+    auth_error = _authorize_teacher(teacher_email)
+    if auth_error:
+        return error_response(auth_error)
+
+    if path.endswith('/overview'):
+        allowlist = _teacher_allowlist()
+        students = [
+            item for item in teacher_dashboard_service.list_students()
+            if item.get('email', '').strip().lower() not in allowlist
+        ]
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'status': 'OK',
+                'teacher_email': teacher_email,
+                'students': students,
+            }, cls=DecimalEncoder)
+        }
+
+    if path.endswith('/student'):
+        student_email = params.get('studentEmail')
+        if not student_email:
+            return error_response("Missing required parameters: studentEmail")
+        try:
+            detail = teacher_dashboard_service.get_student_detail(student_email)
+        except ValueError as err:
+            return error_response(str(err))
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'status': 'OK',
+                'teacher_email': teacher_email,
+                **detail,
+            }, cls=DecimalEncoder)
+        }
+
+    return error_response("Unknown teacher endpoint")
     
 
 

@@ -7,7 +7,7 @@ Complete guide to testing the K8s Grader API.
 The project has two types of tests:
 
 1. **Unit Tests** - Fast, mocked tests for development
-2. **Integration Tests** - Real API tests for validation
+2. **Integration Tests** - Real deployed-environment tests for bootstrap validation
 
 ## Unit Tests
 
@@ -43,9 +43,9 @@ pytest tests/test_task_handler.py::TestLambdaHandler::test_missing_parameters
 ```
 
 ### Results
-- **106 tests** in 8 test files
-- **63% code coverage**
-- Execution time: ~4 seconds
+- **239 passing unit tests**
+- **66% code coverage**
+- Execution time: ~30-35 seconds
 - All tests pass ✅
 
 ## Integration Tests
@@ -53,9 +53,18 @@ pytest tests/test_task_handler.py::TestLambdaHandler::test_missing_parameters
 ### What They Test
 - Real API Gateway endpoints
 - Real DynamoDB operations
-- End-to-end workflows
-- Performance and concurrency
+- REST/bootstrap workflows against the deployed stack
 - Error handling with real services
+
+### What They Do **Not** Fully Cover Yet
+- Full exam runtime over WebSocket (`subscribe` → `start` / `run` → pushed `exam_status`)
+- Full game runtime over WebSocket (`subscribe` → `talk` / `status` / `skip` → pushed `game_status`)
+
+Those runtime paths are currently covered mostly by the unit/regression suites around:
+- `exam-ws-handler`
+- `game-ws-handler`
+- `exam-durable-handler`
+- `game-command-handler`
 
 ### How They Work
 - **Self-contained** - No manual setup required!
@@ -140,7 +149,7 @@ pytest -v -s
 
 ### Test Categories
 
-#### Exam Integration Test
+#### Current Integration Test
 ```bash
 pytest test_exam_integration.py::TestExamIntegration -v
 ```
@@ -148,6 +157,8 @@ pytest test_exam_integration.py::TestExamIntegration -v
 - Verify exam code
 - Start task
 - Check task status
+
+This is still meaningful because exam/account bootstrap still starts from REST endpoints even though most runtime task flow is now WebSocket-based.
 
 ## Configuration
 
@@ -358,6 +369,16 @@ BASE_URL=$(aws cloudformation describe-stacks \
   --output text)
 
 curl "${BASE_URL}keygen/"
+```
+
+**`/save-k8s-account` returns `Error`**
+```bash
+# Inspect stack-backed tables
+python scripts/check_stack_db.py --stack-name k8s-grader-api-dev --region us-east-1
+
+# Verify the Kubernetes endpoint/tunnel is actually live before retrying
+# The save-account endpoint now probes the cluster and will fail if the
+# Kubernetes API root is down or returning 404.
 ```
 
 **Tests timeout**

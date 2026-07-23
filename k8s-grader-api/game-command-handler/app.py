@@ -7,6 +7,7 @@ import boto3
 from aws_durable_execution_sdk_python import DurableContext, durable_execution, durable_step
 from jinja2 import Environment
 
+from common.database import ExecutionGuardRepository
 from common.database import get_npc_background, get_user_data
 from common.file import clear_tmp_directory, write_user_files
 from common.google_spreadsheet import get_easter_egg_link
@@ -25,6 +26,7 @@ logger.setLevel(logging.INFO)
 setup_paths()
 
 task_service = TaskService()
+execution_guard_repo = ExecutionGuardRepository()
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -420,6 +422,7 @@ def lambda_handler(event: Dict[str, Any], context: DurableContext) -> Dict[str, 
     email = event.get("email", "")
     game = event.get("game", "")
     npc = event.get("npc", "")
+    execution_guard_key = event.get("execution_guard_key", "")
 
     if not connection_id or not endpoint:
         return {
@@ -432,6 +435,9 @@ def lambda_handler(event: Dict[str, Any], context: DurableContext) -> Dict[str, 
     except Exception as err:
         logger.exception("Game command failed")
         payload = _error_payload(str(err))
+    finally:
+        if execution_guard_key:
+            execution_guard_repo.release(execution_guard_key)
 
     _push_game_update(endpoint, connection_id, action or "error", payload)
     return {"statusCode": 200, "body": json.dumps({"status": "OK"}, cls=DecimalEncoder)}

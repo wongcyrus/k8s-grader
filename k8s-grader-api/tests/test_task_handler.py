@@ -248,6 +248,66 @@ class TestLambdaHandler:
         assert body['status'] == 'STARTED'
         assert body['current_phase'] == 'setup'
 
+    @patch.dict(os.environ, {'TeacherEmails': 'teacher@example.com'}, clear=False)
+    @patch('app.get_email_from_event')
+    def test_teacher_overview_route(self, mock_get_email):
+        mock_get_email.return_value = 'teacher@example.com'
+        event = {
+            'path': '/teacher/overview',
+            'queryStringParameters': {},
+            'headers': {'x-api-key': 'teacher-key'}
+        }
+
+        with patch('app.teacher_dashboard_service.list_students', return_value=[
+            {'email': 'student@example.com', 'status': 'ACTIVE'}
+        ]) as mock_list:
+            response = lambda_handler(event, None)
+
+        mock_list.assert_called_once()
+        body = json.loads(response['body'])
+        assert body['status'] == 'OK'
+        assert body['teacher_email'] == 'teacher@example.com'
+        assert body['students'][0]['email'] == 'student@example.com'
+
+    @patch.dict(os.environ, {'TeacherEmails': 'teacher@example.com'}, clear=False)
+    @patch('app.get_email_from_event')
+    def test_teacher_student_route(self, mock_get_email):
+        mock_get_email.return_value = 'teacher@example.com'
+        event = {
+            'path': '/teacher/student',
+            'queryStringParameters': {'studentEmail': 'student@example.com'},
+            'headers': {'x-api-key': 'teacher-key'}
+        }
+
+        with patch('app.teacher_dashboard_service.get_student_detail', return_value={
+            'student': {'email': 'student@example.com'},
+            'task_states': [],
+            'exam_sessions': [],
+            'reports': [],
+        }) as mock_detail:
+            response = lambda_handler(event, None)
+
+        mock_detail.assert_called_once_with('student@example.com')
+        body = json.loads(response['body'])
+        assert body['status'] == 'OK'
+        assert body['student']['email'] == 'student@example.com'
+
+    @patch.dict(os.environ, {'TeacherEmails': 'teacher@example.com'}, clear=False)
+    @patch('app.get_email_from_event')
+    def test_teacher_route_rejects_non_teacher(self, mock_get_email):
+        mock_get_email.return_value = 'student@example.com'
+        event = {
+            'path': '/teacher/overview',
+            'queryStringParameters': {},
+            'headers': {'x-api-key': 'student-key'}
+        }
+
+        response = lambda_handler(event, None)
+
+        body = json.loads(response['body'])
+        assert body['status'] == 'ERROR'
+        assert 'Teacher access denied' in body['message']
+
 class TestResponseHelpers:
     """Test response helper functions"""
     

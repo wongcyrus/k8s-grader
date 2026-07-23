@@ -12,6 +12,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 from jinja2 import Environment
 
+from common.database import ExecutionGuardRepository
 from common.database import get_user_data
 from common.file import clear_tmp_directory, write_user_files
 from common.google_spreadsheet import get_easter_egg_link
@@ -33,6 +34,7 @@ setup_paths()
 _task_service: Optional[TaskService] = None
 _exam_service: Optional[ExamService] = None
 _dynamodb_resource = None
+execution_guard_repo = ExecutionGuardRepository()
 
 
 def get_task_service() -> TaskService:
@@ -750,15 +752,20 @@ def lambda_handler(event: Dict[str, Any], context: DurableContext) -> Dict[str, 
     exam_code = event.get("exam_code")
     game = event.get("game")
     task_id = event.get("task_id")
+    execution_guard_key = event.get("execution_guard_key", "")
 
-    if action == "start":
-        return context.step(start_exam_command_step(email, exam_code, game, task_id))
-    if action == "reset":
-        return context.step(reset_exam_command_step(email, exam_code, game, task_id))
-    if action == "run":
-        return context.step(run_exam_command_step(email, exam_code, game, task_id))
-    if action == "status":
-        return context.step(status_exam_command_step(email, exam_code, game, task_id))
-    if action == "records":
-        return context.step(records_exam_command_step(email, exam_code, game, task_id))
-    return error_response("Invalid exam command payload")
+    try:
+        if action == "start":
+            return context.step(start_exam_command_step(email, exam_code, game, task_id))
+        if action == "reset":
+            return context.step(reset_exam_command_step(email, exam_code, game, task_id))
+        if action == "run":
+            return context.step(run_exam_command_step(email, exam_code, game, task_id))
+        if action == "status":
+            return context.step(status_exam_command_step(email, exam_code, game, task_id))
+        if action == "records":
+            return context.step(records_exam_command_step(email, exam_code, game, task_id))
+        return error_response("Invalid exam command payload")
+    finally:
+        if execution_guard_key:
+            execution_guard_repo.release(execution_guard_key)

@@ -131,6 +131,54 @@ def test_lambda_handler_routes_through_context_and_broadcasts():
     assert result["statusCode"] == 200
 
 
+def test_lambda_handler_releases_execution_guard():
+    module = load_module()
+    context = StubContext()
+    event = {
+        "action": "talk",
+        "email": "student@example.com",
+        "game": "game01",
+        "npc": "Aiden",
+        "connection_id": "conn-1",
+        "connection_endpoint": "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+        "execution_guard_key": "game#student@example.com#game01#talk",
+    }
+
+    with patch.object(module, "execute_game_command_step", return_value={"status": "OK"}) as mock_step, \
+         patch.object(module, "_push_game_update") as mock_push, \
+         patch.object(module.execution_guard_repo, "release", return_value=True) as mock_release:
+        result = module.lambda_handler(event, context)
+
+    mock_step.assert_called_once()
+    mock_push.assert_called_once()
+    mock_release.assert_called_once_with("game#student@example.com#game01#talk")
+    assert result["statusCode"] == 200
+
+
+def test_lambda_handler_releases_execution_guard_on_exception():
+    module = load_module()
+    context = StubContext()
+    event = {
+        "action": "talk",
+        "email": "student@example.com",
+        "game": "game01",
+        "npc": "Aiden",
+        "connection_id": "conn-1",
+        "connection_endpoint": "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+        "execution_guard_key": "game#student@example.com#game01#talk",
+    }
+
+    with patch.object(module, "execute_game_command_step", side_effect=RuntimeError("boom")), \
+         patch.object(module, "_push_game_update") as mock_push, \
+         patch.object(module.execution_guard_repo, "release", return_value=True) as mock_release:
+        result = module.lambda_handler(event, context)
+
+    mock_release.assert_called_once_with("game#student@example.com#game01#talk")
+    pushed_payload = mock_push.call_args.args[3]
+    assert pushed_payload == {"status": "ERROR", "message": "boom"}
+    assert result["statusCode"] == 200
+
+
 def test_send_ws_message_serializes_decimal_payloads():
     module = load_module()
     client = Mock()

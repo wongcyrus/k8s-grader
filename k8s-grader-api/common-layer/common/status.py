@@ -18,3 +18,6 @@ class TestResult(Enum):
     USAGE_ERROR = 4
     NO_TESTS_COLLECTED = 5
     TIME_OUT = 6
+
+
+TestResult.__test__ = False

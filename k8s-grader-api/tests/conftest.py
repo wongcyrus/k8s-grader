@@ -29,6 +29,8 @@ def aws_credentials(monkeypatch):
     monkeypatch.setenv('ExamCodeTable', 'ExamCodeTable')
     monkeypatch.setenv('ExamSessionTable', 'ExamSessionTable')
     monkeypatch.setenv('AccountTable', 'AccountTable')
+    monkeypatch.setenv('WebSocketThrottleTable', 'WebSocketThrottleTable')
+    monkeypatch.setenv('WebSocketExecutionGuardTable', 'WebSocketExecutionGuardTable')
     # Add SECRET_HASH for handler tests
     monkeypatch.setenv('SecretHash', '2M540grRh05JjA0N0f3ptfGqSq-AN6v1zym1rKEIk-g=')
 
@@ -143,6 +145,28 @@ def dynamodb_tables(aws_credentials):
             }],
             BillingMode='PAY_PER_REQUEST'
         )
+
+        ws_throttle_table = dynamodb.create_table(
+            TableName='WebSocketThrottleTable',
+            KeySchema=[
+                {'AttributeName': 'scope_key', 'KeyType': 'HASH'}
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'scope_key', 'AttributeType': 'S'}
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
+
+        ws_execution_guard_table = dynamodb.create_table(
+            TableName='WebSocketExecutionGuardTable',
+            KeySchema=[
+                {'AttributeName': 'scope_key', 'KeyType': 'HASH'}
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'scope_key', 'AttributeType': 'S'}
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
         
         yield {
             'task_table': task_table,
@@ -151,7 +175,9 @@ def dynamodb_tables(aws_credentials):
             'game_access_table': game_access_table,
             'exam_code_table': exam_code_table,
             'exam_session_table': exam_session_table
-            ,'account_table': account_table
+            ,'account_table': account_table,
+            'ws_throttle_table': ws_throttle_table,
+            'ws_execution_guard_table': ws_execution_guard_table,
         }
 
 

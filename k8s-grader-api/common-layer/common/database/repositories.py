@@ -216,6 +216,28 @@ class TaskStateRepository:
             logger.error(f"Failed to list task states for game: {e}")
             return []
 
+    def list_by_email(self, email: str) -> List[Any]:
+        """
+        List all task states for a user across all games.
+
+        Args:
+            email: User email
+
+        Returns:
+            List of TaskState instances
+        """
+        from common.models.task_state import TaskState
+
+        try:
+            response = self.table.query(
+                KeyConditionExpression=Key('email').eq(email)
+            )
+            items = response.get('Items', [])
+            return [TaskState.from_dict(item) for item in items]
+        except Exception as e:
+            logger.error(f"Failed to list task states for user: {e}")
+            return []
+
 
 class NpcRepository:
     """Repository for NPC-related data"""
@@ -419,6 +441,131 @@ class NpcRepository:
             return False
 
 
+class RequestThrottleRepository:
+    """Repository for short-lived websocket request cooldown windows."""
+
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('WebSocketThrottleTable', 'WebSocketThrottleTable')
+        self._table = None
+
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+
+    def claim_request(
+        self,
+        scope_key: str,
+        *,
+        email: str,
+        channel: str,
+        action: str,
+        cooldown_seconds: int,
+    ) -> bool:
+        """Claim a cooldown window for a websocket action."""
+        now = int(time.time())
+        expires_at = now + max(int(cooldown_seconds), 1)
+        item = {
+            'scope_key': scope_key,
+            'email': email,
+            'channel': channel,
+            'action': action,
+            'updated_at': datetime.now(timezone.utc).isoformat(),
+            'expires_at': expires_at,
+        }
+        try:
+            self.table.put_item(
+                Item=item,
+                ConditionExpression='attribute_not_exists(scope_key) OR expires_at < :now',
+                ExpressionAttributeValues={':now': now},
+            )
+            return True
+        except self.table.meta.client.exceptions.ConditionalCheckFailedException:
+            logger.info("Rejected websocket action due to throttle: %s", scope_key)
+            return False
+        except Exception as e:
+            logger.error(f"Failed to claim websocket throttle window: {e}", exc_info=True)
+            raise
+
+
+class ExecutionGuardRepository:
+    """Repository for guarding in-progress websocket-triggered executions."""
+
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('WebSocketExecutionGuardTable', 'WebSocketExecutionGuardTable')
+        self._table = None
+
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+
+    def acquire(
+        self,
+        scope_key: str,
+        *,
+        email: str,
+        channel: str,
+        action: str,
+        ttl_seconds: int,
+    ) -> bool:
+        now = int(time.time())
+        expires_at = now + max(int(ttl_seconds), 1)
+        item = {
+            'scope_key': scope_key,
+            'email': email,
+            'channel': channel,
+            'action': action,
+            'status': 'IN_PROGRESS',
+            'started_at': datetime.now(timezone.utc).isoformat(),
+            'expires_at': expires_at,
+        }
+        try:
+            self.table.put_item(
+                Item=item,
+                ConditionExpression='attribute_not_exists(scope_key) OR expires_at < :now',
+                ExpressionAttributeValues={':now': now},
+            )
+            return True
+        except self.table.meta.client.exceptions.ConditionalCheckFailedException:
+            logger.info("Rejected websocket action due to active execution guard: %s", scope_key)
+            return False
+        except Exception as e:
+            logger.error(f"Failed to acquire websocket execution guard: {e}", exc_info=True)
+            raise
+
+    def attach_request_id(self, scope_key: str, request_id: str) -> bool:
+        if not request_id:
+            return False
+        try:
+            self.table.update_item(
+                Key={'scope_key': scope_key},
+                UpdateExpression='SET request_id = :request_id, updated_at = :updated_at',
+                ExpressionAttributeValues={
+                    ':request_id': request_id,
+                    ':updated_at': datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to attach durable request id to websocket execution guard: {e}", exc_info=True)
+            return False
+
+    def release(self, scope_key: str) -> bool:
+        if not scope_key:
+            return False
+        try:
+            self.table.delete_item(Key={'scope_key': scope_key})
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to release websocket execution guard: {e}", exc_info=True)
+            return False
+
+
 
 class AccountRepository:
     """Repository for user account data"""
@@ -483,6 +630,23 @@ class AccountRepository:
         except Exception as e:
             logger.error(f"Failed to get account: {e}")
             return None
+
+    def list_all(self) -> List[Dict[str, Any]]:
+        """List all user accounts."""
+        try:
+            items: List[Dict[str, Any]] = []
+            kwargs: Dict[str, Any] = {}
+            while True:
+                response = self.table.scan(**kwargs)
+                items.extend(response.get("Items", []))
+                last_evaluated_key = response.get("LastEvaluatedKey")
+                if not last_evaluated_key:
+                    break
+                kwargs["ExclusiveStartKey"] = last_evaluated_key
+            return items
+        except Exception as e:
+            logger.error(f"Failed to list accounts: {e}")
+            return []
 
 
 class ApiKeyRepository:
@@ -1063,3 +1227,14 @@ class ExamSessionRepository:
         except Exception as e:
             logger.error(f"Failed to disable exam session: {e}")
             return False
+
+    def list_by_email(self, email: str) -> List[Dict[str, Any]]:
+        """List exam sessions for a user."""
+        try:
+            response = self.table.query(
+                KeyConditionExpression=Key("email").eq(email)
+            )
+            return response.get("Items", [])
+        except Exception as e:
+            logger.error(f"Failed to list exam sessions: {e}")
+            return []

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 setup_paths()
+PROBE_PATHS = ("/readyz", "/livez", "/healthz", "/version")
 
 FAKE_CLIENT_CERTIFICATE = (
     "-----BEGIN CERTIFICATE-----\n"
@@ -119,14 +120,11 @@ def probe_endpoint(
     client_key: Optional[str],
 ) -> Optional[str]:
     with tempfile.TemporaryDirectory() as tmpdir:
-        cmd = [
+        base_cmd = [
             "kubectl",
             "--server",
             endpoint,
             "--insecure-skip-tls-verify=true",
-            "get",
-            "--raw=/readyz",
-            "--request-timeout=5s",
         ]
 
         if client_certificate and client_key:
@@ -134,32 +132,47 @@ def probe_endpoint(
             key_path = Path(tmpdir) / "client.key"
             cert_path.write_text(client_certificate, encoding="utf-8")
             key_path.write_text(client_key, encoding="utf-8")
-            cmd[3:3] = [
-                "--client-certificate",
-                str(cert_path),
-                "--client-key",
-                str(key_path),
-            ]
-
-        logger.info("Probing Kubernetes endpoint with kubectl")
-        try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10,
+            base_cmd.extend(
+                [
+                    "--client-certificate",
+                    str(cert_path),
+                    "--client-key",
+                    str(key_path),
+                ]
             )
-        except FileNotFoundError:
-            return "kubectl not found in Lambda runtime"
-        except subprocess.TimeoutExpired:
-            return "kubectl endpoint probe timed out"
-        if result.returncode != 0:
-            stderr = (result.stderr or result.stdout or "").strip()
-            logger.warning("kubectl endpoint probe failed: %s", stderr)
-            return stderr or "kubectl endpoint probe failed"
 
-        return None
+        errors = []
+        for probe_path in PROBE_PATHS:
+            cmd = [
+                *base_cmd,
+                "get",
+                f"--raw={probe_path}",
+                "--request-timeout=5s",
+            ]
+            logger.info("Probing Kubernetes endpoint with kubectl path %s", probe_path)
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=10,
+                )
+            except FileNotFoundError:
+                return "kubectl not found in Lambda runtime"
+            except subprocess.TimeoutExpired:
+                errors.append(f"{probe_path}: kubectl endpoint probe timed out")
+                continue
+
+            if result.returncode == 0:
+                return None
+
+            stderr = (result.stderr or result.stdout or "").strip()
+            message = stderr or "kubectl endpoint probe failed"
+            errors.append(f"{probe_path}: {message}")
+            logger.warning("kubectl endpoint probe failed on %s: %s", probe_path, message)
+
+        return " | ".join(errors)
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # pylint: disable=W0613

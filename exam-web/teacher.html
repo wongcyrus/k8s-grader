@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kubernetes Teacher Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <nav class="page-links" aria-label="Portal pages">
+        <a class="page-link" href="./index.html">Exercise Portal</a>
+        <a class="page-link" href="./exam.html">Exam Page</a>
+        <a class="page-link active" href="./teacher.html" aria-current="page">Teacher Dashboard</a>
+      </nav>
+
+      <h1>Kubernetes Teacher Dashboard</h1>
+      <p>Read-only teacher view for student progress, score, and latest reports.</p>
+
+      <section class="card">
+        <label>Teacher API Key
+          <input id="apiKey" placeholder="Paste teacher API key" />
+        </label>
+        <div class="actions">
+          <button id="loadOverview" type="button">Load Class Overview</button>
+          <button id="resetState" class="secondary-btn" type="button">Reset Saved Teacher Key</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Class Overview</h2>
+        <p id="overviewSummary">Paste a teacher API key to load the dashboard.</p>
+        <div class="table-wrap">
+          <table class="dashboard-table">
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Status</th>
+                <th>Mode</th>
+                <th>Total</th>
+                <th>Exercise</th>
+                <th>Exam</th>
+                <th>Completed</th>
+                <th>Skipped</th>
+                <th>Current Task</th>
+                <th>Latest Report</th>
+              </tr>
+            </thead>
+            <tbody id="overviewBody">
+              <tr>
+                <td colspan="10">No data loaded yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Student Detail</h2>
+        <div id="studentDetail" class="teacher-detail-empty">Select a student row to load detail.</div>
+      </section>
+    </main>
+
+    <script src="./teacher.js"></script>
+  </body>
+</html>

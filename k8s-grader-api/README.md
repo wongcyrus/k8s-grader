@@ -16,9 +16,9 @@ A serverless Kubernetes learning game grading system with clean architecture:
 
 ### Architecture Highlights
 
-- **153 tests passing** with 63% overall coverage
-- **Unit tests**: Fast, mocked, test business logic (138 tests)
-- **Integration tests**: Self-contained, automatic setup/cleanup (15 tests) ✅
+- **239 passing unit tests** with 66% overall coverage
+- **Unit tests**: Fast, mocked, test business logic and current WebSocket runtime behavior
+- **Integration tests**: Self-contained deployed-stack validation for REST/bootstrap flows
 - **Core models**: PhaseConfig, TaskManifest, TaskState (98% coverage)
 - **Services layer**: TaskService, TestRunner (95-100% coverage)
 - **Database repositories**: TaskState, NpcAssignment (75% coverage)
@@ -42,10 +42,11 @@ k8s-grader-api/
 ├── keygen/                       # API key generation
 ├── save-k8s-account/             # Account registration
 ├── post_deployment/              # Post-deploy setup
-├── tests/                        # Unit tests (138 tests)
-│   └── integration/              # Integration tests (15 tests, self-contained) ✅
+├── tests/                        # Unit tests (239 tests)
+│   └── integration/              # Deployed-stack integration tests
 ├── template.yaml                 # SAM infrastructure
-└── deploy.sh                     # Automated deployment
+├── deploy.sh                     # Automated deployment
+└── undeploy.sh                   # Automated AWS teardown
 
 ## 🚀 Quick Start
 
@@ -61,6 +62,13 @@ k8s-grader-api/
 ```
 
 The deploy script now packages `../k8s-game-rule` into a private S3 archive, uploads it into the stack-owned **private game source bucket**, and the stack binds that archive to `game01`. This bucket is separate from SAM's packaging bucket. Follow the prompts to configure your deployment. See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for detailed instructions.
+
+### Undeploy
+```bash
+./undeploy.sh
+```
+
+The undeploy script empties the stack-owned S3 buckets first, then deletes the CloudFormation stack. CloudFormation-managed custom resources, including the post-deployment initializer, are removed as part of normal stack deletion.
 
 `game01` stays the public sample. If you add a private game like `game02`, seed a separate private S3 archive and store its URI in `GameSourceTable` under that game ID.
 
@@ -197,6 +205,7 @@ Each phase tracks:
 
 - **Exercise portal:** static frontend hosted with the stack at `StudentPortalUrl`; saves the API key/Kubernetes login and launches the RPG flow from `index.html`
 - **Exam page:** same hosted site at `StudentPortalUrl/exam.html`; used for exam verify/start/run flows
+- **Teacher dashboard:** same hosted site at `StudentPortalUrl/teacher.html`; read-only class overview for progress, score, and recent reports. Access is restricted by the `TeacherEmails` stack parameter.
 - **Game mode:** WebSocket-only via `game-ws-handler/` and `game-command-handler/`
 - **Exam mode:** REST `/exam/*` plus exam WebSocket updates
 - **Account setup:** `/save-k8s-account/`
@@ -347,7 +356,7 @@ Test against the deployed stack on AWS with **zero manual setup**:
 - Generate unique test user
 - Create test account in DynamoDB
 - Auto-generate encrypted API key
-- Run all 15 tests
+- Run the current deployed integration suite
 - Clean up all test data
 
 **No manual API key setup required!**
@@ -356,10 +365,8 @@ Integration tests:
 - ✅ Self-contained (automatic setup/cleanup)
 - ✅ Call real API Gateway endpoints
 - ✅ Interact with real DynamoDB tables
-- ✅ Test end-to-end workflows
-- ✅ Validate performance (< 5s response time)
-- ✅ Test concurrent requests
-- ✅ 15 tests, all passing
+- ✅ Validate REST/bootstrap workflows against the deployed stack
+- ⚠️ Do not yet fully cover the live WebSocket runtime end-to-end
 - ✅ **Self-contained** - automatic setup and cleanup
 - ✅ **Use encrypted API keys** (contains user email)
 
@@ -377,7 +384,7 @@ See [tests/integration/README.md](tests/integration/README.md) for detailed docu
 | When to run | Every commit | **Auto after deploy** ✅ |
 | Purpose | Code logic | End-to-end validation |
 
-**Best Practice:** Run unit tests during development, integration tests run automatically after deployment.
+**Best Practice:** Run unit tests during development. The current integration suite is still useful for deployed REST/bootstrap validation, while most exam/game runtime behavior is now covered by the WebSocket-focused unit/regression suites.
 
 ## 📝 License
 

@@ -2,7 +2,14 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from common.database.repositories import AccountRepository, NpcRepository, TaskStateRepository, normalize_endpoint
+from common.database.repositories import (
+    AccountRepository,
+    ExecutionGuardRepository,
+    NpcRepository,
+    RequestThrottleRepository,
+    TaskStateRepository,
+    normalize_endpoint,
+)
 from common.models.task_state import TaskState, TaskStatus, PhaseState, PhaseStatus
 
 
@@ -349,3 +356,69 @@ class TestAccountRepository:
 
         stored = repo.get("student1@example.com")
         assert stored["endpoint"] == "https://fuzzy-capybara-6ppxv9grwqc4xp4-8001.app.github.dev"
+
+
+class TestWebSocketProtectionRepositories:
+    def test_request_throttle_claim_blocks_until_expired(self, dynamodb_tables):
+        repo = RequestThrottleRepository()
+
+        assert repo.claim_request(
+            "game#user@test.com#game01#talk",
+            email="user@test.com",
+            channel="game_ws",
+            action="talk",
+            cooldown_seconds=5,
+        ) is True
+        assert repo.claim_request(
+            "game#user@test.com#game01#talk",
+            email="user@test.com",
+            channel="game_ws",
+            action="talk",
+            cooldown_seconds=5,
+        ) is False
+
+        dynamodb_tables["ws_throttle_table"].update_item(
+            Key={"scope_key": "game#user@test.com#game01#talk"},
+            UpdateExpression="SET expires_at = :expired",
+            ExpressionAttributeValues={":expired": 0},
+        )
+
+        assert repo.claim_request(
+            "game#user@test.com#game01#talk",
+            email="user@test.com",
+            channel="game_ws",
+            action="talk",
+            cooldown_seconds=5,
+        ) is True
+
+    def test_execution_guard_acquire_and_release(self, dynamodb_tables):
+        repo = ExecutionGuardRepository()
+
+        assert repo.acquire(
+            "exam#user@test.com#EXAM-001#game02#087_task#run",
+            email="user@test.com",
+            channel="exam_ws",
+            action="run",
+            ttl_seconds=60,
+        ) is True
+        assert repo.acquire(
+            "exam#user@test.com#EXAM-001#game02#087_task#run",
+            email="user@test.com",
+            channel="exam_ws",
+            action="run",
+            ttl_seconds=60,
+        ) is False
+
+        assert repo.attach_request_id(
+            "exam#user@test.com#EXAM-001#game02#087_task#run",
+            "request-123",
+        ) is True
+        item = dynamodb_tables["ws_execution_guard_table"].get_item(
+            Key={"scope_key": "exam#user@test.com#EXAM-001#game02#087_task#run"}
+        )["Item"]
+        assert item["request_id"] == "request-123"
+
+        assert repo.release("exam#user@test.com#EXAM-001#game02#087_task#run") is True
+        assert "Item" not in dynamodb_tables["ws_execution_guard_table"].get_item(
+            Key={"scope_key": "exam#user@test.com#EXAM-001#game02#087_task#run"}
+        )

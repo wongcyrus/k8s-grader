@@ -15,6 +15,8 @@ from .repositories import (
     GameAccessRepository,
     ExamCodeRepository,
     ExamSessionRepository,
+    RequestThrottleRepository,
+    ExecutionGuardRepository,
     normalize_endpoint,
 )
 
@@ -34,6 +36,8 @@ __all__ = [
     'GameAccessRepository',
     'ExamCodeRepository',
     'ExamSessionRepository',
+    'RequestThrottleRepository',
+    'ExecutionGuardRepository',
     'normalize_endpoint',
     # Backward-compatible function exports
     'save_game_source',

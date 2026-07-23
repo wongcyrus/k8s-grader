@@ -8,34 +8,39 @@ import sys
 from typing import List, Dict, Any
 
 
+TEST_EMAIL_PREFIXES = ("integration-test-", "test-")
+
+
+def is_test_email(email: str) -> bool:
+    return email.startswith(TEST_EMAIL_PREFIXES)
+
+
 def get_all_test_api_keys(apigateway_client) -> List[Dict[str, Any]]:
     """Get all API keys that match test pattern"""
     print("🔍 Searching for test API keys...")
-    
-    all_keys = []
-    position = None
-    
-    while True:
-        if position:
-            response = apigateway_client.get_api_keys(
-                nameQuery='integration-test-',
-                includeValues=False,
-                position=position
-            )
-        else:
-            response = apigateway_client.get_api_keys(
-                nameQuery='integration-test-',
-                includeValues=False
-            )
-        
-        items = response.get('items', [])
-        all_keys.extend(items)
-        
-        position = response.get('position')
-        if not position:
-            break
-    
-    return all_keys
+
+    all_keys = {}
+
+    for prefix in TEST_EMAIL_PREFIXES:
+        position = None
+        while True:
+            kwargs = {
+                "nameQuery": prefix,
+                "includeValues": False,
+            }
+            if position:
+                kwargs["position"] = position
+
+            response = apigateway_client.get_api_keys(**kwargs)
+            for item in response.get("items", []):
+                if is_test_email(item.get("name", "")):
+                    all_keys[item["id"]] = item
+
+            position = response.get("position")
+            if not position:
+                break
+
+    return list(all_keys.values())
 
 
 def delete_api_gateway_keys(apigateway_client, dry_run=False):
@@ -71,20 +76,58 @@ def delete_api_gateway_keys(apigateway_client, dry_run=False):
 def get_test_emails_from_dynamodb(dynamodb_client, table_name: str) -> List[str]:
     """Get all test emails from DynamoDB"""
     try:
-        response = dynamodb_client.scan(
-            TableName=table_name,
-            FilterExpression='begins_with(email, :prefix)',
-            ExpressionAttributeValues={
-                ':prefix': {'S': 'integration-test-'}
-            }
-        )
-        
-        items = response.get('Items', [])
-        emails = [item['email']['S'] for item in items]
-        return emails
+        emails = set()
+        scan_kwargs = {"TableName": table_name}
+
+        while True:
+            response = dynamodb_client.scan(**scan_kwargs)
+            for item in response.get("Items", []):
+                email = item.get("email", {}).get("S", "")
+                if is_test_email(email):
+                    emails.add(email)
+
+            last_evaluated_key = response.get("LastEvaluatedKey")
+            if not last_evaluated_key:
+                break
+            scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
+
+        return sorted(emails)
     except Exception as e:
         print(f"⚠️  Warning: Could not scan {table_name}: {e}")
         return []
+
+
+def delete_items_by_email(dynamodb_client, table_name: str, email: str, sort_key_name: str | None = None):
+    if not sort_key_name:
+        dynamodb_client.delete_item(
+            TableName=table_name,
+            Key={"email": {"S": email}},
+        )
+        return
+
+    query_kwargs = {
+        "TableName": table_name,
+        "KeyConditionExpression": "email = :email",
+        "ExpressionAttributeValues": {
+            ":email": {"S": email}
+        },
+    }
+
+    while True:
+        response = dynamodb_client.query(**query_kwargs)
+        for item in response.get("Items", []):
+            dynamodb_client.delete_item(
+                TableName=table_name,
+                Key={
+                    "email": {"S": email},
+                    sort_key_name: item[sort_key_name],
+                },
+            )
+
+        last_evaluated_key = response.get("LastEvaluatedKey")
+        if not last_evaluated_key:
+            break
+        query_kwargs["ExclusiveStartKey"] = last_evaluated_key
 
 
 def cleanup_dynamodb_tables(dynamodb_client, stack_name: str, dry_run=False):
@@ -131,24 +174,28 @@ def cleanup_dynamodb_tables(dynamodb_client, stack_name: str, dry_run=False):
     print(f"\n🗑️  Cleaning up {len(test_emails)} test users...")
     
     tables_to_clean = [
-        ('AccountTable', 'email'),
-        ('ApiKeyTable', 'email'),
+        ("AccountTable", None),
+        ("ApiKeyTable", None),
+        ("TaskStateTable", "gameTask"),
+        ("NpcLockTable", "gameNpc"),
+        ("NpcAssignmentTable", "game"),
+        ("GameTaskTable", "game"),
+        ("SessionTable", "game"),
+        ("NpcTaskTable", "game"),
+        ("TestRecordTable", "gameTime"),
     ]
     
     cleaned = 0
     for email in test_emails:
         print(f"\n   Cleaning: {email}")
         
-        for table_key, partition_key in tables_to_clean:
+        for table_key, sort_key in tables_to_clean:
             table_name = outputs.get(table_key)
             if not table_name:
                 continue
             
             try:
-                dynamodb_client.delete_item(
-                    TableName=table_name,
-                    Key={partition_key: {'S': email}}
-                )
+                delete_items_by_email(dynamodb_client, table_name, email, sort_key)
                 print(f"      ✓ Cleaned {table_key}")
             except dynamodb_client.exceptions.ResourceNotFoundException:
                 pass  # Item doesn't exist, that's fine

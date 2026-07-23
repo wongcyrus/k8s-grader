@@ -1,6 +1,7 @@
 """Tests for the save-k8s-account Lambda."""
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -174,3 +175,32 @@ class TestSaveK8sAccount:
             "b" * 120,
         )
         assert response["statusCode"] == 200
+
+    def test_probe_endpoint_falls_back_until_version_succeeds(self):
+        app = _load_module()
+
+        def fake_run(cmd, **kwargs):
+            raw_arg = next(value for value in cmd if value.startswith("--raw="))
+            if raw_arg == "--raw=/version":
+                return SimpleNamespace(returncode=0, stderr="", stdout='{"gitVersion":"v1.31.0"}')
+            return SimpleNamespace(returncode=1, stderr="Error from server (NotFound): not found", stdout="")
+
+        with patch.object(app.subprocess, "run", side_effect=fake_run) as mock_run:
+            result = app.probe_endpoint("https://cluster.example.com:6443", None, None)
+
+        assert result is None
+        assert mock_run.call_count == 4
+        assert any("--raw=/version" in call.args[0] for call in mock_run.call_args_list)
+
+    def test_probe_endpoint_reports_all_paths_when_every_probe_fails(self):
+        app = _load_module()
+
+        with patch.object(
+            app.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=1, stderr="Error from server (NotFound): not found", stdout=""),
+        ):
+            result = app.probe_endpoint("https://cluster.example.com:6443", None, None)
+
+        assert "/readyz: Error from server (NotFound): not found" in result
+        assert "/version: Error from server (NotFound): not found" in result

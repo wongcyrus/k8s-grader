@@ -273,3 +273,62 @@ pre {
 .hidden {
   display: none;
 }
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 860px;
+}
+
+.dashboard-table th,
+.dashboard-table td {
+  border-bottom: 1px solid #283350;
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.dashboard-table th {
+  color: #dbe8ff;
+  background: #101a30;
+}
+
+.dashboard-table tbody tr[data-student-email] {
+  cursor: pointer;
+}
+
+.dashboard-table tbody tr[data-student-email]:hover {
+  background: #162441;
+}
+
+.teacher-detail-empty {
+  color: #b7c4dc;
+}
+
+.teacher-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.teacher-summary-item {
+  background: #0a1120;
+  border: 1px solid #283350;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.teacher-summary-item strong,
+.teacher-summary-item span {
+  display: block;
+}
+
+.teacher-summary-item strong {
+  margin-bottom: 6px;
+  color: #dbe8ff;
+}

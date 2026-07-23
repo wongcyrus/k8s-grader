@@ -329,6 +329,7 @@ aws cloudformation describe-stacks \
 - `BaseUrl` - API base URL
 - `StudentPortalUrl` - Published exercise portal URL (`index.html`)
 - `StudentPortalUrl/exam.html` - Published exam page URL
+- `StudentPortalUrl/teacher.html` - Published read-only teacher dashboard URL
 - `GameUrl` - Published RPG game URL under the same portal origin
 - `TaskStateTable` - New task state table name
 - `NpcAssignmentTable` - New NPC assignment table name
@@ -338,23 +339,11 @@ aws cloudformation describe-stacks \
 ### 3. Verify New Tables
 
 ```bash
-# Get table names from outputs
-TASK_STATE_TABLE=$(aws cloudformation describe-stacks \
-  --stack-name k8s-grader-api-dev \
-  --query 'Stacks[0].Outputs[?OutputKey==`TaskStateTable`].OutputValue' \
-  --output text)
-
-NPC_ASSIGNMENT_TABLE=$(aws cloudformation describe-stacks \
-  --stack-name k8s-grader-api-dev \
-  --query 'Stacks[0].Outputs[?OutputKey==`NpcAssignmentTable`].OutputValue' \
-  --output text)
-
-# Verify tables exist
-aws dynamodb describe-table --table-name $TASK_STATE_TABLE
-aws dynamodb describe-table --table-name $NPC_ASSIGNMENT_TABLE
+# Inspect all stack-backed DynamoDB tables
+python scripts/check_stack_db.py --stack-name k8s-grader-api-dev --region us-east-1
 ```
 
-**Expected**: Table descriptions returned successfully
+**Expected**: Active table statuses returned from stack outputs. Note that DynamoDB `ItemCount` is approximate and may lag behind real writes/deletes.
 
 ---
 
@@ -435,7 +424,7 @@ The tests are **self-contained** and require no manual setup:
 1. ✅ Generates unique test user email (e.g., `integration-test-abc12345-1234567890@example.com`)
 2. ✅ Creates test account in DynamoDB with fake K8s credentials
 3. ✅ Auto-generates encrypted API key via keygen endpoint
-4. ✅ Runs 15 integration tests across 6 test classes
+4. ✅ Runs the current deployed integration suite
 5. ✅ Cleans up all test data from 9 DynamoDB tables + API Gateway
 
 **No manual API key setup required!**
@@ -462,6 +451,7 @@ Running Integration Tests
 - The API is deployed and functional
 - Review test output for details
 - Manually clean up if needed: `python tests/integration/cleanup_test_keys.py`
+- Inspect stack-backed DynamoDB tables: `python scripts/check_stack_db.py --stack-name k8s-grader-api-dev --region us-east-1`
 
 **Skip integration tests**:
 ```bash
@@ -614,13 +604,14 @@ aws cloudformation update-stack \
 ### Delete Stack
 
 ```bash
-# Complete removal
-aws cloudformation delete-stack --stack-name k8s-grader-api-dev
+# Complete removal (empties stack-owned S3 buckets first)
+./undeploy.sh
 
-# Wait for deletion
-aws cloudformation wait stack-delete-complete \
-  --stack-name k8s-grader-api-dev
+# Non-interactive deletion
+./undeploy.sh --yes
 ```
+
+`./undeploy.sh` uses the same `samconfig.toml` environment selection as `deploy.sh`, empties the stack-owned S3 buckets that usually block deletion, and then calls CloudFormation delete. CloudFormation-managed custom resources, including the post-deployment initializer, are deleted by the stack itself.
 
 ---
 

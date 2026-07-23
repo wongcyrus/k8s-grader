@@ -106,6 +106,47 @@ def test_lambda_handler_routes_through_context_step():
     assert result == {"wrapped": {"statusCode": 200}}
 
 
+def test_lambda_handler_releases_execution_guard():
+    module = load_module()
+    context = StubContext()
+    event = {
+        "action": "run",
+        "email": "student@example.com",
+        "exam_code": "EXAM-001",
+        "game": "game02",
+        "task_id": "087_task",
+        "execution_guard_key": "exam#student@example.com#EXAM-001#game02#087_task#run",
+    }
+
+    with patch.object(module, "run_exam_command_step", return_value={"statusCode": 200}) as mock_step, \
+         patch.object(module.execution_guard_repo, "release", return_value=True) as mock_release:
+        result = module.lambda_handler(event, context)
+
+    mock_step.assert_called_once_with("student@example.com", "EXAM-001", "game02", "087_task")
+    mock_release.assert_called_once_with("exam#student@example.com#EXAM-001#game02#087_task#run")
+    assert result == {"wrapped": {"statusCode": 200}}
+
+
+def test_lambda_handler_releases_execution_guard_on_invalid_action():
+    module = load_module()
+    context = StubContext()
+    event = {
+        "action": "unknown",
+        "email": "student@example.com",
+        "exam_code": "EXAM-001",
+        "game": "game02",
+        "task_id": "087_task",
+        "execution_guard_key": "exam#student@example.com#EXAM-001#game02#087_task#run",
+    }
+
+    with patch.object(module.execution_guard_repo, "release", return_value=True) as mock_release:
+        result = module.lambda_handler(event, context)
+
+    mock_release.assert_called_once_with("exam#student@example.com#EXAM-001#game02#087_task#run")
+    body = json.loads(result["body"])
+    assert body["status"] == "ERROR"
+
+
 def test_handle_exam_records_broadcasts_only_with_scope():
     module = load_module()
     exam_service = module.get_exam_service()

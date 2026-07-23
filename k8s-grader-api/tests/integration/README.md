@@ -139,7 +139,7 @@ The tests will automatically:
 1. Generate a unique test user email
 2. Create test user account in DynamoDB
 3. Generate encrypted API key
-4. Run all 15 tests
+4. Run the current deployed integration suite
 5. Clean up all test data
 
 ### Custom Configuration
@@ -186,6 +186,19 @@ pytest -m integration -v
 #### TestExamIntegration
 - `test_exam_setup_verify_and_start` - Save account, verify exam code, start exam, and status check
 
+### What This Does and Does Not Prove
+
+This suite is currently most useful for **deployed REST/bootstrap validation**:
+- `/save-k8s-account`
+- `/exam/verify-code`
+- exam bootstrap before the live WebSocket runtime
+
+It does **not** yet provide full end-to-end coverage for:
+- exam WebSocket `subscribe` / `start` / `run` push flow
+- game WebSocket `subscribe` / `talk` / `status` / `skip` push flow
+
+Those runtime paths are currently covered primarily by the backend unit/regression suites.
+
 Exam test environment overrides:
 
 ```bash
@@ -194,6 +207,8 @@ export EXAM_CODE="GAME02-EXAM-20260721"
 export EXAM_GAME="game02"
 export EXAM_TASK="087_kustomize_configuration"
 ```
+
+`/save-k8s-account` now performs a real Kubernetes endpoint probe before saving. The integration test therefore requires `MINIKUBE_URL` to point to a **live Kubernetes API base URL**. If the cluster is stopped or the tunnel/root URL returns `404`, the test will fail with `{"status":"Error","message":"Endpoint probe failed: ..."}` by design.
 
 ---
 
@@ -222,6 +237,9 @@ Cleanup happens automatically after each test run:
 If automatic cleanup fails or you want to verify:
 
 ```bash
+# Inspect stack-backed DynamoDB tables first
+python scripts/check_stack_db.py --stack-name k8s-grader-api-dev --region us-east-1
+
 # Check for leftover data (safe)
 python tests/integration/cleanup_test_keys.py --dry-run
 
@@ -320,6 +338,26 @@ export TEST_API_KEY='generated-key'
 - `dynamodb:GetItem`, `dynamodb:PutItem`, `dynamodb:DeleteItem`, `dynamodb:Query`, `dynamodb:Scan`
 - `apigateway:GetApiKeys`, `apigateway:DeleteApiKey`
 - `cloudformation:DescribeStacks`
+
+### Save Account Returns `Error`
+
+```
+{"status": "Error", "message": "Endpoint probe failed: ..."}
+```
+
+**Cause**: `MINIKUBE_URL` is not serving a live Kubernetes API root. Common reasons:
+- the cluster is stopped
+- the tunnel has expired
+- the tunnel root returns `404` instead of Kubernetes raw endpoints
+
+**Solution**:
+```bash
+# Verify stack-backed tables if needed
+python scripts/check_stack_db.py --stack-name k8s-grader-api-dev --region us-east-1
+
+# Then re-run integration tests only after the cluster/tunnel is live again
+bash run_integration_tests.sh
+```
 
 ### Tests Are Slow
 

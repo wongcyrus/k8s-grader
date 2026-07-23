@@ -56,6 +56,7 @@ Welcome to the K8s Grader API documentation! All documentation has been organize
 - ✅ Shared account storage and current RPG UX rules documented
 - ✅ Split exercise portal + `exam.html` flow documented
 - ✅ Self-contained tests available for backend changes
+- ✅ Integration docs clarified for REST/bootstrap vs WebSocket runtime coverage
 
 ## 🗺️ Documentation Map
 

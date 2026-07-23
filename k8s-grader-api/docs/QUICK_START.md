@@ -17,7 +17,7 @@ cd k8s-grader/k8s-grader-api
 That's it! The deployment script will:
 1. ✅ Run unit tests (106 tests)
 2. ✅ Build and deploy to AWS
-3. ✅ Run integration tests automatically (15 tests)
+3. ✅ Run integration tests automatically
 4. ✅ Clean up test data
 
 ## 🧪 Running Tests Locally
@@ -29,7 +29,7 @@ That's it! The deployment script will:
 
 ### Integration Tests (Automatic)
 ```bash
-./run_integration_tests.sh  # 15 tests, ~60 seconds
+./run_integration_tests.sh  # Current deployed integration suite
 # No manual setup needed - fully self-contained!
 ```
 
@@ -121,6 +121,7 @@ NOT_STARTED → IN_PROGRESS → COMPLETED
 
 - **Exercise portal:** use the published `StudentPortalUrl` output for `index.html`, save the API key once, then launch the RPG game from that page
 - **Exam page:** open `StudentPortalUrl/exam.html` for exam verify/start/run flows
+- **Teacher dashboard:** open `StudentPortalUrl/teacher.html` with a teacher API key whose email is included in the `TeacherEmails` deploy parameter
 - **Game mode:** the published `GameUrl` still works for direct same-origin access after the exercise portal has saved the API key
 - **Exam mode:** use `/exam/verify-code`, `/exam/start`, `/exam/run`, `/exam/status`, and `/exam/records`
 - **Legacy note:** the old game `/task` request/response API has been removed
@@ -135,8 +136,8 @@ k8s-grader-api/
 │   ├── database/            # DynamoDB repos
 │   └── services/            # Business logic
 ├── task-handler/            # Exam REST endpoints
-├── tests/                   # 106 unit tests
-│   └── integration/         # 15 integration tests (self-contained)
+├── tests/                   # 239 unit tests
+│   └── integration/         # Self-contained deployed-stack integration tests
 └── template.yaml            # SAM infrastructure
 ```
 
@@ -148,9 +149,9 @@ k8s-grader-api/
 | Repositories | 15 | 75% |
 | Services | 24 | 95-100% |
 | Handler | 19 | 85% |
-| **Total** | **106** | **63%** |
+| **Total** | **239** | **66%** |
 
-**Integration Tests**: 15 tests, self-contained, automatic setup/cleanup
+**Integration Tests**: self-contained deployed-stack validation, mainly for REST/bootstrap coverage
 
 ## 💡 Common Tasks
 
@@ -192,7 +193,7 @@ curl "http://localhost:3000/exam/verify-code?examCode=EXAM-001" -H "x-api-key: t
 - ✅ **Self-contained integration tests** - No manual setup required!
 - ✅ **Automatic API key generation** - Tests generate their own keys
 - ✅ **Automatic cleanup** - 9 DynamoDB tables + API Gateway
-- ✅ **106 unit tests passing** - 63% coverage
-- ✅ **15 integration tests passing** - All self-contained
+- ✅ **239 unit tests passing** - 66% coverage
+- ✅ **Self-contained deployed-stack integration tests** - For REST/bootstrap validation
 
 See [CHANGELOG.md](CHANGELOG.md) for recent updates.
