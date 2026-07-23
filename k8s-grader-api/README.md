@@ -5,7 +5,7 @@ A serverless Kubernetes learning game grading system built with AWS SAM, Lambda,
 ## 🎯 Project Overview
 
 A serverless Kubernetes learning game grading system with clean architecture:
-- **Single unified endpoint** (`/task`) for all task operations
+- **REST exam endpoints** under `/exam/*`
 - **WebSocket + durable Lambda flow** for exam mode
 - **WebSocket + durable Lambda flow** for RPG game mode
 - **Simplified database** using repository pattern
@@ -22,7 +22,7 @@ A serverless Kubernetes learning game grading system with clean architecture:
 - **Core models**: PhaseConfig, TaskManifest, TaskState (98% coverage)
 - **Services layer**: TaskService, TestRunner (95-100% coverage)
 - **Database repositories**: TaskState, NpcAssignment (75% coverage)
-- **Unified handler**: Single `/task` endpoint (100% coverage)
+- **Exam handler**: shared `/exam/*` REST entrypoint
 
 ## 📂 Project Structure
 
@@ -38,7 +38,7 @@ k8s-grader-api/
 ├── exam-ws-handler/              # Exam WebSocket entrypoint
 ├── game-command-handler/         # Durable RPG game command worker
 ├── game-ws-handler/              # Game WebSocket entrypoint
-├── task-handler/                 # Main task endpoint
+├── task-handler/                 # Exam REST endpoints and shared responses
 ├── keygen/                       # API key generation
 ├── save-k8s-account/             # Account registration
 ├── post_deployment/              # Post-deploy setup
@@ -193,39 +193,12 @@ Each phase tracks:
 - Test results and reports
 - Points earned
 
-### API Endpoint
+### Runtime Entry Points
 
-**POST /task**
-- Unified endpoint for all task operations
-- Handles task start, phase execution, and completion
-- Returns current state and next actions
-
-Request:
-```json
-{
-  "action": "start_task",
-  "game": "game01",
-  "task_id": "01_default_namespace",
-  "npc": "npc1"
-}
-```
-
-Response:
-```json
-{
-  "success": true,
-  "state": {
-    "status": "in_progress",
-    "current_phase_id": "setup",
-    "progress_percentage": 0,
-    "total_points": 0
-  },
-  "next_action": {
-    "phase_id": "setup",
-    "test_file": "test_01_setup.py"
-  }
-}
-```
+- **Game mode:** WebSocket-only via `game-ws-handler/` and `game-command-handler/`
+- **Exam mode:** REST `/exam/*` plus exam WebSocket updates
+- **Account setup:** `/save-k8s-account/`
+- **API key generation:** `/keygen/`
 
 ## 🔧 Development
 
@@ -246,11 +219,9 @@ venv/bin/python -m pytest tests/ --cov=common --cov-report=html
 # Start local API
 sam build && sam local start-api
 
-# Test endpoint
-curl -X POST http://localhost:3000/task \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: your-test-key" \
-  -d '{"action":"start_task","game":"game01","task_id":"01_default_namespace","npc":"npc1"}'
+# Example exam endpoint
+curl "http://localhost:3000/exam/verify-code?examCode=EXAM-001" \
+  -H "x-api-key: your-test-key"
 ```
 
 ### Adding a New Task
@@ -274,7 +245,7 @@ curl -X POST http://localhost:3000/task \
 ### AWS Resources
 - **API Gateway**: REST API with custom domain support
 - **Lambda Functions**: 
-  - TaskHandler (main endpoint)
+  - TaskHandler (exam REST endpoints)
   - KeyGen (API key generation)
   - SaveK8sAccount (account registration)
   - PostDeployment (setup automation)

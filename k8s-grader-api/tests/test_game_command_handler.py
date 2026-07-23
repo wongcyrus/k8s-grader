@@ -200,6 +200,45 @@ def test_status_action_skips_answer_phase_to_challenge():
     assert payload["next_game_phrase"] == "CHALLENGE"
 
 
+def test_talk_action_maps_npc_access_errors_to_player_message():
+    module = load_module()
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "get_npc_background", return_value={"name": "Aiden"}):
+        mock_task_service.validate_npc_access.return_value = (False, "Aiden does not have any task for you!")
+
+        result = module.execute_game_command(
+            "talk",
+            "student@example.com",
+            "game01",
+            "Aiden",
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    assert result == {"status": "ERROR", "message": "Aiden has no task for you right now."}
+
+
+def test_talk_action_maps_missing_account_to_player_message():
+    module = load_module()
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "get_npc_background", return_value={"name": "Aiden"}), \
+         patch.object(module, "get_user_data", return_value=None):
+        mock_task_service.validate_npc_access.return_value = (True, None)
+
+        result = module.execute_game_command(
+            "talk",
+            "student@example.com",
+            "game01",
+            "Aiden",
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    assert result == {"status": "ERROR", "message": "Please save your Kubernetes account first."}
+
+
 def test_talk_action_runs_multi_phase_flow_until_completion():
     module = load_module()
     manifest = FakeManifest()
@@ -478,3 +517,28 @@ def test_talk_action_does_not_abandon_when_max_attempts_are_reached():
     mock_task_service.abandon_task.assert_not_called()
     assert result["status"] == "FAILED"
     assert result["current_phase"] == "challenge"
+
+
+def test_lambda_handler_maps_invalid_api_key_error_for_player():
+    module = load_module()
+    context = StubContext()
+    event = {
+        "action": "talk",
+        "email": "student@example.com",
+        "game": "game01",
+        "npc": "Aiden",
+        "connection_id": "conn-1",
+        "connection_endpoint": "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+    }
+
+    with patch.object(module, "execute_game_command_step", side_effect=ValueError("Invalid or expired API key: InvalidToken")), \
+         patch.object(module, "_push_game_update") as mock_push:
+        result = module.lambda_handler(event, context)
+
+    mock_push.assert_called_once_with(
+        "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+        "conn-1",
+        "talk",
+        {"status": "ERROR", "message": "Your game link is invalid or expired. Please open a fresh game link."},
+    )
+    assert result["statusCode"] == 200

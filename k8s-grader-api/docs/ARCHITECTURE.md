@@ -20,7 +20,7 @@ The K8s Grader API is a serverless application built on AWS using:
        ▼
 ┌────────────────────────────────────────────────────────┐
 │ API Gateway                                            │
-│ REST: /task, /keygen, /save-k8s-account                │
+│ REST: /exam/*, /keygen, /save-k8s-account              │
 │ WS:   exam updates, game updates                       │
 └──────┬─────────────────────────────────────────────────┘
        │
@@ -29,7 +29,7 @@ The K8s Grader API is a serverless application built on AWS using:
 │ Lambda Functions                                        │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │ TaskHandler                                      │   │
-│  │ - legacy /task REST task flow                    │   │
+│  │ - exam REST endpoints                            │   │
 │  └──────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │ ExamWebSocketHandler + ExamCommandDurable        │   │
@@ -83,14 +83,10 @@ See [GAME_LOGIC.md](GAME_LOGIC.md) for the current game-mode flow, player messag
 
 ### 1. Lambda Functions
 
-#### TaskHandler (Unified Endpoint)
-- **Path:** `/task`
-- **Purpose:** Single endpoint for all task operations
-- **Operations:**
-  - Start new task
-  - Execute test phases
-  - Complete task
-  - Get task status
+#### TaskHandler (Exam REST Endpoint)
+- **Path:** `/exam/*`
+- **Purpose:** Exam REST actions such as verify, start, reset, run, status, and records
+- **Note:** the old game `/task` request/response API has been removed
 
 #### Keygen
 - **Path:** `/keygen`

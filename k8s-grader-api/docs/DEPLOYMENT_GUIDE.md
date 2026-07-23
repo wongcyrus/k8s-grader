@@ -327,7 +327,7 @@ aws cloudformation describe-stacks \
 
 **Important outputs**:
 - `BaseUrl` - API base URL
-- `TaskHandlerApi` - New /task endpoint
+- `GameUrl` - Published RPG game URL with WebSocket parameters
 - `TaskStateTable` - New task state table name
 - `NpcAssignmentTable` - New NPC assignment table name
 
@@ -356,15 +356,9 @@ aws dynamodb describe-table --table-name $NPC_ASSIGNMENT_TABLE
 
 ---
 
-### 4. Verify New Function
+### 4. Verify Task Handler Function
 
 ```bash
-# Get function name
-FUNCTION_NAME=$(aws cloudformation describe-stacks \
-  --stack-name k8s-grader-api-dev \
-  --query 'Stacks[0].Outputs[?OutputKey==`TaskHandlerApi`].OutputValue' \
-  --output text | cut -d'/' -f4)
-
 # Check function exists
 aws lambda get-function --function-name k8s-grader-api-dev-TaskHandlerFunction
 ```
@@ -373,7 +367,7 @@ aws lambda get-function --function-name k8s-grader-api-dev-TaskHandlerFunction
 
 ---
 
-### 5. Test New Endpoint
+### 5. Test Current Endpoints
 
 First, you need an API key. Get it from the keygen endpoint:
 
@@ -396,18 +390,18 @@ curl "${BASE_URL}keygen?secret=${SECRET_HASH}&email=YOUR_EMAIL@example.com"
 
 **Save the API key** from the response.
 
-Now test the new /task endpoint:
+Now test an exam endpoint:
 
 ```bash
-# Test task endpoint (replace YOUR_API_KEY)
+# Test exam verify-code endpoint (replace YOUR_API_KEY and EXAM_CODE)
 curl -H "x-api-key: YOUR_API_KEY" \
-  "${BASE_URL}task?action=start&game=game01&task=01&npc=npc01"
+  "${BASE_URL}exam/verify-code?examCode=EXAM_CODE"
 ```
 
 **Expected response**:
 ```json
 {
-  "statusCode": 200,
+  "status": "VERIFIED",
   "body": {
     "status": "success",
     "data": {
@@ -683,7 +677,7 @@ aws cloudformation wait stack-delete-complete \
 
 4. **Update Frontend**
    - Modify RPG Maker plugin
-   - Use new /task endpoint
+   - Use the published `GameUrl` / `GameWebSocketUrl`
    - Test in game
 
 5. **Documentation**
@@ -697,7 +691,7 @@ aws cloudformation wait stack-delete-complete \
 
 - [x] Stack deployed successfully
 - [ ] All new resources created
-- [ ] New /task endpoint responds correctly
+- [ ] Current `/exam/*` endpoints respond correctly
 - [ ] No errors in CloudWatch logs
 - [ ] All tests pass in deployed environment
 - [ ] Monitoring configured
@@ -732,7 +726,7 @@ sam local invoke TaskHandlerFunction -e events/event.json
 
 After deployment, save these:
 - Base URL: From `BaseUrl` output
-- Task Endpoint: From `TaskHandlerApi` output
+- Game URL: From `GameUrl` output
 - Keygen: `{BaseUrl}keygen?secret={SecretHash}&email={email}`
 
 ---

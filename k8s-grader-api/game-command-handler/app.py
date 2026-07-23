@@ -10,7 +10,7 @@ from jinja2 import Environment
 from common.database import get_npc_background, get_user_data
 from common.file import clear_tmp_directory, write_user_files
 from common.google_spreadsheet import get_easter_egg_link
-from common.handler import extract_k8s_credentials, setup_paths
+from common.handler import extract_k8s_credentials, setup_paths, to_player_safe_game_message
 from common.models.task_manifest import TaskManifest
 from common.models.task_state import TaskStatus
 from common.services.task_service import TaskService
@@ -68,6 +68,10 @@ def _render_template(template: Optional[str], session_data: Dict[str, Any]) -> s
 
 def _phase_hint(phase_id: Optional[str]) -> str:
     return phase_id.upper() if phase_id else ""
+
+
+def _error_payload(message: str) -> Dict[str, Any]:
+    return {"status": "ERROR", "message": to_player_safe_game_message(message)}
 
 
 def _advance_game_answer_phase(state, manifest) -> bool:
@@ -288,23 +292,23 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
 
 def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection_id: str) -> Dict[str, Any]:
     if not email or not game or not npc:
-        return {"status": "ERROR", "message": "Missing required websocket parameters"}
+        return _error_payload("Missing required websocket parameters")
     if not game.isalnum():
-        return {"status": "ERROR", "message": "Game parameter must be alphanumeric"}
+        return _error_payload("Game parameter must be alphanumeric")
     if not get_npc_background(npc):
-        return {"status": "ERROR", "message": f"NPC '{npc}' not found"}
+        return _error_payload(f"NPC '{npc}' not found")
 
     can_access, error = task_service.validate_npc_access(email, game, npc)
     if not can_access:
-        return {"status": "ERROR", "message": error}
+        return _error_payload(error)
 
     user_data = get_user_data(email)
     if not user_data:
-        return {"status": "ERROR", "message": "User account not found"}
+        return _error_payload("User account not found")
 
     client_certificate, client_key, endpoint_url = extract_k8s_credentials(user_data)
     if not all([client_certificate, client_key, endpoint_url]):
-        return {"status": "ERROR", "message": "K8s credentials missing or incomplete"}
+        return _error_payload("K8s credentials missing or incomplete")
 
     clear_tmp_directory()
     write_user_files(client_certificate, client_key)
@@ -373,7 +377,7 @@ def execute_game_command(
         return _handle_game_talk(email, game, npc, endpoint, connection_id)
     if action == "status":
         return _build_game_status_payload(email, game)
-    return {"status": "ERROR", "message": f"Unsupported game action: {action}"}
+    return _error_payload(f"Unsupported game action: {action}")
 
 
 @durable_step
@@ -394,14 +398,14 @@ def lambda_handler(event: Dict[str, Any], context: DurableContext) -> Dict[str, 
     if not connection_id or not endpoint:
         return {
             "statusCode": 400,
-            "body": json.dumps({"status": "ERROR", "message": "Missing websocket connection details"}, cls=DecimalEncoder),
+            "body": json.dumps(_error_payload("Missing websocket connection details"), cls=DecimalEncoder),
         }
 
     try:
         payload = context.step(execute_game_command_step(action, email, game, npc, endpoint, connection_id))
     except Exception as err:
         logger.exception("Game command failed")
-        payload = {"status": "ERROR", "message": str(err)}
+        payload = _error_payload(str(err))
 
     _push_game_update(endpoint, connection_id, action or "error", payload)
     return {"statusCode": 200, "body": json.dumps({"status": "OK"}, cls=DecimalEncoder)}

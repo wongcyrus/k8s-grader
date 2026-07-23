@@ -52,6 +52,7 @@ Welcome to the K8s Grader API documentation! All documentation has been organize
 
 - ✅ Exam mode documented as WebSocket + durable Lambda
 - ✅ Game mode documented as WebSocket + durable Lambda
+- ✅ Legacy game `/task` API removed from current architecture
 - ✅ Shared account storage and current RPG UX rules documented
 - ✅ Self-contained tests available for backend changes
 

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Any, Dict, Optional, Tuple
 
 from common.status import GamePhrase, TestResult
@@ -127,3 +128,43 @@ def get_email_from_api_key(api_key: str) -> str:
     except Exception as e:
         # Catch all decryption errors including InvalidToken, padding errors, etc.
         raise ValueError(f"Invalid or expired API key: {type(e).__name__}") from e
+
+
+def to_player_safe_game_message(message: Optional[str]) -> str:
+    if not message:
+        return ""
+
+    no_task_match = re.match(r"^(.+?) does not have any task for you!?$", message)
+    if no_task_match:
+        return f"{no_task_match.group(1)} has no task for you right now."
+
+    assigned_npc_match = re.match(r"^Complete task from (.+) first!?$", message)
+    if assigned_npc_match:
+        return f"Finish your task from {assigned_npc_match.group(1)} first."
+
+    missing_npc_match = re.match(r"^NPC '(.+)' not found$", message)
+    if missing_npc_match:
+        return f"{missing_npc_match.group(1)} is unavailable right now."
+
+    if message in {"API key is required"} or message.startswith("Invalid or expired API key:"):
+        return "Your game link is invalid or expired. Please open a fresh game link."
+
+    if message == "User account not found":
+        return "Please save your Kubernetes account first."
+
+    if message == "K8s credentials missing or incomplete":
+        return "Your Kubernetes account details are incomplete. Please save them again."
+
+    if message in {"Missing required websocket parameters", "Missing subscribe parameters"}:
+        return "This game link is missing required details. Please reopen the game from the correct link."
+
+    if message == "Missing websocket connection details":
+        return "The game connection is incomplete. Please refresh and try again."
+
+    if message == "Game parameter must be alphanumeric":
+        return "This game link is invalid. Please reopen the game from the correct link."
+
+    if message == "GameCommandDurableFunctionArn is not configured":
+        return "The game server is not ready right now. Please try again later."
+
+    return message

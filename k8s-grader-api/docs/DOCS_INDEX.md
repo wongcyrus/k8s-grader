@@ -10,7 +10,6 @@ This directory contains all documentation for the k8s-grader-api project.
 
 - **[Quick Start Guide](QUICK_START.md)** - Get started in 5 minutes
 - **[Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)** - February 2026 bug fixes ⭐
-- **[Testing Scripts](../TESTING_SCRIPTS.md)** - Automated E2E tests
 - **[Changelog](CHANGELOG.md)** - All changes and updates
 
 ---
@@ -31,7 +30,6 @@ This directory contains all documentation for the k8s-grader-api project.
 
 ### Testing
 - **[Testing Guide](TESTING_GUIDE.md)** - Unit and integration tests
-- **[Testing Scripts](../TESTING_SCRIPTS.md)** - Automated E2E tests ⭐
 - **[Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)** - February 2026 fixes
 
 ### Operations
@@ -63,12 +61,10 @@ This directory contains all documentation for the k8s-grader-api project.
 ### Bug Fixes ⭐
 - ✅ **Task Completion Bug** - All 4 bugs fixed and verified
   - See [Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)
-  - Run automated test: `./test_complete_flow.sh`
 
 ### Documentation Updates
 - ✅ Updated test counts: 121 → 153 tests
 - ✅ Added comprehensive bug fix documentation
-- ✅ Created fully automated E2E test
 - ✅ Consolidated and cleaned up documentation
 
 ---
@@ -97,14 +93,8 @@ This directory contains all documentation for the k8s-grader-api project.
 
 ## Test Documentation
 
-### Automated Testing ⭐
-- **[Testing Scripts](../TESTING_SCRIPTS.md)** - E2E test documentation
-- **[test_complete_flow.sh](../test_complete_flow.sh)** - Self-contained E2E test
-- **[test_multiple_tasks.sh](../test_multiple_tasks.sh)** - Multi-task test
-
 ### Test Guides
 - **[Testing Guide](TESTING_GUIDE.md)** - Complete testing guide
-- **[E2E Testing README](../tests/E2E_TESTING_README.md)** - E2E test details
 - **[Integration Tests](../tests/integration/README.md)** - Integration test guide
 
 ---
@@ -112,7 +102,7 @@ This directory contains all documentation for the k8s-grader-api project.
 ## Need Help?
 
 - **Quick Start:** [QUICK_START.md](QUICK_START.md)
-- **Testing:** Run `./test_complete_flow.sh`
+- **Testing:** Use [TESTING_GUIDE.md](TESTING_GUIDE.md) and [../tests/integration/README.md](../tests/integration/README.md)
 - **Deployment:** [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md)
 - **Bug Reports:** See [Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)
 

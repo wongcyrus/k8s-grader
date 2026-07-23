@@ -19,7 +19,7 @@ This document covers the exam-specific path only:
 - task state transitions in exam mode
 - WebSocket push updates back to the browser
 
-It does **not** describe the normal non-exam `/task` flow in detail.
+It does **not** describe the removed legacy game `/task` flow; game mode now uses its own WebSocket durable path.
 
 ---
 

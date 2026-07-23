@@ -117,16 +117,11 @@ NOT_STARTED → IN_PROGRESS → COMPLETED
                  FAILED
 ```
 
-### API Endpoint
+### Runtime Endpoints
 
-**POST /task**
-
-Start task:
-```bash
-curl -X POST https://api.example.com/task \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{"action":"start","game":"game01","npc":"npc1"}'
-```
+- **Game mode:** use the published `GameUrl` output with `wsUrl`
+- **Exam mode:** use `/exam/verify-code`, `/exam/start`, `/exam/run`, `/exam/status`, and `/exam/records`
+- **Legacy note:** the old game `/task` request/response API has been removed
 
 ## 📂 Project Structure
 
@@ -137,7 +132,7 @@ k8s-grader-api/
 │   ├── state_machine/       # State transitions
 │   ├── database/            # DynamoDB repos
 │   └── services/            # Business logic
-├── task-handler/            # Main /task endpoint
+├── task-handler/            # Exam REST endpoints
 ├── tests/                   # 106 unit tests
 │   └── integration/         # 15 integration tests (self-contained)
 └── template.yaml            # SAM infrastructure
@@ -178,7 +173,7 @@ pytest tests/ -s
 ### Local API Testing
 ```bash
 sam build && sam local start-api
-curl -X POST http://localhost:3000/task -H "x-api-key: test" -d '{...}'
+curl "http://localhost:3000/exam/verify-code?examCode=EXAM-001" -H "x-api-key: test"
 ```
 
 ## 📚 Full Documentation

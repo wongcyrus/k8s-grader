@@ -698,19 +698,6 @@ Resources:
           ExamWebSocketUrl: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
           ExamCommandDurableFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"
       Events:
-        TaskApi:
-          Type: Api 
-          Properties:
-            Path: /task
-            Method: get
-            RestApiId:
-              Ref: ApiGatewayApi
-        TaskApiOptions:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ApiGatewayApi
-            Path: /task
-            Method: options
         ExamVerifyCode:
           Type: Api
           Properties:
@@ -1103,7 +1090,7 @@ Outputs:
   # Find out more about other implicit resources you can reference within SAM
   # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
   BaseUrl:
-    Description: "Base Url for the game"
+    Description: "Base REST API URL"
     Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/"
   SaveK8sAccountUrl:
     Description: "Save K8s Account URL."
@@ -1168,12 +1155,9 @@ Outputs:
   ApiEndpoint:
     Description: "Base API Gateway endpoint URL (for integration tests)"
     Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
-  TaskHandlerApi:
-    Description: "Endpoint URL for unified Task Handler function (refactored)"
-    Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/task"
   GameUrl:
     Description: "Game URL and you need to replace the Student Individual API key."
-    Value: !Sub "https://wongcyrus.github.io/k8s-isekai/index.html?baseUrl=https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/&wsUrl=wss://${GameWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}&game=game01&apiKey=INDIVIDUAL_API_KEY"
+    Value: !Sub "https://wongcyrus.github.io/k8s-isekai/index.html?wsUrl=wss://${GameWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}&game=game01&apiKey=INDIVIDUAL_API_KEY"
   ExamWebsiteBucket:
     Description: "Name of the exam website S3 bucket"
     Value: !Ref ExamWebsiteBucket

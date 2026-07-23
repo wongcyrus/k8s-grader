@@ -126,7 +126,7 @@ Running self-contained integration test suite...
 ### Run Specific Test
 ```bash
 cd tests/integration
-pytest test_api_integration.py::TestAPIIntegration::test_api_endpoint_reachable -v
+pytest tests/integration/test_exam_integration.py::TestExamIntegration::test_exam_setup_verify_and_start -v
 ```
 
 ## Documentation Status
@@ -314,4 +314,3 @@ curl "${BASE_URL}keygen/"
 **Last Updated**: February 1, 2026  
 **Status**: Complete ✅  
 **All Tests Passing**: 121/121 ✅
-

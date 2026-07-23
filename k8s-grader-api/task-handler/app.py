@@ -1,4 +1,4 @@
-"""Unified task handler - replaces game-task and grader endpoints"""
+"""Exam REST handler and shared response helpers."""
 # DEPLOYMENT: 2026-02-02 - Bug fixes for task completion
 import json
 import logging
@@ -11,15 +11,13 @@ from boto3.dynamodb.conditions import Key
 from jinja2 import Environment
 
 from common.handler import (
-    get_email_game_and_npc_from_event,
     get_email_from_event,
     extract_k8s_credentials,
     setup_paths
 )
-from common.database import get_user_data, get_npc_background
+from common.database import get_user_data
 from common.services.task_service import TaskService
 from common.services.exam_service import ExamService
-from common.database.repositories import GameAccessRepository
 from common.models.task_manifest import TaskManifest
 from common.file import clear_tmp_directory, write_user_files
 from common.google_spreadsheet import get_easter_egg_link
@@ -56,7 +54,6 @@ def render_template(template: str, session_data: Dict[str, Any]) -> str:
 # Initialize service
 task_service = TaskService()
 exam_service = ExamService()
-game_access_repo = GameAccessRepository()
 
 _dynamodb_resource = boto3.resource('dynamodb')
 
@@ -116,12 +113,12 @@ def broadcast_exam_response(email: str, exam_code: str, game: Optional[str], tas
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Unified task handler - replaces /game-task and /grader"""
+    """Route only exam REST endpoints; legacy game REST API has been removed."""
     try:
-        path = (event.get('path') or event.get('resource') or '/task').rstrip('/')
+        path = (event.get('path') or event.get('resource') or '').rstrip('/')
         if path.startswith('/exam'):
             return exam_lambda_handler(event, context)
-        return handle_task_request(event, context)
+        return error_response("The legacy game request API was removed. Use the game WebSocket endpoint.")
     except ValueError as e:
         # Handle API key validation errors
         error_msg = str(e)
@@ -134,162 +131,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Handler error: {e}", exc_info=True)
         return error_response(f"Internal error: {str(e)}")
-
-
-def handle_task_request(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """Handle the legacy RPG task flow."""
-    # Extract parameters
-    email, game, npc = get_email_game_and_npc_from_event(event)
-    if not email or not game or not npc:
-        return error_response("Missing required parameters: email, game, or npc")
-
-    # Validate game format
-    if not game.isalnum():
-        return error_response("Game parameter must be alphanumeric")
-
-    # Exam-mode games must be accessed through /exam endpoints
-    if game_access_repo.get_mode(game) == "exam":
-        return error_response("This game is configured for exam mode. Use /exam endpoints.")
-
-    # Get NPC background
-    npc_background = get_npc_background(npc)
-    if not npc_background:
-        return error_response(f"NPC '{npc}' not found")
-
-    # Validate NPC access
-    can_access, error = task_service.validate_npc_access(email, game, npc)
-    if not can_access:
-        return error_response(error)
-
-    # Get user K8s credentials
-    user_data = get_user_data(email)
-    if not user_data:
-        return error_response("User account not found")
-
-    client_certificate, client_key, endpoint = extract_k8s_credentials(user_data)
-    if not all([client_certificate, client_key, endpoint]):
-        return error_response("K8s credentials missing or incomplete")
-
-    # Setup environment
-    clear_tmp_directory()
-    write_user_files(client_certificate, client_key)
-
-    # Get current task
-    current_task = task_service.get_current_task(email, game)
-    if not current_task:
-        return ok_response("🎉 Congratulations! You've completed all tasks!")
-
-    # Check if task already started
-    from common.database.repositories import TaskStateRepository
-    from common.models.task_state import TaskStatus
-    task_repo = TaskStateRepository()
-    state = task_repo.get(email, game, current_task)
-
-    is_new_task = state is None
-
-    # If task is already completed, return completion message
-    if state and state.status == TaskStatus.COMPLETED:
-        logger.info(f"Task {current_task} already completed for {email}")
-        from common.models.task_manifest import TaskManifest
-        manifest = TaskManifest.load(game, current_task)
-        return task_completed_response(
-            {'state': state, 'manifest': manifest},
-            state.get_phase_state(state.current_phase_id).report_url if state.current_phase_id else ''
-        )
-
-    # If task was abandoned, allow restart
-    if state and state.status == TaskStatus.ABANDONED:
-        logger.info(f"Restarting abandoned task {current_task} for {email}")
-        # Delete old state and start fresh
-        task_repo.delete(email, game, current_task)
-        state = None
-        is_new_task = True
-
-    if not state:
-        # Start new task
-        state = task_service.start_task(email, game, current_task, npc)
-
-    # Always add/update credentials to session (may have changed)
-    state.session_data['$endpoint'] = endpoint
-    state.session_data['$client_certificate'] = client_certificate
-    state.session_data['$client_key'] = client_key
-    state.session_data['$email'] = email
-
-    # Save state with updated credentials
-    task_repo.save(state)
-
-    # If this was a new task, return started response
-    if is_new_task:
-        from common.models.task_manifest import TaskManifest
-        manifest = TaskManifest.load(game, current_task)
-        return task_started_response(state, manifest)
-
-    # Execute current phase
-    result = task_service.execute_phase(email, game, current_task)
-
-    # Log test execution to TestRecordTable for analytics
-    if result.get('test_result'):
-        from common.database.repositories import TestRecordRepository
-        from datetime import datetime, timezone
-
-        test_record_repo = TestRecordRepository()
-        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
-
-        # Extract S3 bucket and key from report URL if available
-        report_url = result.get('report_url', '')
-        bucket = ""
-        key = ""
-        if report_url:
-            # Parse S3 info from presigned URL or use environment variable
-            import os
-            bucket = os.getenv('TestResultBucket', '')
-            # Extract key from report URL if needed
-            if bucket and report_url:
-                # Key format: game/email/task/test_report_phase_timestamp.html
-                key = f"{game}/{email}/{current_task}/test_report_{state.current_phase_id}_{now_str}.html"
-
-        test_record_repo.save(
-            email=email,
-            game=game,
-            current_task=current_task,
-            game_phase=state.current_phase_id or 'unknown',
-            test_result=result['test_result'].name,
-            bucket=bucket,
-            key=key,
-            report_url=report_url,
-            now_str=now_str
-        )
-
-    if not result['success']:
-        # Check if max attempts reached
-        from common.state_machine.task_state_machine import TaskStateMachine
-        manifest = result['manifest']
-        sm = TaskStateMachine(manifest, result['state'])
-        next_action = sm.get_next_action()
-
-        if next_action['action'] == 'max_attempts_reached':
-            # Abandon the task
-            abandon_result = task_service.abandon_task(
-                email, game, current_task,
-                f"Maximum attempts reached for phase '{next_action['phase_id']}'"
-            )
-            return task_abandoned_response(abandon_result, result.get('report_url', ''))
-
-        return phase_failed_response(result, state, manifest)
-
-    # Check if task is complete
-    from common.state_machine.task_state_machine import TaskStateMachine
-    manifest = result['manifest']
-    state = result['state']  # Use updated state from result
-    sm = TaskStateMachine(manifest, state)
-
-    can_complete, _ = sm.can_complete_task()
-    if can_complete:
-        completion_result = task_service.complete_task(email, game, current_task, state)
-        return task_completed_response(completion_result, result['report_url'])
-
-    # Phase passed, continue to next
-    return phase_passed_response(result, state, manifest)
     
 
 

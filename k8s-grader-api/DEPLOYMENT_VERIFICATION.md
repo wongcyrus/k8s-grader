@@ -329,7 +329,7 @@ grep "test_api_key" tests/integration/conftest.py
 
 # Run specific test
 cd tests/integration
-pytest test_api_integration.py::TestAPIIntegration -v
+pytest tests/integration/test_exam_integration.py::TestExamIntegration -v
 ```
 
 ## Known Issues
@@ -384,4 +384,3 @@ The K8s Grader API deployment system is working perfectly:
 **Date**: February 1, 2026  
 **Status**: ✅ Complete and Operational  
 **Test Results**: 121/121 Passing ✅
-

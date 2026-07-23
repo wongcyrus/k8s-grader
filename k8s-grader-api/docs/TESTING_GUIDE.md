@@ -121,9 +121,9 @@ That's it! No manual API key setup needed.
 export STACK_NAME=my-stack-name
 ./run_integration_tests.sh
 
-# Run specific test class
+# Run specific integration test
 cd tests/integration
-pytest test_api_integration.py::TestAPIIntegration
+pytest test_exam_integration.py::TestExamIntegration -v
 
 # Run with verbose output
 pytest -v -s
@@ -133,64 +133,21 @@ pytest -v -s
 1. ✅ Generates unique test user email (e.g., `integration-test-abc12345-1234567890@example.com`)
 2. ✅ Creates test account in DynamoDB with fake K8s credentials
 3. ✅ Auto-generates encrypted API key via keygen endpoint
-4. ✅ Runs 15 integration tests across 6 test classes
+4. ✅ Runs the current deployed integration suite
 5. ✅ Cleans up all test data from 9 DynamoDB tables + API Gateway
 
 **No manual setup required!**
 
 ### Test Categories
 
-#### 1. API Integration Tests (6 tests)
+#### Exam Integration Test
 ```bash
-pytest test_api_integration.py::TestAPIIntegration
+pytest test_exam_integration.py::TestExamIntegration -v
 ```
-- Stack outputs availability
-- API endpoint reachability
-- Parameter validation
-- Error responses
-- NPC not found handling
-- User not found handling
-
-#### 2. Task Flow Tests (1 test)
-```bash
-pytest test_api_integration.py::TestTaskFlow
-```
-- Complete task workflow (start → execute → complete)
-- Task state transitions
-- Phase execution
-
-#### 3. DynamoDB Integration Tests (1 test)
-```bash
-pytest test_api_integration.py::TestDynamoDBIntegration
-```
-- Task state persistence
-- Data consistency
-- Table operations
-
-#### 4. Performance Tests (2 tests)
-```bash
-pytest test_api_integration.py::TestAPIPerformance
-```
-- Response time validation (< 5s)
-- Concurrent request handling (5+ simultaneous)
-
-#### 5. Save Account API Tests (2 tests)
-```bash
-pytest test_api_integration.py::TestSaveAccountAPI
-```
-- GET returns HTML form
-- Validates endpoint uniqueness
-
-#### 6. Error Handling Tests (3 tests)
-```bash
-pytest test_api_integration.py::TestErrorHandling
-```
-- Invalid API keys
-- Missing authentication
-- Malformed requests
-- Security validation
-
-**Total: 15 integration tests**
+- Save account
+- Verify exam code
+- Start task
+- Check task status
 
 ## Configuration
 
@@ -349,7 +306,7 @@ def test_api_feature(api_endpoint, test_api_key):
     params = {'email': 'test@example.com', ...}
     
     # Act - Call real API
-    response = requests.get(f"{api_endpoint}/task", params=params)
+    response = requests.get(f"{api_endpoint}/exam/status", params=params)
     
     # Assert - Verify response
     assert response.status_code == 200

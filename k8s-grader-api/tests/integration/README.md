@@ -168,10 +168,10 @@ export STACK_NAME=my-stack AWS_REGION=us-west-2
 cd tests/integration
 
 # Run specific test class
-pytest test_api_integration.py::TestAPIIntegration -v
+pytest test_exam_integration.py::TestExamIntegration -v
 
 # Run specific test
-pytest test_api_integration.py::TestAPIIntegration::test_api_endpoint_reachable -v
+pytest test_exam_integration.py::TestExamIntegration::test_exam_setup_verify_and_start -v
 
 # Run with markers
 pytest -m integration -v
@@ -181,36 +181,9 @@ pytest -m integration -v
 
 ## Test Coverage
 
-### 16 Integration Tests Across 7 Test Classes
+### Current Integration Coverage
 
-#### 1. TestAPIIntegration (6 tests)
-- `test_stack_outputs_available` - Verify stack outputs
-- `test_api_endpoint_reachable` - Test API endpoint
-- `test_missing_parameters` - Parameter validation
-- `test_invalid_game_format` - Input validation
-- `test_npc_not_found` - Error handling
-- `test_user_not_found` - User validation
-
-#### 2. TestTaskFlow (1 test)
-- `test_complete_task_flow` - End-to-end task workflow
-
-#### 3. TestDynamoDBIntegration (1 test)
-- `test_task_state_persistence` - Database operations
-
-#### 4. TestAPIPerformance (2 tests)
-- `test_api_response_time` - Response time < 5s
-- `test_concurrent_requests` - Handle 5+ concurrent requests
-
-#### 5. TestSaveAccountAPI (2 tests)
-- `test_save_account_get_returns_html` - GET endpoint
-- `test_save_account_validates_endpoint_uniqueness` - Validation
-
-#### 6. TestErrorHandling (3 tests)
-- `test_invalid_api_key` - Invalid key handling
-- `test_missing_api_key` - Missing key handling
-- `test_malformed_request` - Security validation
-
-#### 7. TestExamIntegration (1 test)
+#### TestExamIntegration
 - `test_exam_setup_verify_and_start` - Save account, verify exam code, start exam, and status check
 
 Exam test environment overrides:
@@ -489,7 +462,7 @@ Both are important! Use unit tests for development, integration tests for valida
 ## Files
 
 ### Test Files
-- `test_api_integration.py` - All integration tests
+- `test_exam_integration.py` - Current deployed integration coverage
 - `conftest.py` - Test fixtures and setup/cleanup
 - `dry_run_test.py` - Demonstration without AWS
 
@@ -534,7 +507,7 @@ python tests/integration/cleanup_test_keys.py
 
 # Run specific test
 cd tests/integration
-pytest test_api_integration.py::TestAPIIntegration::test_api_endpoint_reachable -v
+pytest test_exam_integration.py::TestExamIntegration::test_exam_setup_verify_and_start -v
 ```
 
 For more details, see the inline documentation in the test files.

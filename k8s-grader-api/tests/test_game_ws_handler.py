@@ -83,3 +83,16 @@ class TestGameWebSocketHandler:
 
         assert response["statusCode"] == 400
         assert json.loads(response["body"]) == {"status": "ERROR", "message": "Invalid JSON body"}
+
+    @patch("game_ws_app.get_email_from_api_key", side_effect=ValueError("Invalid or expired API key: InvalidToken"))
+    def test_invalid_api_key_returns_player_facing_message(self, _mock_email):
+        response = lambda_handler(
+            _ws_event({"action": "talk", "apiKey": "bad", "game": "game01", "npc": "Aiden"}),
+            None,
+        )
+
+        assert response["statusCode"] == 401
+        assert json.loads(response["body"]) == {
+            "status": "ERROR",
+            "message": "Your game link is invalid or expired. Please open a fresh game link.",
+        }
