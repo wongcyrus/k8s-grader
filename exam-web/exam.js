@@ -1,3 +1,4 @@
+const APP_CONFIG = window.__K8S_PORTAL_CONFIG__ || {};
 const output = document.getElementById("output");
 const setupOutput = document.getElementById("setupOutput");
 const questionOutput = document.getElementById("questionOutput");
@@ -15,7 +16,7 @@ const phaseStateLabel = document.getElementById("phaseStateLabel");
 const taskStatusLabel = document.getElementById("taskStatusLabel");
 const verifyButton = document.querySelector('button[data-action="verify"]');
 
-const BASE_URL = "https://vqq060loek.execute-api.us-east-1.amazonaws.com/Prod";
+const BASE_URL = APP_CONFIG.baseUrl || "";
 const EXAM_ACTION_COOLDOWN_MS = 1500;
 const RUN_RESPONSE_TIMEOUT_MS = 360000;
 const STORAGE_KEY = "k8s-exam-page-state-v1";

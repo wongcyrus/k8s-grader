@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -82,6 +85,21 @@ check_prerequisites() {
         print_success "Python installed: $(python3 --version)"
     else
         print_error "Python 3 not found"
+        exit 1
+    fi
+
+    # Check Node.js and npm for static web builds
+    if command -v node &> /dev/null; then
+        print_success "Node.js installed: $(node --version)"
+    else
+        print_error "Node.js not found"
+        exit 1
+    fi
+
+    if command -v npm &> /dev/null; then
+        print_success "npm installed: $(npm --version)"
+    else
+        print_error "npm not found"
         exit 1
     fi
 
@@ -212,11 +230,15 @@ seed_game_source_table() {
 deploy_exam_website() {
     print_header "Deploying Student Portal"
 
-    local stack_name region exam_web_dir game_web_dir bucket website_url
+    local stack_name region exam_web_dir game_web_dir doom_web_dir doom_dist_dir bucket website_url
+    local base_url game_ws_url exam_ws_url config_path distribution_id
     stack_name="$(get_stack_name || echo "k8s-grader-api-dev")"
     region="$(get_region || echo "us-east-1")"
     exam_web_dir="$(cd ../exam-web && pwd)"
     game_web_dir="$(cd ../../k8s-isekai && pwd)"
+    doom_web_dir="$(cd ../../doom.ts && pwd)"
+    doom_dist_dir="${doom_web_dir}/dist"
+    config_path="${exam_web_dir}/config.js"
 
     if [ ! -d "$exam_web_dir" ]; then
         print_error "Exam web directory not found at $exam_web_dir"
@@ -225,6 +247,11 @@ deploy_exam_website() {
 
     if [ ! -d "$game_web_dir" ]; then
         print_error "Game web directory not found at $game_web_dir"
+        exit 1
+    fi
+
+    if [ ! -d "$doom_web_dir" ]; then
+        print_error "Doom web directory not found at $doom_web_dir"
         exit 1
     fi
 
@@ -240,8 +267,53 @@ deploy_exam_website() {
         exit 1
     fi
 
+    base_url=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --region "$region" \
+        --query 'Stacks[0].Outputs[?OutputKey==`BaseUrl`].OutputValue' \
+        --output text \
+        --no-cli-pager)
+
+    game_ws_url=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --region "$region" \
+        --query 'Stacks[0].Outputs[?OutputKey==`GameWebSocketUrl`].OutputValue' \
+        --output text \
+        --no-cli-pager)
+
+    exam_ws_url=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --region "$region" \
+        --query 'Stacks[0].Outputs[?OutputKey==`ExamWebSocketUrl`].OutputValue' \
+        --output text \
+        --no-cli-pager)
+
+    if [ -z "$base_url" ] || [ "$base_url" = "None" ]; then
+        print_error "BaseUrl output not found"
+        exit 1
+    fi
+
+    if [ -z "$game_ws_url" ] || [ "$game_ws_url" = "None" ]; then
+        print_error "GameWebSocketUrl output not found"
+        exit 1
+    fi
+
+    if [ -z "$exam_ws_url" ] || [ "$exam_ws_url" = "None" ]; then
+        print_error "ExamWebSocketUrl output not found"
+        exit 1
+    fi
+
+    cat > "$config_path" <<EOF
+window.__K8S_PORTAL_CONFIG__ = {
+  baseUrl: "${base_url%/}",
+  gameWsUrl: "${game_ws_url}",
+  examWsUrl: "${exam_ws_url}"
+};
+EOF
+    trap "rm -f '$config_path'" RETURN
+
     print_info "Uploading student portal files to s3://${bucket}"
-    aws s3 sync "$exam_web_dir" "s3://${bucket}" --delete --exclude "game/*" --no-cli-pager >/dev/null
+    aws s3 sync "$exam_web_dir" "s3://${bucket}" --delete --exclude "game/*" --exclude "doom/*" --no-cli-pager >/dev/null
     print_success "Student portal uploaded"
 
     print_info "Uploading RPG game files to s3://${bucket}/game"
@@ -258,6 +330,50 @@ deploy_exam_website() {
         --no-cli-pager >/dev/null
     print_success "RPG game uploaded"
 
+    print_info "Building Doom web for /doom/"
+    (
+        cd "$doom_web_dir"
+        DOOM_BASE_PATH=/doom/ npm run build >/dev/null
+    )
+    print_success "Doom web built"
+
+    if [ ! -d "$doom_dist_dir" ]; then
+        print_error "Doom build output not found at $doom_dist_dir"
+        exit 1
+    fi
+
+    print_info "Uploading Doom web files to s3://${bucket}/doom"
+    aws s3 sync "$doom_dist_dir" "s3://${bucket}/doom" --delete --no-cli-pager >/dev/null
+    print_success "Doom web uploaded"
+
+    distribution_id=$(aws cloudformation describe-stack-resources \
+        --stack-name "$stack_name" \
+        --logical-resource-id ExamWebsiteCloudFrontDistribution \
+        --query 'StackResources[0].PhysicalResourceId' \
+        --output text \
+        --no-cli-pager)
+
+    if [ -n "$distribution_id" ] && [ "$distribution_id" != "None" ]; then
+        print_info "Invalidating CloudFront cache"
+        aws cloudfront create-invalidation \
+            --distribution-id "$distribution_id" \
+            --paths \
+            / \
+            /index.html \
+            /config.js \
+            /app.js \
+            /exam.html \
+            /exam.js \
+            /teacher.html \
+            /teacher.js \
+            /styles.css \
+            /doom \
+            /doom/ \
+            /doom/index.html \
+            --no-cli-pager >/dev/null
+        print_success "CloudFront invalidation requested"
+    fi
+
     website_url=$(aws cloudformation describe-stacks \
         --stack-name "$stack_name" \
         --region "$region" \
@@ -268,7 +384,11 @@ deploy_exam_website() {
     if [ -n "$website_url" ] && [ "$website_url" != "None" ]; then
         echo "Student Portal URL: ${website_url}"
         echo "RPG Game URL: ${website_url%/}/game/index.html"
+        echo "Doom URL: ${website_url%/}/doom/"
     fi
+
+    trap - RETURN
+    rm -f "$config_path"
 }
 
 # Deploy
@@ -277,6 +397,9 @@ deploy() {
 
     local guided_flag="${1:-}"
     local parameter_overrides=("PythonVersion=${PYTHON_VERSION_OVERRIDE}")
+    if [ -n "${SECRET_HASH_OVERRIDE:-}" ]; then
+        parameter_overrides+=("SecretHash=${SECRET_HASH_OVERRIDE}")
+    fi
 
     if [ "${guided_flag}" == "--guided" ]; then
         print_info "Running guided deployment..."

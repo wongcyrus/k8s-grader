@@ -24,6 +24,10 @@ class TaskStateMachine:
         """
         self.manifest = manifest
         self.state = state
+
+    def _counts_attempts(self, phase) -> bool:
+        """Return whether failures for this phase should consume attempts."""
+        return phase.count_attempts and getattr(self.state, "npc", None) != "doom"
     
     def start_task(self) -> Tuple[bool, Optional[str]]:
         """
@@ -75,7 +79,7 @@ class TaskStateMachine:
             return False, f"Phase '{phase_id}' already passed"
         
         # Check max attempts only for phases that count attempts
-        if phase.count_attempts and phase_state and phase_state.attempts >= phase.max_attempts:
+        if self._counts_attempts(phase) and phase_state and phase_state.attempts >= phase.max_attempts:
             return False, f"Maximum attempts ({phase.max_attempts}) reached for phase '{phase_id}'"
         
         # Check prerequisites (previous required phases must be passed)
@@ -138,7 +142,8 @@ class TaskStateMachine:
             
             return True, None
         else:
-            phase_state.mark_failed(test_result.name, report_url, count_attempts=phase.count_attempts)
+            counts_attempts = self._counts_attempts(phase)
+            phase_state.mark_failed(test_result.name, report_url, count_attempts=counts_attempts)
             logger.warning(f"Phase '{phase_id}' failed: {test_result.name} "
                          f"(attempt {phase_state.attempts}/{phase.max_attempts})")
             
@@ -234,14 +239,14 @@ class TaskStateMachine:
             phase_state = self.state.get_phase_state(self.state.current_phase_id)
             if phase_state and phase_state.status == PhaseStatus.FAILED:
                 phase = self.manifest.get_phase(self.state.current_phase_id)
-                if phase_state.attempts < phase.max_attempts:
+                if self._counts_attempts(phase) and phase_state.attempts < phase.max_attempts:
                     return {
                         'action': 'retry_phase',
                         'phase_id': self.state.current_phase_id,
                         'message': f'Retry phase {self.state.current_phase_id} '
                                  f'(attempt {phase_state.attempts + 1}/{phase.max_attempts})'
                     }
-                else:
+                if self._counts_attempts(phase):
                     return {
                         'action': 'max_attempts_reached',
                         'phase_id': self.state.current_phase_id,

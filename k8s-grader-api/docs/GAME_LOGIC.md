@@ -41,6 +41,10 @@ The durable game worker follows these rules:
 - **Challenge before check**: if saved state lands on `check` before `challenge` has passed, the worker rewinds back to `challenge`.
 - **No RPG lockout on failures**: game mode keeps returning normal `FAILED` results; it does not abandon the task when attempts reach `max_attempts`.
 - **Durable multi-phase progression**: one `talk` can advance through multiple phases until the player hits a failing phase or completes the task.
+- **Doom Client Integration (`DOOM_TASK_SOURCE`)**:
+  - Uses `npc = "doom"` to bypass RPG NPC background checks and single-NPC assignment locks.
+  - Bypasses attempt count tracking (`_counts_attempts`), enabling infinite in-game retries.
+  - Renders Jinja2 session variables (e.g. `{{ namespace }}`) in `_build_game_status_payload` for `NOT_STARTED` tasks so task instructions display filled parameters before execution starts.
 
 ## Player-Facing Message Truth Table
 
@@ -74,6 +78,14 @@ The plugin does **not** tell the player to try another NPC unless the backend li
 - Failed checks can include a `report_url`; the plugin opens the report popup automatically.
 - Success payloads can include an `easter_egg_url`; the plugin opens it after success.
 - Resetting DynamoDB task state only resets app-side progress. If the Kubernetes cluster still contains the required resources, early phases may pass again immediately on the next run.
+
+## Debugging Skipped Tests & Immediate Failures
+
+If a test appears to skip Pytest execution and immediately returns a failure:
+
+1. **Prerequisite Phase Unpassed**: If `can_execute_phase()` fails (e.g., previous required phase like `setup` has not passed), test execution is skipped and `_phase_failed_payload` returns `❌ Phase Blocked: Must complete phase 'setup' first`.
+2. **Duplicate Execution Lock**: If another test is actively running in the background, `game-ws-handler` returns `A test execution is already in progress. Please wait for it to finish.`.
+3. **Action Rate Limit**: If `talk` triggers occur within 2 seconds, `game-ws-handler` returns `Please wait a moment before trying again.`.
 
 ## Important Files
 

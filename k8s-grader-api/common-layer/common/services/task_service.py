@@ -12,6 +12,7 @@ from common.session import generate_session
 from common.status import TestResult
 
 logger = logging.getLogger(__name__)
+DOOM_TASK_SOURCE = "doom"
 
 
 class TaskService:
@@ -488,6 +489,9 @@ class TaskService:
         Returns:
             Tuple of (can_access, error_message)
         """
+        if npc == DOOM_TASK_SOURCE:
+            return True, None
+
         # Check NPC lock
         if self.npc_repo.is_locked(email, game, npc):
             return False, f"{npc} does not have any task for you!"

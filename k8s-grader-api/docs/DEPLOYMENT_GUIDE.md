@@ -669,9 +669,10 @@ aws cloudformation update-stack \
    - Test with different task types
 
 4. **Update Frontend**
-   - Publish the student portal and `/game/` assets together on the same origin
+   - Publish the student portal, `/game/` assets, and `/doom/` static app together on the same origin
    - Open `StudentPortalUrl`, save the API key and Kubernetes login, then launch the RPG game from the exercise portal
    - Open `StudentPortalUrl/exam.html` for exam access and exam WebSocket actions
+   - Open `StudentPortalUrl/doom/` for the Doom build published from `doom.ts`
    - Use `GameUrl` only for direct same-origin debugging after the portal state already exists
 
 5. **Documentation**

@@ -212,6 +212,26 @@ def test_status_action_returns_completed_when_all_tasks_finished():
     assert payload["skipped_tasks"] == ["03_task"]
 
 
+def test_status_action_renders_not_started_manifest_with_generated_session():
+    module = load_module()
+    manifest = FakeManifest()
+    manifest.description = "Create namespace {{ namespace }}"
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module, "generate_session", return_value={"namespace": "student-ns"}):
+        mock_task_service.get_total_score.return_value = 0
+        mock_task_service.get_completed_tasks.return_value = []
+        mock_task_service.get_skipped_tasks.return_value = []
+        mock_task_service.get_current_task.return_value = "02_create_namespace"
+        mock_task_service.task_repo.get.return_value = None
+        payload = module._build_game_status_payload("student@example.com", "game01")
+
+    assert payload["status"] == "NOT_STARTED"
+    assert payload["message"] == "Create namespace student-ns"
+    assert payload["task_description"] == "Create namespace student-ns"
+
+
 def test_status_action_redirects_stale_check_snapshot_back_to_challenge():
     module = load_module()
     manifest = FakeManifest()
@@ -303,6 +323,28 @@ def test_talk_action_maps_missing_account_to_player_message():
         )
 
     assert result == {"status": "ERROR", "message": "Please save your Kubernetes account first."}
+
+
+def test_talk_action_accepts_doom_without_npc_background():
+    module = load_module()
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "get_user_data", return_value=None), \
+         patch.object(module, "get_npc_background") as mock_get_npc_background:
+        mock_task_service.validate_npc_access.return_value = (True, None)
+
+        result = module.execute_game_command(
+            "talk",
+            "student@example.com",
+            "game01",
+            module.DOOM_TASK_SOURCE,
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    mock_get_npc_background.assert_not_called()
+    assert result == {"status": "ERROR", "message": "Please save your Kubernetes account first."}
+    mock_task_service.validate_npc_access.assert_not_called()
 
 
 def test_skip_action_marks_task_skipped_and_returns_updated_status():

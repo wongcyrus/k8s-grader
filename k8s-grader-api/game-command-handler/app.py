@@ -14,6 +14,7 @@ from common.google_spreadsheet import get_easter_egg_link
 from common.handler import extract_k8s_credentials, setup_paths, to_player_safe_game_message
 from common.models.task_manifest import TaskManifest
 from common.models.task_state import TaskStatus
+from common.session import generate_session
 from common.services.task_service import TaskService
 from common.state_machine.task_state_machine import TaskStateMachine
 from common.status import TestResult
@@ -27,6 +28,7 @@ setup_paths()
 
 task_service = TaskService()
 execution_guard_repo = ExecutionGuardRepository()
+DOOM_TASK_SOURCE = "doom"
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -192,20 +194,29 @@ def _phase_passed_payload(result: Dict[str, Any], manifest) -> Dict[str, Any]:
 
 def _phase_failed_payload(result: Dict[str, Any], manifest) -> Dict[str, Any]:
     state = result["state"]
-    current_phase = manifest.get_phase(state.current_phase_id) if state.current_phase_id else None
-    phase_state = state.get_phase_state(state.current_phase_id)
-    test_result = result.get("test_result", TestResult.TESTS_FAILED)
+    current_phase = manifest.get_phase(state.current_phase_id) if state and state.current_phase_id else None
+    phase_state = state.get_phase_state(state.current_phase_id) if state and state.current_phase_id else None
+    
+    state_machine_error = result.get("error")
+    if state_machine_error and not result.get("test_result"):
+        fail_msg = f"❌ Phase Blocked: {state_machine_error}"
+        test_name = "PREREQUISITE_FAILED"
+    else:
+        test_result = result.get("test_result", TestResult.TESTS_FAILED)
+        test_name = test_result.name if hasattr(test_result, "name") else str(test_result)
+        fail_msg = f"❌ Check Failed ({test_name}). Please verify your Kubernetes cluster resources and try again."
+
     payload = _base_task_payload(
         state,
         manifest,
         status="FAILED",
-        message=current_phase.description if current_phase else "Tests failed. Check the report.",
+        message=fail_msg,
         report_url=result.get("report_url", ""),
     )
     payload["attempts"] = phase_state.attempts if phase_state else 0
     payload["max_attempts"] = current_phase.max_attempts if current_phase else 3
-    payload["test_result"] = test_result.name if test_result else "UNKNOWN"
-    payload["easter_egg_url"] = get_easter_egg_link(test_result) or ""
+    payload["test_result"] = test_name
+    payload["easter_egg_url"] = get_easter_egg_link(result.get("test_result")) or ""
     return payload
 
 
@@ -270,8 +281,9 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
     state = task_service.task_repo.get(email, game, current_task)
     if not state:
         manifest = TaskManifest.load(game, current_task)
+        session_data = generate_session(email, game, current_task)
         task_description = manifest.description or "Talk to the NPC to begin."
-        rendered_description = _render_template(task_description, {})
+        rendered_description = _render_template(task_description, session_data)
         first_phase = manifest.get_first_phase()
         return {
             "status": "NOT_STARTED",
@@ -321,12 +333,13 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
         return _error_payload("Missing required websocket parameters")
     if not game.isalnum():
         return _error_payload("Game parameter must be alphanumeric")
-    if not get_npc_background(npc):
+    if npc != DOOM_TASK_SOURCE and not get_npc_background(npc):
         return _error_payload(f"NPC '{npc}' not found")
 
-    can_access, error = task_service.validate_npc_access(email, game, npc)
-    if not can_access:
-        return _error_payload(error)
+    if npc != DOOM_TASK_SOURCE:
+        can_access, error = task_service.validate_npc_access(email, game, npc)
+        if not can_access:
+            return _error_payload(error)
 
     user_data = get_user_data(email)
     if not user_data:

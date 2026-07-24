@@ -1,19 +1,19 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-cd k8s-grader-api
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+API_DEPLOY_SCRIPT="${SCRIPT_DIR}/k8s-grader-api/deploy.sh"
 
-# Optional: specify environment with --config-env (dev, prod)
-ENV="${ENV:-default}"
-
-echo "Building SAM application..."
-sam build
-
-echo "Deploying to $ENV environment..."
-if [ -n "$1" ]; then
-    sam deploy --config-env "$ENV" --parameter-overrides SecretHash="$1"
-else
-    sam deploy --config-env "$ENV"
+if [ ! -f "$API_DEPLOY_SCRIPT" ]; then
+    echo "Deploy script not found: $API_DEPLOY_SCRIPT" >&2
+    exit 1
 fi
 
-echo "Deployment complete!"
+export SAM_CONFIG_ENV="${ENV:-${SAM_CONFIG_ENV:-default}}"
+
+if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
+    export SECRET_HASH_OVERRIDE="$1"
+    shift
+fi
+
+exec bash "$API_DEPLOY_SCRIPT" "$@"

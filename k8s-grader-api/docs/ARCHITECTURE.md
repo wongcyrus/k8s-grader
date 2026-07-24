@@ -70,16 +70,17 @@ Exam mode uses a separate WebSocket + durable Lambda path so the browser can que
 
 See [EXAM_DURABLE_FLOW.md](EXAM_DURABLE_FLOW.md) for the full exam-specific flow, state transitions, and runtime-fix history.
 
-### Game Mode
+### Game Mode & Doom Task Bridge
 
-Game mode now uses its own WebSocket + durable Lambda path as well:
+Game mode uses its own WebSocket + durable Lambda path:
 
-- `game-ws-handler/app.py` queues `talk` and `status`
-- `game-command-handler/app.py` runs the durable RPG task flow
-- the RPG Maker plugin consumes pushed `game_status` messages
-- the worker reads Kubernetes credentials from the same `AccountTable` used by exam mode
+- `game-ws-handler/app.py` queues `talk` and `status` actions with rate limiting (2-second cooldown) and execution guard locks (3-minute TTL).
+- `game-command-handler/app.py` runs the durable task flow and handles `npc = "doom"` (`DOOM_TASK_SOURCE`).
+- `DOOM_TASK_SOURCE` bypasses RPG single-NPC assignment locks and `max_attempts` lockout (`_counts_attempts`), allowing infinite in-game retries.
+- `_build_game_status_payload()` renders Jinja2 template variables (e.g. `{{ namespace }}`) for `NOT_STARTED` tasks so task instructions display rendered parameters prior to execution.
+- The Doom 3D engine client (`Doom.tsx`) consumes pushed `game_status` messages, manages pointer lock / input clearing (`clearInputs()`), and automatically re-opens overlays when background checks finish over WebSocket.
 
-See [GAME_LOGIC.md](GAME_LOGIC.md) for the current game-mode flow, player message mapping, and gameplay rules.
+See [GAME_LOGIC.md](GAME_LOGIC.md) for the complete sequence flow, skipped test debugging, and player message mapping.
 
 ### 1. Lambda Functions
 

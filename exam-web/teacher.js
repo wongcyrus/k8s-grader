@@ -1,4 +1,5 @@
-const BASE_URL = "https://vqq060loek.execute-api.us-east-1.amazonaws.com/Prod";
+const APP_CONFIG = window.__K8S_PORTAL_CONFIG__ || {};
+const BASE_URL = APP_CONFIG.baseUrl || "";
 const STORAGE_KEY = "k8s-teacher-dashboard-state-v1";
 
 const apiKeyInput = document.getElementById("apiKey");

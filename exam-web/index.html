@@ -34,10 +34,16 @@
       </section>
 
       <section class="card">
-        <h2>Step 2: Launch Exercise Game</h2>
+        <h2>Step 2: Launch Exercise Client</h2>
         <label>Exercise Game
           <select id="exerciseGame">
             <option value="game01">game01</option>
+          </select>
+        </label>
+        <label>Exercise Client
+          <select id="exerciseClient">
+            <option value="doom">doom</option>
+            <option value="rpg">rpg</option>
           </select>
         </label>
         <p><strong>Exercise connection</strong>: <span id="exerciseConnectionStatus">Disconnected</span></p>
@@ -45,7 +51,7 @@
         <p><strong>Completed tasks</strong>: <span id="exerciseCompletedTasksLabel">-</span></p>
         <p><strong>Skipped tasks</strong>: <span id="exerciseSkippedTasksLabel">-</span></p>
         <div class="actions">
-          <button data-action="open-game">Open Exercise Game</button>
+          <button data-action="open-game">Open Exercise Client</button>
           <button data-action="exercise-status" class="secondary-btn" type="button">Check Total Score</button>
           <button data-action="exercise-skip" class="secondary-btn" type="button">Skip Current Task</button>
         </div>
@@ -61,6 +67,7 @@
       </section>
     </main>
 
+    <script src="./config.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

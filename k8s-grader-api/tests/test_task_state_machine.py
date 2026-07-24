@@ -88,6 +88,18 @@ class TestTaskStateMachine:
         
         assert can_execute is False
         assert "Must complete phase 'setup' first" in error
+
+    def test_can_execute_phase_ignores_max_attempts_for_doom(self, sample_manifest, in_progress_task_state):
+        """Test Doom tasks can still retry after the normal max-attempt threshold."""
+        in_progress_task_state.npc = "doom"
+        in_progress_task_state.phase_states["setup"] = PhaseState("setup", PhaseStatus.FAILED, attempts=3)
+
+        sm = TaskStateMachine(sample_manifest, in_progress_task_state)
+
+        can_execute, error = sm.can_execute_phase("setup")
+
+        assert can_execute is True
+        assert error is None
     
     def test_execute_phase_success(self, sample_manifest, in_progress_task_state):
         """Test executing phase successfully"""
@@ -134,6 +146,18 @@ class TestTaskStateMachine:
         assert phase_state.attempts == 0
         can_execute, _ = sm.can_execute_phase("challenge")
         assert can_execute is True
+
+    def test_execute_phase_failure_does_not_increment_attempts_for_doom(self, sample_manifest, in_progress_task_state):
+        """Test Doom task failures remain retryable without consuming attempts."""
+        in_progress_task_state.npc = "doom"
+        sm = TaskStateMachine(sample_manifest, in_progress_task_state)
+
+        success, error = sm.execute_phase("setup", TestResult.TESTS_FAILED, "https://report.url")
+
+        assert success is False
+        assert "Tests failed" in error
+        phase_state = in_progress_task_state.get_phase_state("setup")
+        assert phase_state.attempts == 0
     
     def test_execute_phase_with_points(self, sample_manifest, in_progress_task_state):
         """Test executing phase and earning points"""
@@ -253,6 +277,18 @@ class TestTaskStateMachine:
         action = sm.get_next_action()
         
         assert action['action'] == 'max_attempts_reached'
+        assert action['phase_id'] == 'setup'
+
+    def test_get_next_action_keeps_retrying_for_doom_after_max_attempts(self, sample_manifest, in_progress_task_state):
+        """Test Doom tasks do not transition to max-attempts-reached."""
+        in_progress_task_state.npc = "doom"
+        in_progress_task_state.phase_states["setup"] = PhaseState("setup", PhaseStatus.FAILED, attempts=3)
+
+        sm = TaskStateMachine(sample_manifest, in_progress_task_state)
+
+        action = sm.get_next_action()
+
+        assert action['action'] == 'execute_phase'
         assert action['phase_id'] == 'setup'
     
     def test_get_next_action_complete_task(self, sample_manifest, in_progress_task_state):

@@ -1,16 +1,19 @@
+const APP_CONFIG = window.__K8S_PORTAL_CONFIG__ || {};
 const setupOutput = document.getElementById("setupOutput");
 const exerciseOutput = document.getElementById("exerciseOutput");
 const exerciseConnectionStatus = document.getElementById("exerciseConnectionStatus");
 const exerciseGameSelect = document.getElementById("exerciseGame");
+const exerciseClientSelect = document.getElementById("exerciseClient");
 const exerciseCompletedTasksLabel = document.getElementById("exerciseCompletedTasksLabel");
 const exerciseSkippedTasksLabel = document.getElementById("exerciseSkippedTasksLabel");
 const exerciseScoreLabel = document.getElementById("exerciseScoreLabel");
 const resetStateButton = document.getElementById("resetState");
 const buttons = document.querySelectorAll("button[data-action]");
 
-const BASE_URL = "https://vqq060loek.execute-api.us-east-1.amazonaws.com/Prod";
-const GAME_WS_URL = "wss://3h2sm721k1.execute-api.us-east-1.amazonaws.com/Prod";
-const PORTAL_GAME_PATH = "./game/index.html";
+const BASE_URL = APP_CONFIG.baseUrl || "";
+const GAME_WS_URL = APP_CONFIG.gameWsUrl || "";
+const PORTAL_RPG_PATH = "./game/index.html";
+const PORTAL_DOOM_PATH = "./doom/";
 const STORAGE_KEY = "k8s-student-portal-state-v1";
 
 let k8sAccountReady = false;
@@ -25,6 +28,7 @@ function readInputs() {
     clientCertificate: document.getElementById("clientCertificate").files[0],
     clientKey: document.getElementById("clientKey").files[0],
     exerciseGame: exerciseGameSelect.value.trim(),
+    exerciseClient: exerciseClientSelect.value.trim(),
   };
 }
 
@@ -61,10 +65,14 @@ function clearState() {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-function exerciseGameUrl(game) {
-  const url = new URL(PORTAL_GAME_PATH, window.location.href);
+function exerciseClientUrl(game, client) {
+  const path = client === "rpg" ? PORTAL_RPG_PATH : PORTAL_DOOM_PATH;
+  const url = new URL(path, window.location.href);
   if (game) {
     url.searchParams.set("game", game);
+  }
+  if (client === "doom") {
+    url.searchParams.set("wsUrl", GAME_WS_URL);
   }
   return url.toString();
 }
@@ -249,25 +257,27 @@ function skipExerciseTask() {
 }
 
 function openExerciseGame() {
-  const { apiKey, exerciseGame } = readInputs();
+  const { apiKey, exerciseClient, exerciseGame } = readInputs();
   if (!apiKey) {
-    write("Save or paste your API key before launching the exercise game.", exerciseOutput);
+    write("Save or paste your API key before launching the exercise client.", exerciseOutput);
     return;
   }
   if (!k8sAccountReady) {
-    write("Submit Kubernetes Login first so the exercise game can use your saved account.", exerciseOutput);
+    write("Submit Kubernetes Login first so the exercise client can use your saved account.", exerciseOutput);
     return;
   }
 
+  const launchUrl = exerciseClientUrl(exerciseGame, exerciseClient);
   saveState({
     apiKey,
+    exerciseClient,
     exerciseGame,
     gameWsUrl: GAME_WS_URL,
-    portalGameUrl: exerciseGameUrl(exerciseGame),
+    portalGameUrl: launchUrl,
     accountReady: true,
   });
-  window.open(exerciseGameUrl(exerciseGame), "_blank");
-  write(`Opened ${exerciseGame} in a new tab.`, exerciseOutput);
+  window.open(launchUrl, "_blank");
+  write(`Opened ${exerciseClient} for ${exerciseGame} in a new tab.`, exerciseOutput);
 }
 
 async function callApi(action) {
@@ -368,6 +378,10 @@ exerciseGameSelect.addEventListener("change", (e) => {
   write("Choose a game, open it from the portal, then use Check Total Score.", exerciseOutput);
 });
 
+exerciseClientSelect.addEventListener("change", (e) => {
+  saveState({ exerciseClient: e.target.value });
+});
+
 resetStateButton.addEventListener("click", () => {
   const ok = window.confirm(
     "Reset saved exercise form data?\n\nThis clears the API key, endpoint, exercise selection, and cached exercise portal state from this browser."
@@ -384,6 +398,7 @@ resetStateButton.addEventListener("click", () => {
   document.getElementById("clientCertificate").value = "";
   document.getElementById("clientKey").value = "";
   exerciseGameSelect.value = "game01";
+  exerciseClientSelect.value = "doom";
   resetExerciseSummary();
   write("Ready.", setupOutput);
   write("Choose a game, open it from the portal, then use Check Total Score.", exerciseOutput);
@@ -401,6 +416,9 @@ if (restored.endpoint) {
 }
 if (restored.exerciseGame) {
   exerciseGameSelect.value = restored.exerciseGame;
+}
+if (restored.exerciseClient) {
+  exerciseClientSelect.value = restored.exerciseClient;
 }
 if (restored.accountReady) {
   k8sAccountReady = true;

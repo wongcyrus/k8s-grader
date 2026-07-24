@@ -1,8 +1,23 @@
 # Changelog
 
-## Recent Changes (July 2026)
+### 1. Doom Task Bridge & Client Integration
 
-### 1. Game WebSocket Durable Flow and RPG UX Refresh
+The Doom 3D engine client (`doom.ts`) was integrated into the WebSocket task grading pipeline as an interactive learning client.
+
+**Backend & Grader changes**:
+
+- Added `DOOM_TASK_SOURCE = "doom"` support in `game-command-handler/app.py` and `task_service.py` to bypass RPG NPC background checks and assignment locks.
+- Added `_counts_attempts()` check in `task_state_machine.py` to allow infinite retries for Doom tasks without locking out or consuming attempt limits.
+- Updated `_build_game_status_payload()` to generate session data and render Jinja2 template variables (e.g., `{{ namespace }}`) for `NOT_STARTED` tasks so task instructions display rendered parameters prior to task execution.
+
+**Doom Frontend UI changes (`doom.ts`)**:
+
+- Updated `TriggerOverlay` header to render concise `TASK: <task_id> (<phase>)` tags.
+- Fixed trigger deduplication by assigning unique `instanceId` per trigger event.
+- Added automatic asynchronous result listener in `Doom.tsx` so when background WebSocket checks finish (`COMPLETED` / `FAILED`), the overlay re-opens automatically if closed early.
+- Cleared game inputs (`clearInputs()`) and managed Pointer Lock state on overlay show/dismissal to prevent sticky player movement.
+
+### 2. Game WebSocket Durable Flow and RPG UX Refresh
 
 The RPG game path was refactored away from synchronous request/response behavior and now mirrors the durable WebSocket model used by exam mode.
 

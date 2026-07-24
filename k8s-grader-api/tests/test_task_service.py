@@ -383,6 +383,16 @@ class TestTaskService:
         
         assert can_access is True
         assert error is None
+
+    def test_validate_npc_access_allows_doom_source(self, task_service):
+        """Test Doom source bypasses NPC-specific access checks"""
+        task_service.npc_repo.lock_npc('user@test.com', 'game01', 'doom', minutes=30)
+        task_service.npc_repo.assign_task('user@test.com', 'game01', 'npc1', '01_task')
+
+        can_access, error = task_service.validate_npc_access('user@test.com', 'game01', 'doom')
+
+        assert can_access is True
+        assert error is None
     
     def test_validate_npc_access_locked(self, task_service):
         """Test validating NPC access when locked"""
