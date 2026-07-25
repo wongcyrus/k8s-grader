@@ -21,6 +21,15 @@ let exerciseSocket = null;
 let exerciseSocketReady = false;
 let pendingExerciseAction = null;
 
+function exerciseActionStatusText(action, phase = "active") {
+  const actionText = {
+    status: phase === "connecting" ? "Connecting to score service ..." : "Checking total score ...",
+    reset: phase === "connecting" ? "Connecting to reset current task ..." : "Resetting current task ...",
+    skip: phase === "connecting" ? "Connecting to skip task ..." : "Skipping current task ...",
+  };
+  return actionText[action] || (phase === "connecting" ? "Connecting to exercise service ..." : "Updating exercise status ...");
+}
+
 function readInputs() {
   return {
     apiKey: document.getElementById("apiKey").value.trim(),
@@ -110,7 +119,29 @@ function buildExerciseStatusSummary(json) {
     return json?.message || "Exercise score is unavailable right now.";
   }
 
-  return `Total score: ${points}\nCompleted tasks (${completedTasks.length}):\n${completedTaskLines}\nSkipped tasks (${skippedTasks.length}):\n${skippedTaskLines}`;
+  const lines = [];
+  if (json?.message) {
+    lines.push(String(json.message));
+  }
+  if (json?.task_id) {
+    lines.push(`Current task: ${json.task_id}`);
+  }
+  if (json?.phase_name) {
+    lines.push(`Current phase: ${json.phase_name}`);
+  }
+  if (json?.task_description) {
+    lines.push(`Task instruction: ${json.task_description}`);
+  }
+  if (lines.length > 0) {
+    lines.push("");
+  }
+
+  lines.push(`Total score: ${points}`);
+  lines.push(`Completed tasks (${completedTasks.length}):`);
+  lines.push(completedTaskLines);
+  lines.push(`Skipped tasks (${skippedTasks.length}):`);
+  lines.push(skippedTaskLines);
+  return lines.join("\n");
 }
 
 function updateExerciseSummary(json) {
@@ -157,7 +188,7 @@ function sendExerciseAction(action) {
       game: exerciseGame,
     })
   );
-  write(action === "skip" ? "Skipping current task ..." : "Checking total score ...", exerciseOutput);
+  write(exerciseActionStatusText(action), exerciseOutput);
 }
 
 function connectExerciseSocket(action = "status") {
@@ -178,14 +209,14 @@ function connectExerciseSocket(action = "status") {
 
   if (exerciseSocket && exerciseSocket.readyState === WebSocket.CONNECTING) {
     pendingExerciseAction = action;
-    write(action === "skip" ? "Connecting to skip task ..." : "Connecting to score service ...", exerciseOutput);
+    write(exerciseActionStatusText(action, "connecting"), exerciseOutput);
     return true;
   }
 
   closeExerciseSocket();
   pendingExerciseAction = action;
   setExerciseConnectionStatus("Connecting");
-  write(action === "skip" ? "Connecting to skip task ..." : "Connecting to score service ...", exerciseOutput);
+  write(exerciseActionStatusText(action, "connecting"), exerciseOutput);
 
   const socket = new WebSocket(GAME_WS_URL);
   exerciseSocket = socket;
@@ -254,6 +285,17 @@ function skipExerciseTask() {
     return;
   }
   connectExerciseSocket("skip");
+}
+
+function resetExerciseTask() {
+  const ok = window.confirm(
+    "Reset the current exercise task?\n\nThis clears the task progress so you can start that task again, but it keeps the saved attempt history."
+  );
+  if (!ok) {
+    write("Reset cancelled.", exerciseOutput);
+    return;
+  }
+  connectExerciseSocket("reset");
 }
 
 function openExerciseGame() {
@@ -355,6 +397,15 @@ async function callApi(action) {
       return;
     }
     skipExerciseTask();
+    return;
+  }
+
+  if (action === "exercise-reset") {
+    if (!exerciseGame) {
+      write("Choose an exercise game first.", exerciseOutput);
+      return;
+    }
+    resetExerciseTask();
   }
 }
 

@@ -1,5 +1,18 @@
 # Changelog
 
+### 0. Exercise Portal Task Reset
+
+Students can now reset the current exercise task directly from the exercise portal without losing saved trial history.
+
+**Exercise reset changes**
+
+- added a **Reset Current Task** button beside the exercise status/check control in `exam-web/index.html`
+- wired the portal button through the existing game WebSocket flow in `exam-web/app.js`
+- added `reset` handling to `game-ws-handler/app.py` and `game-command-handler/app.py`
+- added `TaskService.reset_task(...)` to clear only the live task state and current NPC assignment
+- exercise phase results are now persisted to `TestRecordTable` with `mode="exercise"` so reset preserves prior attempts
+- RPG and Doom both resume correctly after reset because they share the same backend game command flow
+
 ### 1. Doom Task Bridge & Client Integration
 
 The Doom 3D engine client (`doom.ts`) was integrated into the WebSocket task grading pipeline as an interactive learning client.

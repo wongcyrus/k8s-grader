@@ -369,6 +369,91 @@ def test_skip_action_marks_task_skipped_and_returns_updated_status():
     assert result["message"] == "Skipped 01_task."
 
 
+def test_reset_action_resets_current_task_and_returns_not_started_payload():
+    module = load_module()
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "_build_game_status_payload", return_value={"status": "NOT_STARTED", "task_id": "01_task", "task_description": "Do task"}) as mock_status:
+        mock_task_service.get_current_task.return_value = "01_task"
+
+        result = module.execute_game_command(
+            "reset",
+            "student@example.com",
+            "game01",
+            "",
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    mock_task_service.reset_task.assert_called_once_with("student@example.com", "game01", "01_task")
+    mock_status.assert_called_once_with("student@example.com", "game01")
+    assert result["status"] == "RESET"
+    assert result["reset_task"] == "01_task"
+
+
+def test_reset_action_returns_player_facing_error_when_task_cannot_be_reset():
+    module = load_module()
+
+    with patch.object(module, "task_service") as mock_task_service:
+        mock_task_service.get_current_task.return_value = "01_task"
+        mock_task_service.reset_task.side_effect = ValueError("Task is not started yet. Open the exercise client and start the task first.")
+
+        result = module.execute_game_command(
+            "reset",
+            "student@example.com",
+            "game01",
+            "",
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    assert result == {
+        "status": "ERROR",
+        "message": "Task is not started yet. Open the exercise client and start the task first.",
+    }
+
+
+def test_talk_action_saves_exercise_test_records():
+    module = load_module()
+    manifest = FakeManifest()
+    started_state = _state("01_task", "setup", total_points=0)
+    failed_state = _state("01_task", "setup", total_points=0)
+    failed_result = {
+        "success": False,
+        "report_url": "https://report.example",
+        "test_result": module.TestResult.TESTS_FAILED,
+        "state": failed_state,
+        "manifest": manifest,
+    }
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "get_npc_background", return_value={"name": "Aiden"}), \
+         patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
+         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://k8s")), \
+         patch.object(module, "clear_tmp_directory"), \
+         patch.object(module, "write_user_files"), \
+         patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module, "save_game_test_record") as mock_save_record, \
+         patch.object(module, "_send_ws_message"):
+        mock_task_service.validate_npc_access.return_value = (True, None)
+        mock_task_service.get_current_task.return_value = "01_task"
+        mock_task_service.task_repo.get.return_value = None
+        mock_task_service.start_task.return_value = started_state
+        mock_task_service.execute_phase.return_value = failed_result
+
+        result = module.execute_game_command(
+            "talk",
+            "student@example.com",
+            "game01",
+            "Aiden",
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    mock_save_record.assert_called_once_with("student@example.com", "game01", "01_task", "setup", failed_result)
+    assert result["status"] == "FAILED"
+
+
 def test_talk_action_runs_multi_phase_flow_until_completion():
     module = load_module()
     manifest = FakeManifest()

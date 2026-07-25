@@ -2,7 +2,7 @@
 
 ## Overview
 
-Game mode now uses a **WebSocket-only durable flow**. The RPG client sends `talk` and `status` actions over the game WebSocket API, the backend queues a durable Lambda invocation, and the durable worker pushes live task updates back to the same browser connection.
+Game mode now uses a **WebSocket-only durable flow**. The RPG client sends `talk` actions over the game WebSocket API, while the exercise portal sends `status`, `reset`, and `skip` actions over the same channel. The backend queues a durable Lambda invocation, and the durable worker pushes live task updates back to the same browser connection.
 
 This is different from the older REST-style game flow:
 
@@ -28,7 +28,7 @@ This is different from the older REST-style game flow:
    ```
 
 5. `game-ws-handler/app.py` validates the request and queues the durable game command Lambda.
-6. `game-command-handler/app.py` starts or resumes the current task, runs task phases, and pushes `game_status` updates back over WebSocket.
+6. `game-command-handler/app.py` starts or resumes the current task, runs task phases, handles portal-side `status` / `reset` / `skip` commands, and pushes `game_status` updates back over WebSocket.
 7. The RPG plugin shows player-facing text from the backend and opens reports in a popup when available.
 
 ## Durable Game Rules
@@ -41,6 +41,7 @@ The durable game worker follows these rules:
 - **Challenge before check**: if saved state lands on `check` before `challenge` has passed, the worker rewinds back to `challenge`.
 - **No RPG lockout on failures**: game mode keeps returning normal `FAILED` results; it does not abandon the task when attempts reach `max_attempts`.
 - **Durable multi-phase progression**: one `talk` can advance through multiple phases until the player hits a failing phase or completes the task.
+- **Portal-side reset**: the exercise portal can reset the current in-progress task over the same WebSocket channel used for status checks. Reset clears the live task state and current NPC assignment, but preserves saved attempt history.
 - **Doom Client Integration (`DOOM_TASK_SOURCE`)**:
   - Uses `npc = "doom"` to bypass RPG NPC background checks and single-NPC assignment locks.
   - Bypasses attempt count tracking (`_counts_attempts`), enabling infinite in-game retries.
@@ -77,6 +78,7 @@ The plugin does **not** tell the player to try another NPC unless the backend li
 
 - Failed checks can include a `report_url`; the plugin opens the report popup automatically.
 - Success payloads can include an `easter_egg_url`; the plugin opens it after success.
+- Exercise-mode phase executions are now saved into `TestRecordTable` with `mode="exercise"`, so portal-triggered resets can preserve attempt history.
 - Resetting DynamoDB task state only resets app-side progress. If the Kubernetes cluster still contains the required resources, early phases may pass again immediately on the next run.
 
 ## Debugging Skipped Tests & Immediate Failures

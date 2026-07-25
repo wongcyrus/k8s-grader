@@ -173,6 +173,44 @@ class TestTaskService:
         assert saved.total_points == 0
         assert saved.skipped is True
         assert saved.current_phase_id is None
+
+    def test_reset_task_deletes_state_and_clears_assignment(self, task_service):
+        state = TaskState(
+            email='user@test.com',
+            game='game01',
+            task_id='01_task',
+            npc='npc1',
+            status=TaskStatus.IN_PROGRESS,
+            current_phase_id='check',
+            total_points=25,
+        )
+        task_service.task_repo.save(state)
+        task_service.npc_repo.assign_task('user@test.com', 'game01', 'npc1', '01_task')
+
+        result = task_service.reset_task('user@test.com', 'game01', '01_task')
+
+        assert result['success'] is True
+        assert result['task_id'] == '01_task'
+        assert task_service.task_repo.get('user@test.com', 'game01', '01_task') is None
+        assert task_service.npc_repo.get_assigned_npc('user@test.com', 'game01') is None
+
+    def test_reset_task_blocks_completed_tasks(self, task_service):
+        state = TaskState(
+            email='user@test.com',
+            game='game01',
+            task_id='01_task',
+            npc='npc1',
+            status=TaskStatus.COMPLETED,
+            current_phase_id=None,
+        )
+        task_service.task_repo.save(state)
+
+        with pytest.raises(ValueError, match="Reset is not allowed after task completion."):
+            task_service.reset_task('user@test.com', 'game01', '01_task')
+
+    def test_reset_task_requires_existing_started_task(self, task_service):
+        with pytest.raises(ValueError, match="Task is not started yet."):
+            task_service.reset_task('user@test.com', 'game01', '01_task')
     
     def test_start_task_new(self, task_service, sample_manifest):
         """Test starting a new task"""

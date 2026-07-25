@@ -299,6 +299,17 @@ python scripts/reset_task_stage.py ... --apply
 - Reset is blocked when task is `completed` (teacher/admin action required).
 - Reset restarts the task from phase 1 and keeps audit trail in **Records**.
 
+## Student Reset Logic (Exercise Portal)
+
+- The exercise portal now includes a **Reset Current Task** button next to the existing exercise check/status control.
+- The button sends a game WebSocket `reset` action through the same backend path used by exercise status checks.
+- Exercise reset is allowed only when the current task state is:
+  - `in_progress`
+  - `abandoned`
+- Exercise reset is blocked after task completion.
+- Reset clears the current task state and NPC assignment so the student can start that task again from RPG or Doom.
+- Historical exercise attempts are preserved in `TestRecordTable`; reset does **not** delete prior trial records.
+
 ---
 
 ## Post-Deployment Verification

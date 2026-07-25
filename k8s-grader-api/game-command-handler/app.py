@@ -1,6 +1,8 @@
 import json
 import logging
+import os
 from decimal import Decimal
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import boto3
@@ -262,6 +264,49 @@ def _handle_game_skip(email: str, game: str) -> Dict[str, Any]:
     return payload
 
 
+def save_game_test_record(email: str, game: str, task_id: str, phase_id: str, result: Dict[str, Any]) -> None:
+    test_result = result.get("test_result")
+    if not test_result:
+        return
+
+    from common.database.repositories import TestRecordRepository
+
+    test_record_repo = TestRecordRepository()
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
+    report_url = result.get("report_url", "")
+    bucket = os.getenv("TestResultBucket", "") if report_url else ""
+    key = f"{game}/{email}/{task_id}/test_report_{phase_id}_{now_str}.html" if bucket and report_url else ""
+    test_record_repo.save(
+        email=email,
+        game=game,
+        current_task=task_id,
+        game_phase=phase_id or "unknown",
+        test_result=test_result.name,
+        bucket=bucket,
+        key=key,
+        report_url=report_url,
+        now_str=now_str,
+        mode="exercise",
+    )
+
+
+def _handle_game_reset(email: str, game: str) -> Dict[str, Any]:
+    current_task = task_service.get_current_task(email, game)
+    if not current_task:
+        return _error_payload("All tasks are already completed. Reset is unavailable.")
+
+    try:
+        task_service.reset_task(email, game, current_task)
+    except ValueError as err:
+        return _error_payload(str(err))
+
+    payload = _build_game_status_payload(email, game)
+    payload["status"] = "RESET"
+    payload["message"] = "Task reset. Return to the game client and start the task again. Attempt history was preserved."
+    payload["reset_task"] = current_task
+    return payload
+
+
 def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
     total_score = task_service.get_total_score(email, game)
     completed_tasks = task_service.get_completed_tasks(email, game)
@@ -391,9 +436,12 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
             return _task_completed_payload(completion_result, "")
 
         _push_game_update(endpoint, connection_id, "talk", _running_payload(state, manifest))
+        executed_phase_id = state.current_phase_id
         result = task_service.execute_phase(email, game, current_task)
         manifest = result["manifest"]
         state = result["state"]
+        if executed_phase_id:
+            save_game_test_record(email, game, current_task, executed_phase_id, result)
 
         if not result["success"]:
             return _phase_failed_payload(result, manifest)
@@ -416,6 +464,8 @@ def execute_game_command(
         return _handle_game_talk(email, game, npc, endpoint, connection_id)
     if action == "status":
         return _build_game_status_payload(email, game)
+    if action == "reset":
+        return _handle_game_reset(email, game)
     if action == "skip":
         return _handle_game_skip(email, game)
     return _error_payload(f"Unsupported game action: {action}")

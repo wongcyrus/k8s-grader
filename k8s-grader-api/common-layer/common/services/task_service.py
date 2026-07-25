@@ -171,6 +171,38 @@ class TaskService:
             'total_points': 0,
             'skipped': True,
         }
+
+    def reset_task(self, email: str, game: str, task_id: str) -> Dict[str, Any]:
+        """
+        Reset a started task without deleting historical test records.
+
+        Args:
+            email: User email
+            game: Game identifier
+            task_id: Task identifier
+
+        Returns:
+            Dictionary containing the task that was reset
+        """
+        state = self.task_repo.get(email, game, task_id)
+        if not state:
+            raise ValueError("Task is not started yet. Open the exercise client and start the task first.")
+        if state.status == TaskStatus.COMPLETED:
+            raise ValueError("Reset is not allowed after task completion.")
+        if state.status not in (TaskStatus.IN_PROGRESS, TaskStatus.ABANDONED):
+            raise ValueError(f"Reset is not allowed for status '{state.status.value}'.")
+
+        self.task_repo.delete(email, game, task_id)
+
+        if state.mode != 'exam':
+            self.npc_repo.clear_assignment(email, game)
+
+        logger.info(f"Reset task {task_id} for {email}")
+        return {
+            'success': True,
+            'state': state,
+            'task_id': task_id,
+        }
     
     def start_task(self, email: str, game: str, task_id: str, npc: str) -> TaskState:
         """

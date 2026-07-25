@@ -12,10 +12,12 @@ GAME_COMMAND_FUNCTION_ARN = os.getenv("GameCommandDurableFunctionArn", "")
 GAME_ACTION_COOLDOWN_SECONDS = {
     "talk": 2,
     "status": 3,
+    "reset": 5,
     "skip": 5,
 }
 GAME_ACTION_GUARD_TTL_SECONDS = {
     "talk": 180,
+    "reset": 30,
 }
 request_throttle_repo = RequestThrottleRepository()
 execution_guard_repo = ExecutionGuardRepository()
@@ -110,7 +112,7 @@ def _handle_default(event: Dict[str, Any]) -> Dict[str, Any]:
             return _error_response(401, str(err))
         return _response(200, {"status": "SUBSCRIBED", "game": game})
 
-    if action not in {"talk", "status", "skip"}:
+    if action not in {"talk", "status", "reset", "skip"}:
         return _response(200, {"status": "OK"})
 
     if not api_key or not game:
