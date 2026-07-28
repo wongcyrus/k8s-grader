@@ -2,8 +2,12 @@
 import pytest
 import sys
 import os
-from moto import mock_aws
 import boto3
+
+try:
+    from moto import mock_aws
+except ImportError:
+    from moto import mock_dynamodb as mock_aws
 
 # Add common layer to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common-layer'))
@@ -26,6 +30,7 @@ def aws_credentials(monkeypatch):
     monkeypatch.setenv('NpcLockTable', 'NpcLockTable')
     monkeypatch.setenv('NpcAssignmentTable', 'NpcAssignmentTable')
     monkeypatch.setenv('GameAccessTable', 'GameAccessTable')
+    monkeypatch.setenv('GameSourceTable', 'GameSourceTable')
     monkeypatch.setenv('ExamCodeTable', 'ExamCodeTable')
     monkeypatch.setenv('ExamSessionTable', 'ExamSessionTable')
     monkeypatch.setenv('AccountTable', 'AccountTable')
@@ -94,6 +99,17 @@ def dynamodb_tables(aws_credentials):
 
         game_access_table = dynamodb.create_table(
             TableName='GameAccessTable',
+            KeySchema=[
+                {'AttributeName': 'game', 'KeyType': 'HASH'}
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'game', 'AttributeType': 'S'}
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
+
+        game_source_table = dynamodb.create_table(
+            TableName='GameSourceTable',
             KeySchema=[
                 {'AttributeName': 'game', 'KeyType': 'HASH'}
             ],
@@ -173,6 +189,7 @@ def dynamodb_tables(aws_credentials):
             'lock_table': lock_table,
             'assignment_table': assignment_table,
             'game_access_table': game_access_table,
+            'game_source_table': game_source_table,
             'exam_code_table': exam_code_table,
             'exam_session_table': exam_session_table
             ,'account_table': account_table,

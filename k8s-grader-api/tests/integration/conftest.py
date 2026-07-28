@@ -54,9 +54,9 @@ def stack_outputs(cfn_client, stack_name) -> Dict[str, str]:
 @pytest.fixture(scope="session")
 def api_endpoint(stack_outputs) -> str:
     """Get API Gateway endpoint from stack outputs"""
-    endpoint = stack_outputs.get('ApiEndpoint')
+    endpoint = stack_outputs.get('BaseUrl')
     if not endpoint:
-        pytest.skip("ApiEndpoint not found in stack outputs")
+        pytest.skip("BaseUrl not found in stack outputs")
     return endpoint.rstrip('/')
 
 

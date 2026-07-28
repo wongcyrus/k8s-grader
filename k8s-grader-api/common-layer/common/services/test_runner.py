@@ -52,8 +52,7 @@ class TestRunner:
             # Only upload report to S3 if tests failed
             # Players don't need to see successful test reports
             report_url = ""
-            report_exists = os.path.exists("/tmp/report.html")
-            if test_result != TestResult.OK and report_exists:
+            if test_result != TestResult.OK:
                 timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
                 report_url = self._upload_report(
                     game, task_id, phase.id, timestamp, session_data.get('$email', 'unknown')
@@ -62,8 +61,6 @@ class TestRunner:
                     logger.info(f"Phase {phase.id} failed: {test_result.name}, report uploaded")
                 else:
                     logger.warning(f"Phase {phase.id} failed: {test_result.name}, report upload failed")
-            elif test_result != TestResult.OK:
-                logger.warning(f"Phase {phase.id} failed: {test_result.name}, no report file was generated")
             else:
                 logger.info(f"Phase {phase.id} passed: {test_result.name}")
             

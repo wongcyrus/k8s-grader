@@ -5,13 +5,26 @@ from common.models.task_state import TaskState, TaskStatus
 from common.services.teacher_dashboard_service import TeacherDashboardService
 
 
-def build_state(email, game, task_id, *, mode="exercise", status=TaskStatus.IN_PROGRESS, phase="setup", points=0, skipped=False, updated_at="2026-01-01T10:00:00+00:00"):
+def build_state(
+    email,
+    game,
+    task_id,
+    *,
+    mode="exercise",
+    exam_code=None,
+    status=TaskStatus.IN_PROGRESS,
+    phase="setup",
+    points=0,
+    skipped=False,
+    updated_at="2026-01-01T10:00:00+00:00",
+):
     return TaskState(
         email=email,
         game=game,
         task_id=task_id,
         npc="npc1",
         mode=mode,
+        exam_code=exam_code,
         status=status,
         current_phase_id=phase,
         total_points=points,
@@ -23,7 +36,7 @@ def build_state(email, game, task_id, *, mode="exercise", status=TaskStatus.IN_P
 
 
 class TestTeacherDashboardService:
-    def test_list_students_aggregates_scores_status_and_reports(self):
+    def test_list_students_groups_rows_per_game_and_scope(self):
         account_repo = Mock()
         task_repo = Mock()
         exam_session_repo = Mock()
@@ -45,18 +58,8 @@ class TestTeacherDashboardService:
             ),
             build_state(
                 "student@example.com",
-                "exam01",
-                "task02",
-                mode="exam",
-                status=TaskStatus.IN_PROGRESS,
-                phase="ready",
-                points=3,
-                updated_at="2026-01-01T11:00:00+00:00",
-            ),
-            build_state(
-                "student@example.com",
                 "game01",
-                "task03",
+                "task02",
                 mode="exercise",
                 status=TaskStatus.COMPLETED,
                 phase="done",
@@ -64,12 +67,43 @@ class TestTeacherDashboardService:
                 skipped=True,
                 updated_at="2026-01-01T09:30:00+00:00",
             ),
+            build_state(
+                "student@example.com",
+                "game01",
+                "task03",
+                mode="exam",
+                exam_code="EXAM-001",
+                status=TaskStatus.IN_PROGRESS,
+                phase="ready",
+                points=3,
+                updated_at="2026-01-01T11:00:00+00:00",
+            ),
         ]
         exam_session_repo.list_by_email.return_value = [
-            {"examCode": "EXAM-001", "active": True, "verifiedAt": "2026-01-01T08:00:00+00:00", "allowedTasks": ["task02"]}
+            {
+                "examCode": "EXAM-001",
+                "game": "game01",
+                "active": True,
+                "verifiedAt": "2026-01-01T08:00:00+00:00",
+                "allowedTasks": ["task03"],
+            }
         ]
         test_record_repo.list_by_email.return_value = [
-            {"time": "2026-01-01_11-05-00", "testResult": "OK", "reportUrl": "https://report.example.com/latest.html"}
+            {
+                "gameTime": "game01#2026-01-01_11-05-00",
+                "mode": "exam",
+                "examCode": "EXAM-001",
+                "testResult": "OK",
+                "reportUrl": "https://report.example.com/exam.html",
+                "time": "2026-01-01_11-05-00",
+            },
+            {
+                "gameTime": "game01#2026-01-01_10-05-00",
+                "mode": "exercise",
+                "testResult": "OK",
+                "reportUrl": "https://report.example.com/exercise.html",
+                "time": "2026-01-01_10-05-00",
+            },
         ]
 
         service = TeacherDashboardService(
@@ -81,23 +115,25 @@ class TestTeacherDashboardService:
 
         result = service.list_students()
 
-        assert len(result) == 1
-        student = result[0]
-        assert student["email"] == "student@example.com"
-        assert student["status"] == "ACTIVE"
-        assert student["current_mode"] == "exam"
-        assert student["current_task"] == "task02"
-        assert student["current_phase"] == "ready"
-        assert student["exercise_score"] == 5
-        assert student["exam_score"] == 3
-        assert student["total_score"] == 8
-        assert student["completed_tasks"] == 1
-        assert student["skipped_tasks"] == 1
-        assert student["latest_result"] == "OK"
-        assert student["latest_report_url"] == "https://report.example.com/latest.html"
-        assert student["active_exam_code"] == "EXAM-001"
+        assert len(result) == 2
+        exercise_row = next(item for item in result if item["scope_mode"] == "exercise")
+        exam_row = next(item for item in result if item["scope_mode"] == "exam")
 
-    def test_get_student_detail_returns_tasks_sessions_and_reports(self):
+        assert exercise_row["game"] == "game01"
+        assert exercise_row["total_score"] == 5
+        assert exercise_row["completed_tasks"] == 1
+        assert exercise_row["skipped_tasks"] == 1
+        assert exercise_row["latest_report_url"] == "https://report.example.com/exercise.html"
+
+        assert exam_row["game"] == "game01"
+        assert exam_row["exam_code"] == "EXAM-001"
+        assert exam_row["status"] == "ACTIVE"
+        assert exam_row["current_task"] == "task03"
+        assert exam_row["current_phase"] == "ready"
+        assert exam_row["total_score"] == 3
+        assert exam_row["latest_report_url"] == "https://report.example.com/exam.html"
+
+    def test_get_student_detail_filters_by_scope(self):
         account_repo = Mock()
         task_repo = Mock()
         exam_session_repo = Mock()
@@ -114,12 +150,23 @@ class TestTeacherDashboardService:
                 phase="check",
                 points=5,
                 updated_at="2026-01-01T10:00:00+00:00",
-            )
+            ),
+            build_state(
+                "student@example.com",
+                "game01",
+                "task02",
+                mode="exam",
+                exam_code="EXAM-001",
+                status=TaskStatus.IN_PROGRESS,
+                phase="ready",
+                points=3,
+                updated_at="2026-01-01T11:00:00+00:00",
+            ),
         ]
         exam_session_repo.list_by_email.return_value = [
             {
                 "examCode": "EXAM-001",
-                "game": "exam01",
+                "game": "game01",
                 "active": True,
                 "verifiedAt": "2026-01-01T08:00:00+00:00",
                 "expiresAt": "2026-01-01T12:00:00+00:00",
@@ -132,9 +179,19 @@ class TestTeacherDashboardService:
                 "gamePhase": "check",
                 "testResult": "OK",
                 "time": "2026-01-01_10-00-00",
-                "reportUrl": "https://report.example.com/1.html",
+                "reportUrl": "https://report.example.com/exercise.html",
                 "mode": "exercise",
-            }
+            },
+            {
+                "gameTime": "game01#2026-01-01_11-00-00",
+                "task": "task02",
+                "gamePhase": "ready",
+                "testResult": "OK",
+                "time": "2026-01-01_11-00-00",
+                "reportUrl": "https://report.example.com/exam.html",
+                "mode": "exam",
+                "examCode": "EXAM-001",
+            },
         ]
 
         service = TeacherDashboardService(
@@ -144,12 +201,23 @@ class TestTeacherDashboardService:
             test_record_repo=test_record_repo,
         )
 
-        result = service.get_student_detail("student@example.com")
+        result = service.get_student_detail(
+            "student@example.com",
+            game="game01",
+            mode="exam",
+            exam_code="EXAM-001",
+        )
 
         assert result["student"]["email"] == "student@example.com"
-        assert result["task_states"][0]["task_id"] == "task01"
+        assert result["student"]["game"] == "game01"
+        assert result["student"]["scope_mode"] == "exam"
+        assert result["student"]["exam_code"] == "EXAM-001"
+        assert len(result["task_states"]) == 1
+        assert result["task_states"][0]["task_id"] == "task02"
+        assert len(result["exam_sessions"]) == 1
         assert result["exam_sessions"][0]["exam_code"] == "EXAM-001"
-        assert result["reports"][0]["report_url"] == "https://report.example.com/1.html"
+        assert len(result["reports"]) == 1
+        assert result["reports"][0]["report_url"] == "https://report.example.com/exam.html"
 
     def test_get_student_detail_rejects_unknown_student(self):
         service = TeacherDashboardService(

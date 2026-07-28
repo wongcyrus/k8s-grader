@@ -5,6 +5,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_PYTHON="$SCRIPT_DIR/venv/bin/python"
+VENV_PIP="$SCRIPT_DIR/venv/bin/pip"
 
 # Colors
 GREEN='\033[0;32m'
@@ -19,7 +20,12 @@ echo ""
 if [ ! -f "$VENV_PYTHON" ]; then
     echo "Virtual environment not found. Creating..."
     python3 -m venv "$SCRIPT_DIR/venv"
-    "$SCRIPT_DIR/venv/bin/pip" install -q -r "$SCRIPT_DIR/common-layer/requirements.txt"
+    "$VENV_PIP" install -q -r "$SCRIPT_DIR/requirements-dev.txt"
+fi
+
+if ! "$VENV_PYTHON" -c "import moto, pytest_cov" >/dev/null 2>&1; then
+    echo "Installing missing test dependencies..."
+    "$VENV_PIP" install -q -r "$SCRIPT_DIR/requirements-dev.txt"
 fi
 
 # Run unit tests only (exclude integration tests)
@@ -34,4 +40,3 @@ echo "  open htmlcov/index.html"
 echo ""
 echo "Note: Integration tests are excluded. Run them separately with:"
 echo "  bash run_integration_tests.sh"
-

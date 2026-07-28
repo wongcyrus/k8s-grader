@@ -29,7 +29,11 @@
           <input id="clientKey" type="file" accept=".key,.pem" />
         </label>
         <div class="actions">
-          <button data-action="save-account">Submit Kubernetes Login</button>
+          <button data-action="save-account">Save and Test Kubernetes Login</button>
+        </div>
+        <pre id="setupOutput">Ready.</pre>
+        <div class="actions">
+          <button id="resetState" class="secondary-btn" type="button">Reset Saved Form Data</button>
         </div>
       </section>
 
@@ -37,7 +41,7 @@
         <h2>Step 2: Launch Exercise Client</h2>
         <label>Exercise Game
           <select id="exerciseGame">
-            <option value="game01">game01</option>
+            <option value="" disabled selected>Loading games...</option>
           </select>
         </label>
         <label>Exercise Client
@@ -54,18 +58,13 @@
           <button data-action="open-game">Open Exercise Client</button>
           <button data-action="exercise-status" class="secondary-btn" type="button">Check Total Score</button>
           <button data-action="exercise-reset" class="secondary-btn" type="button">Reset Current Task</button>
+          <button data-action="exercise-reset-all" class="danger-btn" type="button">Reset Whole Exercise</button>
           <button data-action="exercise-skip" class="secondary-btn" type="button">Skip Current Task</button>
         </div>
+        <p class="danger-note">Reset Whole Exercise deletes saved progress for the selected game, but keeps trial records for teacher review.</p>
         <pre id="exerciseOutput">Choose a game, open it from the portal, then use Check Total Score.</pre>
       </section>
 
-      <section class="card">
-        <h2>Portal Result</h2>
-        <pre id="setupOutput">Ready.</pre>
-        <div class="actions">
-          <button id="resetState" class="secondary-btn" type="button">Reset Saved Form Data</button>
-        </div>
-      </section>
     </main>
 
     <script src="./config.js"></script>

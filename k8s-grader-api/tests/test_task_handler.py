@@ -271,11 +271,39 @@ class TestLambdaHandler:
 
     @patch.dict(os.environ, {'TeacherEmails': 'teacher@example.com'}, clear=False)
     @patch('app.get_email_from_event')
+    def test_teacher_overview_route_includes_teacher_accounts(self, mock_get_email):
+        mock_get_email.return_value = 'teacher@example.com'
+        event = {
+            'path': '/teacher/overview',
+            'queryStringParameters': {},
+            'headers': {'x-api-key': 'teacher-key'}
+        }
+
+        with patch('app.teacher_dashboard_service.list_students', return_value=[
+            {'email': 'teacher@example.com', 'status': 'FINISHED'},
+            {'email': 'student@example.com', 'status': 'ACTIVE'},
+        ]):
+            response = lambda_handler(event, None)
+
+        body = json.loads(response['body'])
+        assert body['status'] == 'OK'
+        assert [item['email'] for item in body['students']] == [
+            'teacher@example.com',
+            'student@example.com',
+        ]
+
+    @patch.dict(os.environ, {'TeacherEmails': 'teacher@example.com'}, clear=False)
+    @patch('app.get_email_from_event')
     def test_teacher_student_route(self, mock_get_email):
         mock_get_email.return_value = 'teacher@example.com'
         event = {
             'path': '/teacher/student',
-            'queryStringParameters': {'studentEmail': 'student@example.com'},
+            'queryStringParameters': {
+                'studentEmail': 'student@example.com',
+                'game': 'game01',
+                'mode': 'exam',
+                'examCode': 'EXAM-001',
+            },
             'headers': {'x-api-key': 'teacher-key'}
         }
 
@@ -287,10 +315,30 @@ class TestLambdaHandler:
         }) as mock_detail:
             response = lambda_handler(event, None)
 
-        mock_detail.assert_called_once_with('student@example.com')
+        mock_detail.assert_called_once_with(
+            'student@example.com',
+            game='game01',
+            mode='exam',
+            exam_code='EXAM-001',
+        )
         body = json.loads(response['body'])
         assert body['status'] == 'OK'
         assert body['student']['email'] == 'student@example.com'
+
+    def test_portal_games_route(self):
+        event = {
+            'path': '/portal/games',
+            'queryStringParameters': {},
+            'headers': {}
+        }
+
+        with patch('app.game_source_repo.list_games', return_value=['game01', 'game02']) as mock_list:
+            response = lambda_handler(event, None)
+
+        mock_list.assert_called_once()
+        body = json.loads(response['body'])
+        assert body['status'] == 'OK'
+        assert body['games'] == ['game01', 'game02']
 
     @patch.dict(os.environ, {'TeacherEmails': 'teacher@example.com'}, clear=False)
     @patch('app.get_email_from_event')

@@ -32,6 +32,23 @@ get_region() {
     fi
 }
 
+get_teacher_emails() {
+    local block
+    local line
+    if [ "${CONFIG_ENV}" = "default" ]; then
+        block=$(grep '^\[default.deploy.parameters\]' -A 20 samconfig.toml)
+    else
+        block=$(grep "^\[${CONFIG_ENV}\.deploy.parameters\]" -A 20 samconfig.toml)
+    fi
+
+    line=$(printf '%s\n' "$block" | grep 'parameter_overrides' | head -n 1 || true)
+    if [ -z "$line" ]; then
+        return 0
+    fi
+
+    printf '%s\n' "$line" | sed -n 's/.*TeacherEmails=\\"\([^"]*\)\\".*/\1/p'
+}
+
 # Functions
 print_success() {
     echo -e "${GREEN}✓ $1${NC}"
@@ -397,8 +414,12 @@ deploy() {
 
     local guided_flag="${1:-}"
     local parameter_overrides=("PythonVersion=${PYTHON_VERSION_OVERRIDE}")
+    local teacher_emails="${TEACHER_EMAILS_OVERRIDE:-$(get_teacher_emails)}"
     if [ -n "${SECRET_HASH_OVERRIDE:-}" ]; then
         parameter_overrides+=("SecretHash=${SECRET_HASH_OVERRIDE}")
+    fi
+    if [ -n "${teacher_emails}" ]; then
+        parameter_overrides+=("TeacherEmails=${teacher_emails}")
     fi
 
     if [ "${guided_flag}" == "--guided" ]; then

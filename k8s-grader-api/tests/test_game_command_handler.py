@@ -413,6 +413,54 @@ def test_reset_action_returns_player_facing_error_when_task_cannot_be_reset():
     }
 
 
+def test_reset_all_action_clears_whole_exercise_and_returns_not_started_payload():
+    module = load_module()
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "_build_game_status_payload", return_value={"status": "NOT_STARTED", "task_id": "01_task", "task_description": "Do task"}) as mock_status:
+        mock_task_service.reset_game_progress.return_value = {
+            "success": True,
+            "deleted_task_count": 3,
+            "deleted_task_ids": ["01_task", "02_task", "03_task"],
+        }
+
+        result = module.execute_game_command(
+            "reset-all",
+            "student@example.com",
+            "game01",
+            "",
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    mock_task_service.reset_game_progress.assert_called_once_with("student@example.com", "game01")
+    mock_status.assert_called_once_with("student@example.com", "game01")
+    assert result["status"] == "RESET_ALL"
+    assert result["deleted_task_count"] == 3
+    assert result["deleted_task_ids"] == ["01_task", "02_task", "03_task"]
+
+
+def test_reset_all_action_returns_player_facing_error_when_whole_exercise_cannot_be_reset():
+    module = load_module()
+
+    with patch.object(module, "task_service") as mock_task_service:
+        mock_task_service.reset_game_progress.side_effect = ValueError("No saved exercise progress was found for this game.")
+
+        result = module.execute_game_command(
+            "reset-all",
+            "student@example.com",
+            "game01",
+            "",
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    assert result == {
+        "status": "ERROR",
+        "message": "No saved exercise progress was found for this game.",
+    }
+
+
 def test_talk_action_saves_exercise_test_records():
     module = load_module()
     manifest = FakeManifest()

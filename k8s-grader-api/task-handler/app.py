@@ -16,6 +16,7 @@ from common.handler import (
     setup_paths
 )
 from common.database import get_user_data
+from common.database.repositories import GameSourceRepository
 from common.services.task_service import TaskService
 from common.services.exam_service import ExamService
 from common.services.teacher_dashboard_service import TeacherDashboardService
@@ -56,6 +57,7 @@ def render_template(template: str, session_data: Dict[str, Any]) -> str:
 task_service = TaskService()
 exam_service = ExamService()
 teacher_dashboard_service = TeacherDashboardService()
+game_source_repo = GameSourceRepository()
 
 _dynamodb_resource = boto3.resource('dynamodb')
 
@@ -118,6 +120,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Route only exam REST endpoints; legacy game REST API has been removed."""
     try:
         path = (event.get('path') or event.get('resource') or '').rstrip('/')
+        if path.startswith('/portal'):
+            return portal_lambda_handler(event, context)
         if path.startswith('/teacher'):
             return teacher_lambda_handler(event, context)
         if path.startswith('/exam'):
@@ -135,6 +139,24 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Handler error: {e}", exc_info=True)
         return error_response(f"Internal error: {str(e)}")
+
+
+def portal_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """Handle public portal metadata routes."""
+    path = (event.get('path') or event.get('resource') or '').rstrip('/')
+
+    if path.endswith('/games'):
+        games = game_source_repo.list_games()
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'status': 'OK',
+                'games': games,
+            }, cls=DecimalEncoder)
+        }
+
+    return error_response("Unknown portal endpoint")
 
 
 def _teacher_allowlist() -> set[str]:
@@ -169,27 +191,30 @@ def teacher_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any
         return error_response(auth_error)
 
     if path.endswith('/overview'):
-        allowlist = _teacher_allowlist()
-        students = [
-            item for item in teacher_dashboard_service.list_students()
-            if item.get('email', '').strip().lower() not in allowlist
-        ]
         return {
             'statusCode': 200,
             'headers': cors_headers(),
             'body': json.dumps({
                 'status': 'OK',
                 'teacher_email': teacher_email,
-                'students': students,
+                'students': teacher_dashboard_service.list_students(),
             }, cls=DecimalEncoder)
         }
 
     if path.endswith('/student'):
         student_email = params.get('studentEmail')
+        game = params.get('game')
+        mode = params.get('mode')
+        exam_code = params.get('examCode')
         if not student_email:
             return error_response("Missing required parameters: studentEmail")
         try:
-            detail = teacher_dashboard_service.get_student_detail(student_email)
+            detail = teacher_dashboard_service.get_student_detail(
+                student_email,
+                game=game,
+                mode=mode,
+                exam_code=exam_code,
+            )
         except ValueError as err:
             return error_response(str(err))
         return {

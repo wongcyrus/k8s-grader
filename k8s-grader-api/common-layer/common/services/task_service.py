@@ -203,6 +203,45 @@ class TaskService:
             'state': state,
             'task_id': task_id,
         }
+
+    def reset_game_progress(self, email: str, game: str) -> Dict[str, Any]:
+        """
+        Reset all exercise progress for a game without deleting historical test records.
+
+        Args:
+            email: User email
+            game: Game identifier
+
+        Returns:
+            Dictionary containing the deleted task summary
+        """
+        states = self.task_repo.list_by_game(email, game)
+        if not states:
+            raise ValueError("No saved exercise progress was found for this game.")
+
+        exercise_states = [state for state in states if getattr(state, "mode", "exercise") != "exam"]
+        if not exercise_states:
+            raise ValueError("Whole exercise reset is unavailable because this game only has exam task state.")
+
+        deleted_task_ids = [state.task_id for state in exercise_states]
+        deleted_count = self.task_repo.delete_states(email, game, deleted_task_ids)
+        if deleted_count != len(deleted_task_ids):
+            raise RuntimeError("Failed to clear all saved exercise task states.")
+
+        self.npc_repo.clear_assignment(email, game)
+
+        logger.info(
+            "Reset all exercise progress for %s in %s (%s task states deleted)",
+            email,
+            game,
+            deleted_count,
+        )
+        return {
+            'success': True,
+            'game': game,
+            'deleted_task_count': deleted_count,
+            'deleted_task_ids': deleted_task_ids,
+        }
     
     def start_task(self, email: str, game: str, task_id: str, npc: str) -> TaskState:
         """

@@ -33,6 +33,20 @@ That's it! The deployment script will:
 # No manual setup needed - fully self-contained!
 ```
 
+### Private Game Source (Exercise first)
+```bash
+# Dry-run validation
+python scripts/seed_game_source.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --game game02
+
+# Apply after dry-run output looks correct
+python scripts/seed_game_source.py ... --apply
+```
+
+This makes the private game playable from the **Exercise Portal** without exposing a public zip URL.
+
 ### Exam Code (Validate first, then apply)
 ```bash
 # Dry-run validation
@@ -51,6 +65,12 @@ python scripts/seed_exam_code.py \
 # Apply after dry-run output looks correct
 python scripts/seed_exam_code.py ... --apply
 ```
+
+Recommended order for a new private game such as `game02`:
+1. Run `seed_game_source.py` to upload the private archive and enable exercise mode.
+2. Open the Exercise Portal and choose `game02`.
+3. Run `seed_exam_code.py` to publish the exam scope for `game02`.
+4. Open the Exam Page and use the exam code there.
 
 ### Reset Task Stage (DB state fix)
 ```bash
@@ -122,7 +142,6 @@ NOT_STARTED → IN_PROGRESS → COMPLETED
 - **Exercise portal:** use the published `StudentPortalUrl` output for `index.html`, save the API key once, then launch the RPG game from that page
 - **Exam page:** open `StudentPortalUrl/exam.html` for exam verify/start/run flows
 - **Teacher dashboard:** open `StudentPortalUrl/teacher.html` with a teacher API key whose email is included in the `TeacherEmails` deploy parameter
-- **Game mode:** the published `GameUrl` still works for direct same-origin access after the exercise portal has saved the API key
 - **Exam mode:** use `/exam/verify-code`, `/exam/start`, `/exam/run`, `/exam/status`, and `/exam/records`
 - **Legacy note:** the old game `/task` request/response API has been removed
 

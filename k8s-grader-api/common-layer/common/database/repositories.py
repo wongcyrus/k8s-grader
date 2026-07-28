@@ -216,6 +216,38 @@ class TaskStateRepository:
             logger.error(f"Failed to list task states for game: {e}")
             return []
 
+    def delete_states(self, email: str, game: str, task_ids: List[str]) -> int:
+        """
+        Delete multiple task states for a user within one game.
+
+        Args:
+            email: User email
+            game: Game identifier
+            task_ids: Task identifiers to delete
+
+        Returns:
+            Number of task states deleted
+        """
+        if not task_ids:
+            return 0
+
+        deleted = 0
+        try:
+            with self.table.batch_writer() as batch:
+                for task_id in task_ids:
+                    batch.delete_item(
+                        Key={
+                            'email': email,
+                            'gameTask': f"{game}#{task_id}"
+                        }
+                    )
+                    deleted += 1
+            logger.info(f"Deleted {deleted} task states for {email} - {game}")
+            return deleted
+        except Exception as e:
+            logger.error(f"Failed to delete task states for game: {e}")
+            return 0
+
     def list_by_email(self, email: str) -> List[Any]:
         """
         List all task states for a user across all games.
@@ -1083,6 +1115,29 @@ class GameSourceRepository:
         except Exception as e:
             logger.error(f"Failed to save game source: {e}")
             return False
+
+    def list_games(self) -> List[str]:
+        """List all games that have a source archive."""
+        try:
+            games: List[str] = []
+            scan_kwargs = {
+                "ProjectionExpression": "#game",
+                "ExpressionAttributeNames": {"#game": "game"},
+            }
+            while True:
+                response = self.table.scan(**scan_kwargs)
+                games.extend(
+                    item["game"]
+                    for item in response.get("Items", [])
+                    if isinstance(item.get("game"), str) and item["game"].strip()
+                )
+                if "LastEvaluatedKey" not in response:
+                    break
+                scan_kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+            return sorted(set(games))
+        except Exception as e:
+            logger.error(f"Failed to list game sources: {e}")
+            return []
 
 
 class GameAccessRepository:

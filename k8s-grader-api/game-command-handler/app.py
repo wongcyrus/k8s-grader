@@ -307,6 +307,25 @@ def _handle_game_reset(email: str, game: str) -> Dict[str, Any]:
     return payload
 
 
+def _handle_game_reset_all(email: str, game: str) -> Dict[str, Any]:
+    try:
+        result = task_service.reset_game_progress(email, game)
+    except ValueError as err:
+        return _error_payload(str(err))
+    except RuntimeError as err:
+        return _error_payload(str(err))
+
+    payload = _build_game_status_payload(email, game)
+    payload["status"] = "RESET_ALL"
+    payload["message"] = (
+        "Whole exercise reset completed. All saved progress for this game was cleared. "
+        "Trial records were preserved for teacher review."
+    )
+    payload["deleted_task_count"] = result["deleted_task_count"]
+    payload["deleted_task_ids"] = result["deleted_task_ids"]
+    return payload
+
+
 def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
     total_score = task_service.get_total_score(email, game)
     completed_tasks = task_service.get_completed_tasks(email, game)
@@ -466,6 +485,8 @@ def execute_game_command(
         return _build_game_status_payload(email, game)
     if action == "reset":
         return _handle_game_reset(email, game)
+    if action == "reset-all":
+        return _handle_game_reset_all(email, game)
     if action == "skip":
         return _handle_game_skip(email, game)
     return _error_payload(f"Unsupported game action: {action}")

@@ -211,6 +211,74 @@ class TestTaskService:
     def test_reset_task_requires_existing_started_task(self, task_service):
         with pytest.raises(ValueError, match="Task is not started yet."):
             task_service.reset_task('user@test.com', 'game01', '01_task')
+
+    def test_reset_game_progress_deletes_exercise_states_and_keeps_exam_states(self, task_service):
+        saved_states = [
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='01_task',
+                npc='npc1',
+                status=TaskStatus.COMPLETED,
+                current_phase_id=None,
+                mode='exercise',
+                skipped=False,
+            ),
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='02_task',
+                npc='npc1',
+                status=TaskStatus.IN_PROGRESS,
+                current_phase_id='check',
+                mode='exercise',
+                skipped=False,
+            ),
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='03_task',
+                npc='npc1',
+                status=TaskStatus.COMPLETED,
+                current_phase_id=None,
+                mode='exam',
+                exam_code='EXAM-001',
+            ),
+        ]
+        for state in saved_states:
+            task_service.task_repo.save(state)
+        task_service.npc_repo.assign_task('user@test.com', 'game01', 'npc1', '02_task')
+
+        result = task_service.reset_game_progress('user@test.com', 'game01')
+
+        assert result['success'] is True
+        assert result['deleted_task_count'] == 2
+        assert result['deleted_task_ids'] == ['01_task', '02_task']
+        assert task_service.task_repo.get('user@test.com', 'game01', '01_task') is None
+        assert task_service.task_repo.get('user@test.com', 'game01', '02_task') is None
+        assert task_service.task_repo.get('user@test.com', 'game01', '03_task') is not None
+        assert task_service.npc_repo.get_assigned_npc('user@test.com', 'game01') is None
+
+    def test_reset_game_progress_requires_saved_exercise_state(self, task_service):
+        with pytest.raises(ValueError, match="No saved exercise progress was found for this game."):
+            task_service.reset_game_progress('user@test.com', 'game01')
+
+    def test_reset_game_progress_rejects_exam_only_game_state(self, task_service):
+        task_service.task_repo.save(
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='01_task',
+                npc='npc1',
+                status=TaskStatus.IN_PROGRESS,
+                current_phase_id='check',
+                mode='exam',
+                exam_code='EXAM-001',
+            )
+        )
+
+        with pytest.raises(ValueError, match="only has exam task state"):
+            task_service.reset_game_progress('user@test.com', 'game01')
     
     def test_start_task_new(self, task_service, sample_manifest):
         """Test starting a new task"""

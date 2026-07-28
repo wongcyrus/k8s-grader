@@ -32,10 +32,10 @@ echo ""
 
 # Get stack outputs
 echo "Getting stack outputs..."
-API_ENDPOINT=$(aws cloudformation describe-stacks \
+BASE_URL=$(aws cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
   --region "$AWS_REGION" \
-  --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' \
+  --query 'Stacks[0].Outputs[?OutputKey==`BaseUrl`].OutputValue' \
   --output text)
 
 SECRET_HASH=$(aws cloudformation describe-stacks \
@@ -44,8 +44,8 @@ SECRET_HASH=$(aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs[?OutputKey==`SecretHash`].OutputValue' \
   --output text)
 
-if [ -z "$API_ENDPOINT" ] || [ -z "$SECRET_HASH" ]; then
-    echo "❌ Error: Could not get API endpoint or secret hash from stack outputs"
+if [ -z "$BASE_URL" ] || [ -z "$SECRET_HASH" ]; then
+    echo "❌ Error: Could not get base URL or secret hash from stack outputs"
     exit 1
 fi
 
@@ -53,7 +53,7 @@ echo "✅ Got stack outputs"
 echo ""
 
 # Generate keygen URL
-KEYGEN_URL="${API_ENDPOINT}/keygen/?secret=${SECRET_HASH}&email=${TEST_EMAIL}"
+KEYGEN_URL="${BASE_URL}keygen?secret=${SECRET_HASH}&email=${TEST_EMAIL}"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""

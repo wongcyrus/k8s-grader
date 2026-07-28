@@ -15,7 +15,7 @@
       </nav>
 
       <h1>Kubernetes Teacher Dashboard</h1>
-      <p>Read-only teacher view for student progress, score, and latest reports.</p>
+      <p>Read-only teacher view for teacher and student progress, score, and latest reports.</p>
 
       <section class="card">
         <label>Teacher API Key
@@ -30,16 +30,78 @@
       <section class="card">
         <h2>Class Overview</h2>
         <p id="overviewSummary">Paste a teacher API key to load the dashboard.</p>
+        <div class="filter-grid">
+          <label>Game
+            <select id="filterGame">
+              <option value="">All games</option>
+            </select>
+          </label>
+          <label>Scope
+            <select id="filterScope">
+              <option value="">All scopes</option>
+              <option value="exercise">exercise</option>
+              <option value="exam">exam</option>
+            </select>
+          </label>
+          <label>Exam Code
+            <select id="filterExamCode">
+              <option value="">All exam codes</option>
+            </select>
+          </label>
+          <label>Sort By
+            <select id="sortBy">
+              <option value="game">Game</option>
+              <option value="scope_mode">Scope</option>
+              <option value="exam_code">Exam Code</option>
+              <option value="email">Account</option>
+              <option value="total_score">Score</option>
+              <option value="status">Status</option>
+              <option value="last_activity">Last Activity</option>
+            </select>
+          </label>
+          <label>Order
+            <select id="sortDirection">
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+          </label>
+        </div>
+        <div class="actions">
+          <button id="exportOverview" type="button">Export Filtered CSV</button>
+        </div>
+        <h3>Class Summary by Game / Scope / Exam</h3>
         <div class="table-wrap">
           <table class="dashboard-table">
             <thead>
               <tr>
-                <th>Student</th>
+                <th>Game</th>
+                <th>Scope</th>
+                <th>Exam Code</th>
+                <th>Accounts</th>
+                <th>Total Score</th>
+                <th>Completed</th>
+                <th>Skipped</th>
+                <th>Active</th>
+              </tr>
+            </thead>
+            <tbody id="summaryBody">
+              <tr>
+                <td colspan="8">No summary loaded yet.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <h3>Account Scope Rows</h3>
+        <div class="table-wrap">
+          <table class="dashboard-table">
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Game</th>
+                <th>Scope</th>
+                <th>Exam Code</th>
                 <th>Status</th>
-                <th>Mode</th>
-                <th>Total</th>
-                <th>Exercise</th>
-                <th>Exam</th>
+                <th>Score</th>
                 <th>Completed</th>
                 <th>Skipped</th>
                 <th>Current Task</th>
@@ -56,8 +118,8 @@
       </section>
 
       <section class="card">
-        <h2>Student Detail</h2>
-        <div id="studentDetail" class="teacher-detail-empty">Select a student row to load detail.</div>
+        <h2>Account Detail</h2>
+        <div id="studentDetail" class="teacher-detail-empty">Select an account row to load detail.</div>
       </section>
     </main>
 

@@ -315,7 +315,7 @@ cd k8s-grader-api
 ```bash
 # Get stack outputs
 API_ENDPOINT=$(aws cloudformation describe-stacks --stack-name k8s-grader-api-dev \
-  --query 'Stacks[0].Outputs[?OutputKey==`ApiEndpoint`].OutputValue' --output text)
+  --query 'Stacks[0].Outputs[?OutputKey==`BaseUrl`].OutputValue' --output text)
 SECRET_HASH=$(aws cloudformation describe-stacks --stack-name k8s-grader-api-dev \
   --query 'Stacks[0].Outputs[?OutputKey==`SecretHash`].OutputValue' --output text)
 

@@ -182,15 +182,27 @@ sam deploy --guided
 
 - `game01` is the public sample and must keep working.
 - The default deploy flow seeds `game01` from the private S3 archive created by `./deploy.sh`.
-- For a private game like `game02`, upload a separate archive and save its `s3://bucket/key` URI in `GameSourceTable` under `game02`.
+- For a private game like `game02`, seed a separate private archive and save its `s3://bucket/key` URI in `GameSourceTable` under `game02`.
 - The Lambda test loader reads the URI from `GameSourceTable`, so the archive can stay private and never be published.
 
-Example:
+Example dry-run:
 ```bash
-aws dynamodb put-item \
-  --table-name k8s-grader-api-dev-GameSourceTable-XXXX \
-  --item '{"game":{"S":"game02"},"source":{"S":"s3://my-private-bucket/game02.zip"}}'
+python scripts/seed_game_source.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --game game02
 ```
+
+Apply:
+```bash
+python scripts/seed_game_source.py ... --apply
+```
+
+Recommended operator flow for `game02`:
+1. Run `seed_game_source.py` and apply it so exercise mode can use the private archive from S3.
+2. Confirm the portal can open `game02`.
+3. Run `seed_exam_code.py` and apply it to publish the exam scope for `game02`.
+4. Distribute the exam code to students for the Exam Page.
 
 ---
 
@@ -341,7 +353,6 @@ aws cloudformation describe-stacks \
 - `StudentPortalUrl` - Published exercise portal URL (`index.html`)
 - `StudentPortalUrl/exam.html` - Published exam page URL
 - `StudentPortalUrl/teacher.html` - Published read-only teacher dashboard URL
-- `GameUrl` - Published RPG game URL under the same portal origin
 - `TaskStateTable` - New task state table name
 - `NpcAssignmentTable` - New NPC assignment table name
 
@@ -684,7 +695,6 @@ aws cloudformation update-stack \
    - Open `StudentPortalUrl`, save the API key and Kubernetes login, then launch the RPG game from the exercise portal
    - Open `StudentPortalUrl/exam.html` for exam access and exam WebSocket actions
    - Open `StudentPortalUrl/doom/` for the Doom build published from `doom.ts`
-   - Use `GameUrl` only for direct same-origin debugging after the portal state already exists
 
 5. **Documentation**
    - Update API documentation
@@ -733,7 +743,6 @@ sam local invoke TaskHandlerFunction -e events/event.json
 After deployment, save these:
 - Base URL: From `BaseUrl` output
 - Student portal URL: From `StudentPortalUrl` output
-- Game URL: From `GameUrl` output
 - Keygen: `{BaseUrl}keygen?secret={SecretHash}&email={email}`
 
 ---

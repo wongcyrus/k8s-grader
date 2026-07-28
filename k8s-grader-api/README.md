@@ -70,7 +70,48 @@ The deploy script now packages `../k8s-game-rule` into a private S3 archive, upl
 
 The undeploy script empties the stack-owned S3 buckets first, then deletes the CloudFormation stack. CloudFormation-managed custom resources, including the post-deployment initializer, are removed as part of normal stack deletion.
 
-`game01` stays the public sample. If you add a private game like `game02`, seed a separate private S3 archive and store its URI in `GameSourceTable` under that game ID.
+`game01` stays the public sample. To make a private game like `game02` usable without any public download link:
+
+1. Seed a private S3 source for **exercise** mode:
+
+```bash
+python scripts/seed_game_source.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --game game02
+```
+
+2. Apply after the dry-run output looks correct:
+
+```bash
+python scripts/seed_game_source.py ... --apply
+```
+
+3. Seed an **exam code** for the same game:
+
+```bash
+python scripts/seed_exam_code.py \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1 \
+  --exam-code GAME02-EXAM-20260721 \
+  --game game02 \
+  --game-tests-root ../../k8s-game-rule/tests \
+  --task-folder . \
+  --order-mode numeric_prefix \
+  --starts-at 2026-01-01T00:00:00+00:00 \
+  --ends-at 2026-12-31T23:59:59+00:00 \
+  --max-attempts 3
+```
+
+4. Apply the exam seed after reviewing the dry-run output:
+
+```bash
+python scripts/seed_exam_code.py ... --apply
+```
+
+After that:
+- the **Exercise Portal** can launch `game02`
+- the **Exam Page** can verify codes for `game02`
 
 ### Run Tests
 ```bash

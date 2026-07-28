@@ -827,6 +827,18 @@ Resources:
             RestApiId: !Ref ApiGatewayApi
             Path: /teacher/student
             Method: options
+        PortalGames:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /portal/games
+            Method: get
+        PortalGamesOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /portal/games
+            Method: options
 
   ExamCommandDurableFunction:
     Type: AWS::Serverless::Function
@@ -1167,9 +1179,6 @@ Outputs:
   BaseUrl:
     Description: "Base REST API URL"
     Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/"
-  SaveK8sAccountUrl:
-    Description: "Save K8s Account URL."
-    Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/save-k8s-account/" 
   KeygenApi:
     Description: "Endpoint URL for Keygen function"
     Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/keygen/?secret=${SecretHash}&email="
@@ -1185,15 +1194,6 @@ Outputs:
   SecretHash:
     Description: "Secret hash for secure operations"
     Value: !Ref SecretHash
-  ApiGateWayName:
-    Description: "API Gateway name"
-    Value: !Sub "${AWS::StackName}-api"
-  StageName:
-    Description: "Stage name for the API"
-    Value: !Ref StageName
-  UsagePlanName:
-    Description: "Usage plan name"
-    Value: !Sub "${AWS::StackName}-usage-plan"
   TestRecordTable:
     Description: "Name of the TestRecordTable"
     Value: !Ref TestRecordTable
@@ -1227,30 +1227,15 @@ Outputs:
   NpcAssignmentTable:
     Description: "Name of the NpcAssignmentTable (refactored)"
     Value: !Ref NpcAssignmentTable
-  ApiEndpoint:
-    Description: "Base API Gateway endpoint URL (for integration tests)"
-    Value: !Sub "https://${ApiGatewayApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
-  GameUrl:
-    Description: "RPG game URL hosted under the student portal site. Open the portal first so it can save the API key in same-origin localStorage."
-    Value: !Sub "https://${ExamWebsiteCloudFrontDistribution.DomainName}/game/index.html?wsUrl=wss://${GameWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}&game=game01"
   StudentPortalUrl:
     Description: "HTTPS CloudFront URL for the student portal UI"
     Value: !Sub "https://${ExamWebsiteCloudFrontDistribution.DomainName}"
   ExamWebsiteBucket:
     Description: "Name of the student portal website S3 bucket"
     Value: !Ref ExamWebsiteBucket
-  ExamWebsiteUrl:
-    Description: "Public S3 static website URL for the student portal UI"
-    Value: !Sub "http://${ExamWebsiteBucket}.s3-website-${AWS::Region}.amazonaws.com"
-  ExamWebsiteHttpsUrl:
-    Description: "HTTPS CloudFront URL for the student portal UI (legacy output key)"
-    Value: !Sub "https://${ExamWebsiteCloudFrontDistribution.DomainName}"
   ExamWebSocketUrl:
     Description: "WebSocket URL for exam real-time updates"
     Value: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
-  ExamWebSocketConnectUrlTemplate:
-    Description: "WebSocket connect URL template with required query parameters"
-    Value: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}?apiKey=YOUR_API_KEY&examCode=YOUR_EXAM_CODE&game=YOUR_GAME&task=YOUR_TASK"
   GameWebSocketUrl:
     Description: "WebSocket URL for game real-time task updates"
     Value: !Sub "wss://${GameWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"

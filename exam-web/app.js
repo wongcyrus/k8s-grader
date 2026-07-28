@@ -15,6 +15,7 @@ const GAME_WS_URL = APP_CONFIG.gameWsUrl || "";
 const PORTAL_RPG_PATH = "./game/index.html";
 const PORTAL_DOOM_PATH = "./doom/";
 const STORAGE_KEY = "k8s-student-portal-state-v1";
+const DEFAULT_EXERCISE_GAMES = Array.isArray(APP_CONFIG.exerciseGames) ? APP_CONFIG.exerciseGames : [];
 
 let k8sAccountReady = false;
 let exerciseSocket = null;
@@ -25,6 +26,7 @@ function exerciseActionStatusText(action, phase = "active") {
   const actionText = {
     status: phase === "connecting" ? "Connecting to score service ..." : "Checking total score ...",
     reset: phase === "connecting" ? "Connecting to reset current task ..." : "Resetting current task ...",
+    "reset-all": phase === "connecting" ? "Connecting to reset whole exercise ..." : "Resetting whole exercise ...",
     skip: phase === "connecting" ? "Connecting to skip task ..." : "Skipping current task ...",
   };
   return actionText[action] || (phase === "connecting" ? "Connecting to exercise service ..." : "Updating exercise status ...");
@@ -43,6 +45,101 @@ function readInputs() {
 
 function write(data, target = setupOutput) {
   target.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+}
+
+function formatSaveAccountResponse(json, endpoint = "") {
+  if (!json || typeof json !== "object") {
+    return "";
+  }
+
+  const status = String(json.status || "").trim() || "Unknown";
+  const message = String(json.message || "").trim();
+  const lines = [`Status: ${status}`];
+
+  if (message) {
+    lines.push(`Message: ${message}`);
+  }
+
+  if (endpoint && status.toUpperCase() === "OK") {
+    lines.push(`Endpoint: ${endpoint}`);
+  }
+
+  return lines.join("\n");
+}
+
+function getExerciseGamesFromDom() {
+  return Array.from(exerciseGameSelect.querySelectorAll("option"))
+    .map((option) => option.value.trim())
+    .filter(Boolean);
+}
+
+function normalizeExerciseGames(games) {
+  const seen = new Set();
+  const normalized = [];
+  for (const game of Array.isArray(games) ? games : []) {
+    const value = String(game || "").trim();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    normalized.push(value);
+  }
+  return normalized;
+}
+
+function setExerciseGameOptions(games, preferredGame = "") {
+  const normalizedGames = normalizeExerciseGames(games);
+  exerciseGameSelect.innerHTML = "";
+
+  if (normalizedGames.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No games available";
+    option.disabled = true;
+    option.selected = true;
+    exerciseGameSelect.appendChild(option);
+    return;
+  }
+
+  for (const game of normalizedGames) {
+    const option = document.createElement("option");
+    option.value = game;
+    option.textContent = game;
+    exerciseGameSelect.appendChild(option);
+  }
+
+  if (preferredGame && normalizedGames.includes(preferredGame)) {
+    exerciseGameSelect.value = preferredGame;
+    return;
+  }
+
+  exerciseGameSelect.value = normalizedGames[0];
+}
+
+async function loadExerciseGames(preferredGame = "") {
+  const fallbackGames = normalizeExerciseGames([
+    ...DEFAULT_EXERCISE_GAMES,
+    ...getExerciseGamesFromDom(),
+  ]);
+
+  if (!BASE_URL) {
+    setExerciseGameOptions(fallbackGames, preferredGame);
+    return;
+  }
+
+  try {
+    const res = await fetch(`${BASE_URL}/portal/games`);
+    const json = await res.json();
+    if (json?.status !== "OK" || !Array.isArray(json.games)) {
+      throw new Error("Invalid portal games response");
+    }
+    setExerciseGameOptions(json.games, preferredGame);
+  } catch (error) {
+    setExerciseGameOptions(fallbackGames, preferredGame);
+    if (fallbackGames.length === 0) {
+      write(`Failed to load available games: ${error.message}`, setupOutput);
+    }
+  }
 }
 
 function setBusy(isBusy) {
@@ -298,6 +395,34 @@ function resetExerciseTask() {
   connectExerciseSocket("reset");
 }
 
+function resetWholeExercise() {
+  const { exerciseGame } = readInputs();
+  if (!exerciseGame) {
+    write("Choose an exercise game first.", exerciseOutput);
+    return;
+  }
+
+  const firstConfirm = window.confirm(
+    `Reset the whole exercise for ${exerciseGame}?\n\nThis will delete all saved progress for this game, including completed, skipped, and current task state.\nTrial records will still be visible to teachers.\nThis cannot be undone from the portal.`
+  );
+  if (!firstConfirm) {
+    write("Whole exercise reset cancelled.", exerciseOutput);
+    return;
+  }
+
+  const confirmationText = `RESET ${exerciseGame}`;
+  const typed = window.prompt(
+    `Type "${confirmationText}" to confirm deleting all saved exercise progress for ${exerciseGame}.`,
+    ""
+  );
+  if (typed !== confirmationText) {
+    write("Whole exercise reset cancelled. Confirmation text did not match.", exerciseOutput);
+    return;
+  }
+
+  connectExerciseSocket("reset-all");
+}
+
 function openExerciseGame() {
   const { apiKey, exerciseClient, exerciseGame } = readInputs();
   if (!apiKey) {
@@ -368,7 +493,7 @@ async function callApi(action) {
         k8sAccountReady = true;
         saveState({ apiKey, endpoint, exerciseGame, accountReady: true });
       }
-      write(json || text, setupOutput);
+      write(formatSaveAccountResponse(json, endpoint) || text, setupOutput);
     } catch (err) {
       write(`Request failed: ${err.message}`, setupOutput);
     } finally {
@@ -406,6 +531,11 @@ async function callApi(action) {
       return;
     }
     resetExerciseTask();
+    return;
+  }
+
+  if (action === "exercise-reset-all") {
+    resetWholeExercise();
   }
 }
 
@@ -448,7 +578,7 @@ resetStateButton.addEventListener("click", () => {
   document.getElementById("endpoint").value = "";
   document.getElementById("clientCertificate").value = "";
   document.getElementById("clientKey").value = "";
-  exerciseGameSelect.value = "game01";
+  setExerciseGameOptions(getExerciseGamesFromDom());
   exerciseClientSelect.value = "doom";
   resetExerciseSummary();
   write("Ready.", setupOutput);
@@ -465,12 +595,11 @@ if (restored.apiKey) {
 if (restored.endpoint) {
   document.getElementById("endpoint").value = restored.endpoint;
 }
-if (restored.exerciseGame) {
-  exerciseGameSelect.value = restored.exerciseGame;
-}
 if (restored.exerciseClient) {
   exerciseClientSelect.value = restored.exerciseClient;
 }
 if (restored.accountReady) {
   k8sAccountReady = true;
 }
+
+loadExerciseGames(restored.exerciseGame || exerciseGameSelect.value);

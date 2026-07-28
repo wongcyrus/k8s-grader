@@ -92,7 +92,7 @@ The old exam-only web UI was expanded into a student portal that can launch both
 - `exam-web` now presents a student portal flow for saving the API key, Kubernetes login, exercise game, and exam code
 - the portal opens the RPG client under `/game/index.html` on the same site instead of relying on a GitHub Pages origin
 - deployment now uploads both the portal and the `k8s-isekai` web assets into the same S3/CloudFront site
-- CloudFormation now exposes `StudentPortalUrl` alongside the direct `GameUrl`
+- CloudFormation now exposes `StudentPortalUrl` as the main portal entrypoint
 
 **RPG launch changes**
 
