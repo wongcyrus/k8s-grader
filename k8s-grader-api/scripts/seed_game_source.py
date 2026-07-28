@@ -122,7 +122,10 @@ def create_archive(repo_root: Path, archive_path: Path) -> None:
             dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
             for file_name in files:
                 path = Path(root) / file_name
+                relative_path = path.relative_to(repo_root)
                 if any(part in SKIP_DIRS for part in path.parts):
+                    continue
+                if any(part.startswith(".") for part in relative_path.parts):
                     continue
                 zf.write(path, arcname=str(path.relative_to(repo_root.parent)))
 

@@ -205,6 +205,10 @@ def test_status_action_returns_completed_when_all_tasks_finished():
         mock_task_service.get_current_task.return_value = None
         payload = module._build_game_status_payload("student@example.com", "game01")
 
+    mock_task_service.get_total_score.assert_called_once_with("student@example.com", "game01", mode="exercise")
+    mock_task_service.get_completed_tasks.assert_called_once_with("student@example.com", "game01", mode="exercise")
+    mock_task_service.get_skipped_tasks.assert_called_once_with("student@example.com", "game01", mode="exercise")
+    mock_task_service.get_current_task.assert_called_once_with("student@example.com", "game01", mode="exercise")
     assert payload["status"] == "COMPLETED"
     assert payload["progress"] == 1.0
     assert payload["total_score"] == 12
@@ -363,6 +367,7 @@ def test_skip_action_marks_task_skipped_and_returns_updated_status():
             "conn-1",
         )
 
+    mock_task_service.get_current_task.assert_called_once_with("student@example.com", "game01", mode="exercise")
     mock_task_service.skip_task.assert_called_once_with("student@example.com", "game01", "01_task")
     mock_status.assert_called_once_with("student@example.com", "game01")
     assert result["skipped_task"] == "01_task"
@@ -385,6 +390,7 @@ def test_reset_action_resets_current_task_and_returns_not_started_payload():
             "conn-1",
         )
 
+    mock_task_service.get_current_task.assert_called_once_with("student@example.com", "game01", mode="exercise")
     mock_task_service.reset_task.assert_called_once_with("student@example.com", "game01", "01_task")
     mock_status.assert_called_once_with("student@example.com", "game01")
     assert result["status"] == "RESET"

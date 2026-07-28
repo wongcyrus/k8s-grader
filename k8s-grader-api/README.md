@@ -61,7 +61,7 @@ k8s-grader-api/
 ./deploy.sh --guided
 ```
 
-The deploy script now packages `../k8s-game-rule` into a private S3 archive, uploads it into the stack-owned **private game source bucket**, and the stack binds that archive to `game01`. This bucket is separate from SAM's packaging bucket. Follow the prompts to configure your deployment. See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for detailed instructions.
+The deploy script now packages `../k8s-game-rule` into a private S3 archive, uploads it into the stack-owned **private game source bucket**, and then seeds `GameSourceTable` so `game01` points to that archive. This bucket is separate from SAM's packaging bucket. Follow the prompts to configure your deployment. See [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) for detailed instructions.
 
 ### Undeploy
 ```bash

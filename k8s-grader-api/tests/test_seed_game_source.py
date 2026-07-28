@@ -55,6 +55,8 @@ def test_create_archive_keeps_repo_root_and_skips_hidden_dirs(tmp_path: Path):
     repo_root = create_repo(tmp_path)
     (repo_root / ".git" / "ignored").mkdir(parents=True, exist_ok=True)
     (repo_root / ".git" / "ignored" / "config").write_text("secret", encoding="utf-8")
+    (repo_root / ".env").write_text("TOP_SECRET=1", encoding="utf-8")
+    (repo_root / "tests" / "game02" / ".secrets").write_text("hidden", encoding="utf-8")
     archive_path = tmp_path / "game-source.zip"
 
     seed_game_source.create_archive(repo_root, archive_path)
@@ -64,3 +66,5 @@ def test_create_archive_keeps_repo_root_and_skips_hidden_dirs(tmp_path: Path):
 
     assert "k8s-game-rule/tests/game02/087_sidecar_containers/instruction.md" in names
     assert not any(name.startswith("k8s-game-rule/.git/") for name in names)
+    assert "k8s-game-rule/.env" not in names
+    assert "k8s-game-rule/tests/game02/.secrets" not in names

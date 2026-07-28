@@ -16,7 +16,7 @@ from common.handler import (
     setup_paths
 )
 from common.database import get_user_data
-from common.database.repositories import GameSourceRepository
+from common.database.repositories import GameSourceRepository, GameAccessRepository
 from common.services.task_service import TaskService
 from common.services.exam_service import ExamService
 from common.services.teacher_dashboard_service import TeacherDashboardService
@@ -58,6 +58,7 @@ task_service = TaskService()
 exam_service = ExamService()
 teacher_dashboard_service = TeacherDashboardService()
 game_source_repo = GameSourceRepository()
+game_access_repo = GameAccessRepository()
 
 _dynamodb_resource = boto3.resource('dynamodb')
 
@@ -146,7 +147,11 @@ def portal_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]
     path = (event.get('path') or event.get('resource') or '').rstrip('/')
 
     if path.endswith('/games'):
-        games = game_source_repo.list_games()
+        games = [
+            game
+            for game in game_source_repo.list_games()
+            if game_access_repo.get_mode(game) != 'exam'
+        ]
         return {
             'statusCode': 200,
             'headers': cors_headers(),

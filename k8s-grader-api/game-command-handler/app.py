@@ -253,7 +253,7 @@ def _task_abandoned_payload(abandon_result: Dict[str, Any], report_url: str) -> 
 
 
 def _handle_game_skip(email: str, game: str) -> Dict[str, Any]:
-    current_task = task_service.get_current_task(email, game)
+    current_task = task_service.get_current_task(email, game, mode="exercise")
     if not current_task:
         return _build_game_status_payload(email, game)
 
@@ -291,7 +291,7 @@ def save_game_test_record(email: str, game: str, task_id: str, phase_id: str, re
 
 
 def _handle_game_reset(email: str, game: str) -> Dict[str, Any]:
-    current_task = task_service.get_current_task(email, game)
+    current_task = task_service.get_current_task(email, game, mode="exercise")
     if not current_task:
         return _error_payload("All tasks are already completed. Reset is unavailable.")
 
@@ -327,10 +327,10 @@ def _handle_game_reset_all(email: str, game: str) -> Dict[str, Any]:
 
 
 def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
-    total_score = task_service.get_total_score(email, game)
-    completed_tasks = task_service.get_completed_tasks(email, game)
-    skipped_tasks = task_service.get_skipped_tasks(email, game)
-    current_task = task_service.get_current_task(email, game)
+    total_score = task_service.get_total_score(email, game, mode="exercise")
+    completed_tasks = task_service.get_completed_tasks(email, game, mode="exercise")
+    skipped_tasks = task_service.get_skipped_tasks(email, game, mode="exercise")
+    current_task = task_service.get_current_task(email, game, mode="exercise")
     if not current_task:
         return {
             "status": "COMPLETED",
@@ -416,7 +416,7 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
     clear_tmp_directory()
     write_user_files(client_certificate, client_key)
 
-    current_task = task_service.get_current_task(email, game)
+    current_task = task_service.get_current_task(email, game, mode="exercise")
     if not current_task:
         return {
             "status": "COMPLETED",

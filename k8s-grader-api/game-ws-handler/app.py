@@ -20,6 +20,7 @@ GAME_ACTION_GUARD_TTL_SECONDS = {
     "talk": 180,
     "reset": 30,
     "reset-all": 45,
+    "skip": 30,
 }
 request_throttle_repo = RequestThrottleRepository()
 execution_guard_repo = ExecutionGuardRepository()
@@ -78,6 +79,8 @@ def _game_throttle_scope(email: str, game: str, action: str) -> str:
 
 
 def _game_execution_guard_scope(email: str, game: str, action: str) -> str:
+    if action in {"talk", "reset", "reset-all", "skip"}:
+        return f"game#{email}#{game}#mutation"
     return f"game#{email}#{game}#{action}"
 
 

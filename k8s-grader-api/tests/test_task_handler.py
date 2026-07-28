@@ -332,13 +332,32 @@ class TestLambdaHandler:
             'headers': {}
         }
 
-        with patch('app.game_source_repo.list_games', return_value=['game01', 'game02']) as mock_list:
+        with patch('app.game_source_repo.list_games', return_value=['game01', 'game02']) as mock_list, \
+             patch('app.game_access_repo.get_mode', side_effect=['exercise', 'exercise']) as mock_get_mode:
             response = lambda_handler(event, None)
 
         mock_list.assert_called_once()
+        assert mock_get_mode.call_count == 2
         body = json.loads(response['body'])
         assert body['status'] == 'OK'
         assert body['games'] == ['game01', 'game02']
+
+    def test_portal_games_route_filters_exam_only_games(self):
+        event = {
+            'path': '/portal/games',
+            'queryStringParameters': {},
+            'headers': {}
+        }
+
+        with patch('app.game_source_repo.list_games', return_value=['game01', 'game02', 'game03']) as mock_list, \
+             patch('app.game_access_repo.get_mode', side_effect=['exercise', 'exam', 'exercise']) as mock_get_mode:
+            response = lambda_handler(event, None)
+
+        mock_list.assert_called_once()
+        assert mock_get_mode.call_count == 3
+        body = json.loads(response['body'])
+        assert body['status'] == 'OK'
+        assert body['games'] == ['game01', 'game03']
 
     @patch.dict(os.environ, {'TeacherEmails': 'teacher@example.com'}, clear=False)
     @patch('app.get_email_from_event')

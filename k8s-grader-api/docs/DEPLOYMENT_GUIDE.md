@@ -174,7 +174,7 @@ sam deploy --guided
 
 **Deployment time**: 5-10 minutes
 
-> The `./deploy.sh` helper now uploads `../k8s-game-rule` into the stack-owned **private game source** S3 bucket and the custom resource stores that archive as the `game01` source. This is separate from SAM's own packaging bucket. Use the helper unless you want to manage the private archive yourself.
+> The `./deploy.sh` helper now uploads `../k8s-game-rule` into the stack-owned **private game source** S3 bucket and then writes that archive URI into `GameSourceTable` as the `game01` source. This is separate from SAM's own packaging bucket. Use the helper unless you want to manage the private archive yourself.
 
 ---
 
@@ -208,13 +208,13 @@ Recommended operator flow for `game02`:
 
 ### Step 4: Deploy (Subsequent Times)
 
-After first deployment, simply run:
+After first deployment, use the helper again so deployment, portal publishing, and game-source seeding stay in sync:
 
 ```bash
-sam deploy
+./deploy.sh
 ```
 
-Uses saved configuration from `samconfig.toml`
+This reuses the saved `samconfig.toml` configuration while also publishing the student portal assets, preserving `TeacherEmails`, and reseeding the default private game source.
 
 ---
 
@@ -722,7 +722,7 @@ aws cloudformation update-stack \
 # Build
 sam build
 
-# Deploy
+# Deploy infrastructure only
 sam deploy
 
 # Validate

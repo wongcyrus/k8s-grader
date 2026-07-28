@@ -32,14 +32,25 @@ class TaskService:
         self.task_repo = task_repo or TaskStateRepository()
         self.npc_repo = npc_repo or NpcRepository()
         self.test_runner = test_runner or TestRunner()
+
+    def _list_game_states(self, email: str, game: str, mode: Optional[str] = None) -> list[TaskState]:
+        states = self.task_repo.list_by_game(email, game)
+        if mode is None:
+            return states
+        return [
+            state
+            for state in states
+            if (getattr(state, "mode", "exercise") or "exercise") == mode
+        ]
     
-    def get_current_task(self, email: str, game: str) -> Optional[str]:
+    def get_current_task(self, email: str, game: str, mode: Optional[str] = None) -> Optional[str]:
         """
         Get the first incomplete task for a user
         
         Args:
             email: User email
             game: Game identifier
+            mode: Optional task mode filter
             
         Returns:
             Task ID or None if all complete
@@ -49,9 +60,11 @@ class TaskService:
             
             # Get all tasks for game
             all_tasks = get_tasks(game)
-            
-            # Get completed tasks
-            completed = self.task_repo.get_completed_tasks(email, game)
+            completed = {
+                state.task_id
+                for state in self._list_game_states(email, game, mode=mode)
+                if state.status == TaskStatus.COMPLETED
+            }
             
             # Find first incomplete
             for task_id in all_tasks:
@@ -63,13 +76,14 @@ class TaskService:
             logger.error(f"Failed to get current task: {e}")
             return None
 
-    def get_completed_tasks(self, email: str, game: str) -> list[str]:
+    def get_completed_tasks(self, email: str, game: str, mode: Optional[str] = None) -> list[str]:
         """
         Get completed tasks for a user in game order.
 
         Args:
             email: User email
             game: Game identifier
+            mode: Optional task mode filter
 
         Returns:
             Ordered list of completed task IDs
@@ -80,7 +94,7 @@ class TaskService:
             all_tasks = get_tasks(game)
             states = {
                 state.task_id: state
-                for state in self.task_repo.list_by_game(email, game)
+                for state in self._list_game_states(email, game, mode=mode)
                 if state.status == TaskStatus.COMPLETED and not getattr(state, "skipped", False)
             }
             return [task_id for task_id in all_tasks if task_id in states]
@@ -88,13 +102,14 @@ class TaskService:
             logger.error(f"Failed to get completed tasks: {e}")
             return []
 
-    def get_skipped_tasks(self, email: str, game: str) -> list[str]:
+    def get_skipped_tasks(self, email: str, game: str, mode: Optional[str] = None) -> list[str]:
         """
         Get skipped tasks for a user in game order.
 
         Args:
             email: User email
             game: Game identifier
+            mode: Optional task mode filter
 
         Returns:
             Ordered list of skipped task IDs
@@ -105,7 +120,7 @@ class TaskService:
             all_tasks = get_tasks(game)
             states = {
                 state.task_id: state
-                for state in self.task_repo.list_by_game(email, game)
+                for state in self._list_game_states(email, game, mode=mode)
                 if state.status == TaskStatus.COMPLETED and getattr(state, "skipped", False)
             }
             return [task_id for task_id in all_tasks if task_id in states]
@@ -113,19 +128,20 @@ class TaskService:
             logger.error(f"Failed to get skipped tasks: {e}")
             return []
 
-    def get_total_score(self, email: str, game: str) -> int:
+    def get_total_score(self, email: str, game: str, mode: Optional[str] = None) -> int:
         """
         Get cumulative score across all saved task states for a game.
 
         Args:
             email: User email
             game: Game identifier
+            mode: Optional task mode filter
 
         Returns:
             Total points accumulated across the game's task states
         """
         try:
-            states = self.task_repo.list_by_game(email, game)
+            states = self._list_game_states(email, game, mode=mode)
             return sum(int(getattr(state, "total_points", 0) or 0) for state in states)
         except Exception as e:
             logger.error(f"Failed to get total score: {e}")

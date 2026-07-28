@@ -98,6 +98,48 @@ class TestTaskService:
 
         assert task_service.get_total_score('user@test.com', 'game01') == 5
 
+    def test_game_progress_helpers_can_filter_to_exercise_mode(self, task_service):
+        saved_states = [
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='01_task',
+                npc='npc1',
+                status=TaskStatus.COMPLETED,
+                current_phase_id=None,
+                total_points=2,
+                mode='exercise',
+            ),
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='02_task',
+                npc='npc1',
+                status=TaskStatus.COMPLETED,
+                current_phase_id=None,
+                total_points=7,
+                mode='exam',
+            ),
+            TaskState(
+                email='user@test.com',
+                game='game01',
+                task_id='03_task',
+                npc='npc1',
+                status=TaskStatus.IN_PROGRESS,
+                current_phase_id='check',
+                total_points=1,
+                mode='exercise',
+            ),
+        ]
+        for state in saved_states:
+            task_service.task_repo.save(state)
+
+        with patch('common.pytest.get_tasks', return_value=['01_task', '02_task', '03_task']):
+            assert task_service.get_completed_tasks('user@test.com', 'game01', mode='exercise') == ['01_task']
+            assert task_service.get_current_task('user@test.com', 'game01', mode='exercise') == '02_task'
+
+        assert task_service.get_total_score('user@test.com', 'game01', mode='exercise') == 3
+
     def test_get_completed_tasks_returns_game_order(self, task_service):
         for task_id in ['02_task', '01_task']:
             state = TaskState(

@@ -42,7 +42,7 @@ class TestGameWebSocketHandler:
         queued_payload = mock_queue.call_args.args[0]
         assert queued_payload["action"] == "talk"
         assert queued_payload["npc"] == "Aiden"
-        assert queued_payload["execution_guard_key"] == "game#student@example.com#game01#talk"
+        assert queued_payload["execution_guard_key"] == "game#student@example.com#game01#mutation"
 
         body = json.loads(response["body"])
         assert body["status"] == "QUEUED"
@@ -67,7 +67,9 @@ class TestGameWebSocketHandler:
     @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
     @patch("game_ws_app._queue_game_command", return_value="request-3")
     def test_skip_action_queues_game_command(self, mock_queue, _mock_email):
-        with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True):
+        with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "acquire", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "attach_request_id", return_value=True):
             response = lambda_handler(
                 _ws_event({"action": "skip", "apiKey": "k", "game": "game01"}),
                 None,
@@ -76,6 +78,7 @@ class TestGameWebSocketHandler:
         queued_payload = mock_queue.call_args.args[0]
         assert queued_payload["action"] == "skip"
         assert queued_payload["npc"] == ""
+        assert queued_payload["execution_guard_key"] == "game#student@example.com#game01#mutation"
 
         body = json.loads(response["body"])
         assert body == {"status": "QUEUED", "action": "skip", "request_id": "request-3"}
@@ -94,7 +97,7 @@ class TestGameWebSocketHandler:
         queued_payload = mock_queue.call_args.args[0]
         assert queued_payload["action"] == "reset"
         assert queued_payload["npc"] == ""
-        assert queued_payload["execution_guard_key"] == "game#student@example.com#game01#reset"
+        assert queued_payload["execution_guard_key"] == "game#student@example.com#game01#mutation"
 
         body = json.loads(response["body"])
         assert body == {"status": "QUEUED", "action": "reset", "request_id": "request-4"}
@@ -113,10 +116,26 @@ class TestGameWebSocketHandler:
         queued_payload = mock_queue.call_args.args[0]
         assert queued_payload["action"] == "reset-all"
         assert queued_payload["npc"] == ""
-        assert queued_payload["execution_guard_key"] == "game#student@example.com#game01#reset-all"
+        assert queued_payload["execution_guard_key"] == "game#student@example.com#game01#mutation"
 
         body = json.loads(response["body"])
         assert body == {"status": "QUEUED", "action": "reset-all", "request_id": "request-5"}
+
+    @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
+    @patch("game_ws_app._queue_game_command", return_value="request-6")
+    def test_skip_action_uses_shared_mutation_guard(self, mock_queue, _mock_email):
+        with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "acquire", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "attach_request_id", return_value=True):
+            response = lambda_handler(
+                _ws_event({"action": "skip", "apiKey": "k", "game": "game01"}),
+                None,
+            )
+
+        queued_payload = mock_queue.call_args.args[0]
+        assert queued_payload["execution_guard_key"] == "game#student@example.com#game01#mutation"
+        body = json.loads(response["body"])
+        assert body == {"status": "QUEUED", "action": "skip", "request_id": "request-6"}
 
     @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
     def test_subscribe_validates_api_key(self, _mock_email):
@@ -198,7 +217,7 @@ class TestGameWebSocketHandler:
                 None,
             )
 
-        mock_release.assert_called_once_with("game#student@example.com#game01#talk")
+        mock_release.assert_called_once_with("game#student@example.com#game01#mutation")
         assert response["statusCode"] == 500
         assert json.loads(response["body"]) == {
             "status": "ERROR",
