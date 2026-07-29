@@ -73,6 +73,58 @@ class FakeManifest:
         return self.phases["setup"]
 
 
+class FakeDoomManifest:
+    def __init__(self):
+        self.description = "Solve {{ target }}"
+        self.phases = {
+            "setup": SimpleNamespace(id="setup", name="Setup", description="Set up {{ target }}", max_attempts=3),
+            "ready": SimpleNamespace(id="ready", name="Ready", description="Ready {{ target }}", max_attempts=3),
+            "answer": SimpleNamespace(id="answer", name="Answer", description="Answer {{ target }}", max_attempts=3),
+            "challenge": SimpleNamespace(id="challenge", name="Challenge", description="Solve {{ target }}", max_attempts=3),
+            "check": SimpleNamespace(id="check", name="Check", description="Check {{ target }}", max_attempts=3),
+        }
+
+    def get_phase(self, phase_id):
+        return self.phases.get(phase_id)
+
+    def get_next_phase(self, phase_id):
+        if phase_id == "setup":
+            return self.phases["ready"]
+        if phase_id == "ready":
+            return self.phases["answer"]
+        if phase_id == "answer":
+            return self.phases["challenge"]
+        if phase_id == "challenge":
+            return self.phases["check"]
+        return None
+
+    def get_first_phase(self):
+        return self.phases["setup"]
+
+
+class FakeSimpleDoomManifest:
+    def __init__(self):
+        self.description = "Solve {{ target }}"
+        self.phases = {
+            "setup": SimpleNamespace(id="setup", name="Setup", description="Set up {{ target }}", max_attempts=3),
+            "answer": SimpleNamespace(id="answer", name="Answer", description="Answer {{ target }}", max_attempts=3),
+            "check": SimpleNamespace(id="check", name="Check", description="Check {{ target }}", max_attempts=3),
+        }
+
+    def get_phase(self, phase_id):
+        return self.phases.get(phase_id)
+
+    def get_next_phase(self, phase_id):
+        if phase_id == "setup":
+            return self.phases["answer"]
+        if phase_id == "answer":
+            return self.phases["check"]
+        return None
+
+    def get_first_phase(self):
+        return self.phases["setup"]
+
+
 def _state(task_id: str, current_phase: str | None, total_points: int = 0):
     state = Mock()
     state.task_id = task_id
@@ -349,6 +401,205 @@ def test_talk_action_accepts_doom_without_npc_background():
     mock_get_npc_background.assert_not_called()
     assert result == {"status": "ERROR", "message": "Please save your Kubernetes account first."}
     mock_task_service.validate_npc_access.assert_not_called()
+
+
+def test_doom_talk_runs_setup_then_ready_before_waiting_for_challenge():
+    module = load_module()
+    manifest = FakeDoomManifest()
+    started_state = _state("01_task", "setup", total_points=0)
+    after_setup_state = _state("01_task", "ready", total_points=0)
+    after_ready_state = _state("01_task", "answer", total_points=1)
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
+         patch.object(module, "clear_tmp_directory"), \
+         patch.object(module, "write_k8s_access_files"), \
+         patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module, "_send_ws_message"):
+        mock_task_service.get_current_task.return_value = "01_task"
+        mock_task_service.task_repo.get.return_value = None
+        mock_task_service.start_task.return_value = started_state
+        mock_task_service.execute_phase.side_effect = [
+            {
+                "success": True,
+                "report_url": "",
+                "test_result": module.TestResult.OK,
+                "state": after_setup_state,
+                "manifest": manifest,
+            },
+            {
+                "success": True,
+                "report_url": "https://report.example/ready",
+                "test_result": module.TestResult.OK,
+                "state": after_ready_state,
+                "manifest": manifest,
+            },
+        ]
+
+        result = module.execute_game_command(
+            "talk",
+            "student@example.com",
+            "game01",
+            module.DOOM_TASK_SOURCE,
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    assert mock_task_service.execute_phase.call_count == 2
+    assert after_ready_state.current_phase_id == "challenge"
+    assert result["status"] == "OK"
+    assert result["current_phase"] == "challenge"
+    assert result["next_game_phrase"] == "CHALLENGE"
+
+
+def test_doom_talk_retries_challenge_when_check_fails():
+    module = load_module()
+    manifest = FakeDoomManifest()
+    challenge_state = _state("01_task", "challenge", total_points=1)
+    after_challenge_state = _state("01_task", "check", total_points=2)
+    failed_check_state = _state("01_task", "check", total_points=2)
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
+         patch.object(module, "clear_tmp_directory"), \
+         patch.object(module, "write_k8s_access_files"), \
+         patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module, "_send_ws_message"):
+        mock_task_service.get_current_task.return_value = "01_task"
+        mock_task_service.task_repo.get.return_value = challenge_state
+        mock_task_service.execute_phase.side_effect = [
+            {
+                "success": True,
+                "report_url": "",
+                "test_result": module.TestResult.OK,
+                "state": after_challenge_state,
+                "manifest": manifest,
+            },
+            {
+                "success": False,
+                "report_url": "https://report.example/check",
+                "test_result": module.TestResult.TESTS_FAILED,
+                "state": failed_check_state,
+                "manifest": manifest,
+                "error": "Tests failed: TESTS_FAILED",
+            },
+        ]
+
+        result = module.execute_game_command(
+            "talk",
+            "student@example.com",
+            "game01",
+            module.DOOM_TASK_SOURCE,
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    assert mock_task_service.execute_phase.call_count == 2
+    assert failed_check_state.current_phase_id == "challenge"
+    assert result["status"] == "FAILED"
+    assert result["current_phase"] == "challenge"
+    assert result["next_game_phrase"] == "CHALLENGE"
+
+
+def test_doom_talk_completes_after_check_passes():
+    module = load_module()
+    manifest = FakeDoomManifest()
+    challenge_state = _state("01_task", "challenge", total_points=1)
+    after_challenge_state = _state("01_task", "check", total_points=2)
+    after_check_state = _state("01_task", None, total_points=5)
+    completion_state = _state("01_task", None, total_points=5)
+    completion_state.status = TaskStatus.COMPLETED
+
+    sm = Mock()
+    sm.can_complete_task.return_value = (True, None)
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
+         patch.object(module, "clear_tmp_directory"), \
+         patch.object(module, "write_k8s_access_files"), \
+         patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module, "TaskStateMachine", return_value=sm), \
+         patch.object(module, "_send_ws_message"):
+        mock_task_service.get_current_task.return_value = "01_task"
+        mock_task_service.task_repo.get.return_value = challenge_state
+        mock_task_service.execute_phase.side_effect = [
+            {
+                "success": True,
+                "report_url": "",
+                "test_result": module.TestResult.OK,
+                "state": after_challenge_state,
+                "manifest": manifest,
+            },
+            {
+                "success": True,
+                "report_url": "https://report.example/check",
+                "test_result": module.TestResult.OK,
+                "state": after_check_state,
+                "manifest": manifest,
+            },
+        ]
+        mock_task_service.complete_task.return_value = {"state": completion_state}
+
+        result = module.execute_game_command(
+            "talk",
+            "student@example.com",
+            "game01",
+            module.DOOM_TASK_SOURCE,
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    assert mock_task_service.execute_phase.call_count == 2
+    mock_task_service.complete_task.assert_called_once_with("student@example.com", "game01", "01_task", after_check_state)
+    assert result["status"] == "COMPLETED"
+    assert result["report_url"] == "https://report.example/check"
+
+
+def test_doom_talk_executes_check_when_task_has_no_challenge_phase():
+    module = load_module()
+    manifest = FakeSimpleDoomManifest()
+    check_state = _state("03_create_pod_port_80", "check", total_points=1)
+    after_check_state = _state("03_create_pod_port_80", None, total_points=5)
+    completion_state = _state("03_create_pod_port_80", None, total_points=5)
+    completion_state.status = TaskStatus.COMPLETED
+
+    sm = Mock()
+    sm.can_complete_task.return_value = (True, None)
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
+         patch.object(module, "clear_tmp_directory"), \
+         patch.object(module, "write_k8s_access_files"), \
+         patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module, "TaskStateMachine", return_value=sm), \
+         patch.object(module, "_send_ws_message"):
+        mock_task_service.get_current_task.return_value = "03_create_pod_port_80"
+        mock_task_service.task_repo.get.return_value = check_state
+        mock_task_service.execute_phase.return_value = {
+            "success": True,
+            "report_url": "https://report.example/check",
+            "test_result": module.TestResult.OK,
+            "state": after_check_state,
+            "manifest": manifest,
+        }
+        mock_task_service.complete_task.return_value = {"state": completion_state}
+
+        result = module.execute_game_command(
+            "talk",
+            "student@example.com",
+            "game01",
+            module.DOOM_TASK_SOURCE,
+            "https://example.execute-api.us-east-1.amazonaws.com/Prod",
+            "conn-1",
+        )
+
+    mock_task_service.execute_phase.assert_called_once_with("student@example.com", "game01", "03_create_pod_port_80")
+    mock_task_service.complete_task.assert_called_once_with("student@example.com", "game01", "03_create_pod_port_80", after_check_state)
+    assert result["status"] == "COMPLETED"
 
 
 def test_skip_action_marks_task_skipped_and_returns_updated_status():

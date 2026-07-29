@@ -130,6 +130,181 @@ def _ensure_game_challenge_before_check(state, manifest) -> bool:
     return True
 
 
+def _execute_game_phase(
+    email: str,
+    game: str,
+    task_id: str,
+    endpoint: str,
+    connection_id: str,
+    state,
+    manifest,
+):
+    _push_game_update(endpoint, connection_id, "talk", _running_payload(state, manifest))
+    executed_phase_id = state.current_phase_id
+    result = task_service.execute_phase(email, game, task_id)
+    manifest = result["manifest"]
+    state = result["state"]
+    if executed_phase_id:
+        save_game_test_record(email, game, task_id, executed_phase_id, result)
+    return result, manifest, state, executed_phase_id
+
+
+def _advance_doom_to_playable_phase(state, manifest) -> None:
+    _advance_game_answer_phase(state, manifest)
+
+
+def _doom_progress_payload(state, manifest, report_url: str = "") -> Dict[str, Any]:
+    current_phase = manifest.get_phase(state.current_phase_id) if state.current_phase_id else None
+    phase_message = current_phase.description if current_phase else manifest.description or "Continue the task."
+    payload = _base_task_payload(
+        state,
+        manifest,
+        status="OK",
+        message=phase_message,
+        report_url=report_url,
+    )
+    payload["points"] = state.total_points
+    return payload
+
+
+def _reset_doom_check_to_challenge(state, manifest) -> None:
+    challenge_phase = manifest.get_phase("challenge")
+    if not challenge_phase:
+        return
+    state.current_phase_id = challenge_phase.id
+    task_service.task_repo.save(state)
+
+
+def _doom_failed_check_payload(result: Dict[str, Any], manifest) -> Dict[str, Any]:
+    payload = _phase_failed_payload(result, manifest)
+    state = result["state"]
+    challenge_phase = manifest.get_phase("challenge")
+    if challenge_phase:
+        _reset_doom_check_to_challenge(state, manifest)
+        payload["current_phase"] = "challenge"
+        payload["phase_name"] = challenge_phase.name
+        payload["next_game_phrase"] = "CHALLENGE"
+    else:
+        payload["current_phase"] = "check"
+        payload["phase_name"] = "Check"
+        payload["next_game_phrase"] = "CHECK"
+    return payload
+
+
+def _handle_doom_talk(
+    email: str,
+    game: str,
+    current_task: str,
+    endpoint: str,
+    connection_id: str,
+    state,
+    manifest,
+) -> Dict[str, Any]:
+    _advance_doom_to_playable_phase(state, manifest)
+
+    if not state.current_phase_id:
+        completion_result = task_service.complete_task(email, game, current_task, state)
+        return _task_completed_payload(completion_result, "")
+
+    if state.current_phase_id in {"setup", "ready"}:
+        last_report_url = ""
+        while state.current_phase_id in {"setup", "ready"}:
+            result, manifest, state, _ = _execute_game_phase(
+                email,
+                game,
+                current_task,
+                endpoint,
+                connection_id,
+                state,
+                manifest,
+            )
+            if not result["success"]:
+                return _phase_failed_payload(result, manifest)
+            last_report_url = result.get("report_url", "")
+            _advance_doom_to_playable_phase(state, manifest)
+        return _doom_progress_payload(state, manifest, last_report_url)
+
+    if state.current_phase_id == "challenge":
+        result, manifest, state, _ = _execute_game_phase(
+            email,
+            game,
+            current_task,
+            endpoint,
+            connection_id,
+            state,
+            manifest,
+        )
+        if not result["success"]:
+            return _phase_failed_payload(result, manifest)
+
+        _advance_doom_to_playable_phase(state, manifest)
+        if state.current_phase_id != "check":
+            if not state.current_phase_id:
+                completion_result = task_service.complete_task(email, game, current_task, state)
+                return _task_completed_payload(completion_result, result.get("report_url", ""))
+            return _doom_progress_payload(state, manifest, result.get("report_url", ""))
+
+        check_result, manifest, state, _ = _execute_game_phase(
+            email,
+            game,
+            current_task,
+            endpoint,
+            connection_id,
+            state,
+            manifest,
+        )
+        if not check_result["success"]:
+            return _doom_failed_check_payload(check_result, manifest)
+
+        can_complete, _ = TaskStateMachine(manifest, state).can_complete_task()
+        if can_complete:
+            completion_result = task_service.complete_task(email, game, current_task, state)
+            return _task_completed_payload(completion_result, check_result.get("report_url", ""))
+
+        _advance_doom_to_playable_phase(state, manifest)
+        return _doom_progress_payload(state, manifest, check_result.get("report_url", ""))
+
+    if state.current_phase_id == "check":
+        check_result, manifest, state, _ = _execute_game_phase(
+            email,
+            game,
+            current_task,
+            endpoint,
+            connection_id,
+            state,
+            manifest,
+        )
+        if not check_result["success"]:
+            return _doom_failed_check_payload(check_result, manifest)
+
+        can_complete, _ = TaskStateMachine(manifest, state).can_complete_task()
+        if can_complete:
+            completion_result = task_service.complete_task(email, game, current_task, state)
+            return _task_completed_payload(completion_result, check_result.get("report_url", ""))
+
+        _advance_doom_to_playable_phase(state, manifest)
+        return _doom_progress_payload(state, manifest, check_result.get("report_url", ""))
+
+    result, manifest, state, _ = _execute_game_phase(
+        email,
+        game,
+        current_task,
+        endpoint,
+        connection_id,
+        state,
+        manifest,
+    )
+    if not result["success"]:
+        return _phase_failed_payload(result, manifest)
+
+    _advance_doom_to_playable_phase(state, manifest)
+    can_complete, _ = TaskStateMachine(manifest, state).can_complete_task()
+    if can_complete:
+        completion_result = task_service.complete_task(email, game, current_task, state)
+        return _task_completed_payload(completion_result, result.get("report_url", ""))
+    return _doom_progress_payload(state, manifest, result.get("report_url", ""))
+
+
 def _base_task_payload(state, manifest, *, status: str, message: str, report_url: str = "") -> Dict[str, Any]:
     current_phase = manifest.get_phase(state.current_phase_id) if state.current_phase_id else None
     manifest_description = getattr(manifest, "description", None)
@@ -446,6 +621,9 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
     if state.status == TaskStatus.COMPLETED:
         return _task_completed_payload({"state": state}, state.get_phase_state(state.current_phase_id).report_url if state.current_phase_id else "")
 
+    if npc == DOOM_TASK_SOURCE:
+        return _handle_doom_talk(email, game, current_task, endpoint, connection_id, state, manifest)
+
     while True:
         _advance_game_answer_phase(state, manifest)
         _ensure_game_challenge_before_check(state, manifest)
@@ -454,13 +632,15 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
             completion_result = task_service.complete_task(email, game, current_task, state)
             return _task_completed_payload(completion_result, "")
 
-        _push_game_update(endpoint, connection_id, "talk", _running_payload(state, manifest))
-        executed_phase_id = state.current_phase_id
-        result = task_service.execute_phase(email, game, current_task)
-        manifest = result["manifest"]
-        state = result["state"]
-        if executed_phase_id:
-            save_game_test_record(email, game, current_task, executed_phase_id, result)
+        result, manifest, state, _ = _execute_game_phase(
+            email,
+            game,
+            current_task,
+            endpoint,
+            connection_id,
+            state,
+            manifest,
+        )
 
         if not result["success"]:
             return _phase_failed_payload(result, manifest)
