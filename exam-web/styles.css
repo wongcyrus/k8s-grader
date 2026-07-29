@@ -62,6 +62,18 @@ input {
   padding: 10px;
 }
 
+textarea {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid #314062;
+  background: #0f182c;
+  color: #e7ecf3;
+  border-radius: 6px;
+  padding: 10px;
+  resize: vertical;
+  font-family: inherit;
+}
+
 select {
   width: 100%;
   margin-top: 6px;
@@ -146,6 +158,45 @@ button.locked {
   margin: 10px 0 0;
   color: #f7cdd6;
   font-size: 0.95rem;
+}
+
+.field-hint {
+  margin: 0 0 12px;
+  color: #b7c4dc;
+  font-size: 0.95rem;
+}
+
+.auth-method-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 14px;
+}
+
+.auth-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #314062;
+  border-radius: 8px;
+  background: #0f182c;
+  cursor: pointer;
+}
+
+.auth-option input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.auth-option span {
+  font-weight: 700;
+}
+
+.k8s-auth-panel {
+  margin-bottom: 12px;
 }
 
 pre {

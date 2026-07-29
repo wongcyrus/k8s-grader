@@ -1,5 +1,6 @@
 """Tests for the save-k8s-account Lambda."""
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -51,12 +52,19 @@ class TestSaveK8sAccount:
              patch.object(app, "save_account") as mock_save:
             response = app.lambda_handler(event, None)
 
-        mock_probe.assert_called_once_with(
+        probed_config = mock_probe.call_args.args[0]
+        assert probed_config["endpoint"] == "https://cluster.example.com:6443"
+        assert probed_config["client_certificate"] == "a" * 120
+        assert probed_config["client_key"] == "b" * 120
+        save_args = mock_save.call_args.args
+        save_kwargs = mock_save.call_args.kwargs
+        assert save_args[:4] == (
+            "student@example.com",
             "https://cluster.example.com:6443",
             "a" * 120,
             "b" * 120,
         )
-        mock_save.assert_called_once()
+        assert save_kwargs["auth_type"] == "client_certificate"
         assert response["statusCode"] == 200
 
     def test_save_account_stops_when_probe_fails(self):
@@ -118,12 +126,12 @@ class TestSaveK8sAccount:
              patch.object(app, "save_account") as mock_save:
             response = app.lambda_handler(event, None)
 
-        mock_probe.assert_called_once_with(
-            "https://minikube.example.com:8443",
-            app.FAKE_CLIENT_CERTIFICATE,
-            app.FAKE_CLIENT_KEY,
-        )
-        mock_save.assert_called_once_with(
+        probed_config = mock_probe.call_args.args[0]
+        assert probed_config["endpoint"] == "https://minikube.example.com:8443"
+        assert probed_config["client_certificate"] == app.FAKE_CLIENT_CERTIFICATE
+        assert probed_config["client_key"] == app.FAKE_CLIENT_KEY
+        save_args = mock_save.call_args.args
+        assert save_args[:4] == (
             "student@example.com",
             "https://minikube.example.com:8443",
             app.FAKE_CLIENT_CERTIFICATE,
@@ -135,7 +143,7 @@ class TestSaveK8sAccount:
         app = _load_module()
 
         assert (
-            app.validate_input(
+            app.validate_manual_input(
                 "student@example.com",
                 "https://minikube.example.com:8443",
                 "cert",
@@ -163,12 +171,12 @@ class TestSaveK8sAccount:
             response = app.lambda_handler(event, None)
 
         mock_exists.assert_called_once_with("student@example.com", "https://cluster.example.com:6443")
-        mock_probe.assert_called_once_with(
-            "https://cluster.example.com:6443",
-            "a" * 120,
-            "b" * 120,
-        )
-        mock_save.assert_called_once_with(
+        probed_config = mock_probe.call_args.args[0]
+        assert probed_config["endpoint"] == "https://cluster.example.com:6443"
+        assert probed_config["client_certificate"] == "a" * 120
+        assert probed_config["client_key"] == "b" * 120
+        save_args = mock_save.call_args.args
+        assert save_args[:4] == (
             "student@example.com",
             "https://cluster.example.com:6443",
             "a" * 120,
@@ -204,3 +212,85 @@ class TestSaveK8sAccount:
 
         assert "/readyz: Error from server (NotFound): not found" in result
         assert "/version: Error from server (NotFound): not found" in result
+
+    def test_save_account_accepts_kubeconfig_text(self):
+        app = _load_module()
+        event = _multipart_event()
+        kubeconfig = """
+apiVersion: v1
+kind: Config
+clusters:
+- name: hilarious-dance-sparrow
+  cluster:
+    server: https://cluster.example.com
+    certificate-authority-data: Y2E=
+contexts:
+- name: local-pc-context
+  context:
+    cluster: hilarious-dance-sparrow
+    user: local-pc-user
+current-context: local-pc-context
+users:
+- name: local-pc-user
+  user:
+    token: token-value
+"""
+        fs = {
+            "kubeconfig": type("Part", (), {"text": kubeconfig})(),
+        }
+
+        with patch.object(app, "decode_post_data"), \
+             patch.object(app, "parse_multipart_data", return_value=fs), \
+             patch.object(app, "get_email_from_event", return_value="student@example.com"), \
+             patch.object(app, "is_endpoint_exist", return_value=False), \
+             patch.object(app, "probe_endpoint", return_value=None) as mock_probe, \
+             patch.object(app, "save_account") as mock_save:
+            response = app.lambda_handler(event, None)
+
+        mock_probe.assert_called_once()
+        save_kwargs = mock_save.call_args.kwargs
+        assert save_kwargs["bearer_token"] == "token-value"
+        assert save_kwargs["auth_type"] == "token"
+        body = json.loads(response["body"])
+        assert body["authType"] == "token"
+        assert body["context"] == "local-pc-context"
+
+    def test_save_account_rejects_exec_kubeconfig(self):
+        app = _load_module()
+        event = _multipart_event()
+        fs = {
+            "kubeconfig": type(
+                "Part",
+                (),
+                {
+                    "text": """
+apiVersion: v1
+kind: Config
+clusters:
+- name: cluster
+  cluster:
+    server: https://cluster.example.com
+contexts:
+- name: ctx
+  context:
+    cluster: cluster
+    user: aws-user
+current-context: ctx
+users:
+- name: aws-user
+  user:
+    exec:
+      command: aws
+"""
+                },
+            )(),
+        }
+
+        with patch.object(app, "decode_post_data"), \
+             patch.object(app, "parse_multipart_data", return_value=fs), \
+             patch.object(app, "get_email_from_event", return_value="student@example.com"), \
+             patch.object(app, "save_account") as mock_save:
+            response = app.lambda_handler(event, None)
+
+        mock_save.assert_not_called()
+        assert "AWS exec/auth-provider kubeconfig is not supported" in response["body"]

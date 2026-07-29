@@ -15,6 +15,9 @@ const resetStateButton = document.getElementById("resetState");
 const phaseStateLabel = document.getElementById("phaseStateLabel");
 const taskStatusLabel = document.getElementById("taskStatusLabel");
 const verifyButton = document.querySelector('button[data-action="verify"]');
+const authMethodInputs = document.querySelectorAll('input[name="examAuthMethod"]');
+const kubeconfigPanel = document.getElementById("kubeconfigPanel");
+const manualPanel = document.getElementById("manualPanel");
 
 const BASE_URL = APP_CONFIG.baseUrl || "";
 const EXAM_ACTION_COOLDOWN_MS = 1500;
@@ -48,8 +51,12 @@ function wsDebug(event, data = null) {
 }
 
 function readInputs() {
+  const selectedAuthMethod = document.querySelector('input[name="examAuthMethod"]:checked');
   return {
     apiKey: document.getElementById("apiKey").value.trim(),
+    authMethod: selectedAuthMethod ? selectedAuthMethod.value : "kubeconfig",
+    kubeconfig: document.getElementById("kubeconfig").value,
+    kubeconfigFile: document.getElementById("kubeconfigFile").files[0],
     endpoint: document.getElementById("endpoint").value.trim(),
     clientCertificate: document.getElementById("clientCertificate").files[0],
     clientKey: document.getElementById("clientKey").files[0],
@@ -57,6 +64,18 @@ function readInputs() {
     game: document.getElementById("game").value.trim(),
     task: document.getElementById("task").value.trim(),
   };
+}
+
+function setAuthMethod(method, { persist = true } = {}) {
+  const selectedMethod = method === "manual" ? "manual" : "kubeconfig";
+  authMethodInputs.forEach((input) => {
+    input.checked = input.value === selectedMethod;
+  });
+  kubeconfigPanel.classList.toggle("hidden", selectedMethod !== "kubeconfig");
+  manualPanel.classList.toggle("hidden", selectedMethod !== "manual");
+  if (persist) {
+    saveState({ authMethod: selectedMethod, accountReady: false });
+  }
 }
 
 function write(data, target = output) {
@@ -940,25 +959,42 @@ function showResponse(text, target = output, action = "") {
 }
 
 async function callApi(action) {
-  const { apiKey, endpoint, clientCertificate, clientKey, examCode } = readInputs();
+  const { apiKey, authMethod, kubeconfig, kubeconfigFile, endpoint, clientCertificate, clientKey, examCode } = readInputs();
   if (!apiKey) {
     write("API Key is required.", setupOutput);
     return;
   }
 
   if (action === "save-account") {
-    if (!endpoint) {
-      write("Endpoint is required.", setupOutput);
-      return;
-    }
-    if ((clientCertificate && !clientKey) || (!clientCertificate && clientKey)) {
-      write("Client certificate and client key must be provided together.", setupOutput);
-      return;
+    const hasKubeconfig = Boolean(kubeconfig.trim()) || Boolean(kubeconfigFile);
+    const useKubeconfig = authMethod === "kubeconfig";
+    if (useKubeconfig) {
+      if (!hasKubeconfig) {
+        write("Paste kubeconfig YAML or choose a kubeconfig file.", setupOutput);
+        return;
+      }
+    } else {
+      if (!endpoint) {
+        write("Endpoint is required for manual mode.", setupOutput);
+        return;
+      }
+      if ((clientCertificate && !clientKey) || (!clientCertificate && clientKey)) {
+        write("Client certificate and client key must be provided together.", setupOutput);
+        return;
+      }
     }
 
     const formData = new FormData();
-    formData.append("endpoint", endpoint);
-    if (clientCertificate && clientKey) {
+    if (useKubeconfig && kubeconfig.trim()) {
+      formData.append("kubeconfig", kubeconfig.trim());
+    }
+    if (useKubeconfig && kubeconfigFile) {
+      formData.append("kubeconfig-file", kubeconfigFile);
+    }
+    if (!useKubeconfig && endpoint) {
+      formData.append("endpoint", endpoint);
+    }
+    if (!useKubeconfig && clientCertificate && clientKey) {
       formData.append("client-certificate", clientCertificate);
       formData.append("client-key", clientKey);
     }
@@ -1061,6 +1097,38 @@ document.getElementById("endpoint").addEventListener("input", (e) => {
   updateExamButtons();
 });
 
+document.getElementById("kubeconfig").addEventListener("input", () => {
+  k8sAccountReady = false;
+  saveState({ accountReady: false });
+  updateExamButtons();
+});
+
+document.getElementById("kubeconfigFile").addEventListener("change", () => {
+  k8sAccountReady = false;
+  saveState({ accountReady: false });
+  updateExamButtons();
+});
+
+document.getElementById("clientCertificate").addEventListener("change", () => {
+  k8sAccountReady = false;
+  saveState({ accountReady: false });
+  updateExamButtons();
+});
+
+document.getElementById("clientKey").addEventListener("change", () => {
+  k8sAccountReady = false;
+  saveState({ accountReady: false });
+  updateExamButtons();
+});
+
+authMethodInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    k8sAccountReady = false;
+    setAuthMethod(input.value);
+    updateExamButtons();
+  });
+});
+
 document.getElementById("examCode").addEventListener("input", (e) => {
   saveState({ examCode: e.target.value });
 });
@@ -1073,7 +1141,7 @@ document.getElementById("task").addEventListener("change", (e) => {
 
 resetStateButton.addEventListener("click", () => {
   const ok = window.confirm(
-    "Reset saved exam form data?\n\nThis clears the API key, endpoint, exam code, task selection, and cached exam state from this browser."
+    "Reset saved exam form data?\n\nThis clears the API key, kubeconfig input, endpoint, exam code, task selection, and cached exam state from this browser."
   );
   if (!ok) {
     return;
@@ -1084,9 +1152,12 @@ resetStateButton.addEventListener("click", () => {
   k8sAccountReady = false;
   clearState();
   document.getElementById("apiKey").value = "";
+  document.getElementById("kubeconfig").value = "";
+  document.getElementById("kubeconfigFile").value = "";
   document.getElementById("endpoint").value = "";
   document.getElementById("clientCertificate").value = "";
   document.getElementById("clientKey").value = "";
+  setAuthMethod("kubeconfig", { persist: false });
   document.getElementById("examCode").value = "";
   setGameValue("");
   document.getElementById("task").innerHTML = "";
@@ -1108,6 +1179,7 @@ updateExamButtons();
 writeMarkdown("Press Start to load the question.", questionOutput);
 
 const restored = loadState();
+setAuthMethod(restored.authMethod || (restored.endpoint ? "manual" : "kubeconfig"), { persist: false });
 if (restored.endpoint) {
   document.getElementById("endpoint").value = restored.endpoint;
 }

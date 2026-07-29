@@ -483,9 +483,9 @@ def test_talk_action_saves_exercise_test_records():
     with patch.object(module, "task_service") as mock_task_service, \
          patch.object(module, "get_npc_background", return_value={"name": "Aiden"}), \
          patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://k8s")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "save_game_test_record") as mock_save_record, \
          patch.object(module, "_send_ws_message"):
@@ -546,9 +546,9 @@ def test_talk_action_runs_multi_phase_flow_until_completion():
     with patch.object(module, "task_service") as mock_task_service, \
          patch.object(module, "get_npc_background", return_value={"name": "Aiden"}), \
          patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://k8s")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "TaskStateMachine", return_value=sm), \
          patch.object(module, "_send_ws_message") as mock_send:
@@ -604,9 +604,9 @@ def test_talk_action_skips_answer_phase_before_running_tests():
     with patch.object(module, "task_service") as mock_task_service, \
          patch.object(module, "get_npc_background", return_value={"name": "Aiden"}), \
          patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://k8s")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "TaskStateMachine", return_value=sm), \
          patch.object(module, "_send_ws_message"):
@@ -653,9 +653,9 @@ def test_talk_action_redirects_stale_check_back_to_challenge():
     with patch.object(module, "task_service") as mock_task_service, \
          patch.object(module, "get_npc_background", return_value={"name": "Aiden"}), \
          patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://k8s")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "TaskStateMachine", return_value=sm), \
          patch.object(module, "_send_ws_message"):
@@ -693,9 +693,9 @@ def test_talk_action_prioritizes_task_flow_over_flavor_chat():
 
     with patch.object(module, "get_npc_background", return_value={"name": "Aiden"}), \
          patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://k8s")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "TaskStateMachine", return_value=sm), \
          patch.object(module, "_send_ws_message"), \
@@ -763,9 +763,9 @@ def test_talk_action_does_not_abandon_when_max_attempts_are_reached():
     with patch.object(module, "task_service") as mock_task_service, \
          patch.object(module, "get_npc_background", return_value={"name": "Aiden"}), \
          patch.object(module, "get_user_data", return_value={"client_certificate": "cert", "client_key": "key", "endpoint": "https://k8s"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://k8s")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://k8s", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "TaskStateMachine", return_value=sm), \
          patch.object(module, "_send_ws_message"):

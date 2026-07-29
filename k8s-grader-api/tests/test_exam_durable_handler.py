@@ -311,9 +311,9 @@ def test_handle_exam_run_auto_chains_setup_to_ready():
          patch.object(module, "get_task_service", return_value=mock_task_service), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "get_user_data", return_value={"endpoint": "https://example", "client_certificate": "cert", "client_key": "key"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://example")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://example", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module, "save_exam_test_record") as mock_save_record, \
          patch.object(module, "with_exam_overview", side_effect=lambda response, *_args: response), \
          patch.object(module, "broadcast_exam_response") as mock_broadcast:
@@ -374,9 +374,9 @@ def test_handle_exam_run_reports_ready_failure_after_setup_pass():
          patch.object(module, "get_task_service", return_value=mock_task_service), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "get_user_data", return_value={"endpoint": "https://example", "client_certificate": "cert", "client_key": "key"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://example")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://example", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module, "save_exam_test_record"), \
          patch.object(module, "with_exam_overview", side_effect=lambda response, *_args: response), \
          patch.object(module, "broadcast_exam_response"):
@@ -440,9 +440,9 @@ def test_handle_exam_run_skips_answer_and_runs_challenge_first():
          patch.object(module, "get_task_service", return_value=mock_task_service), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "get_user_data", return_value={"endpoint": "https://example", "client_certificate": "cert", "client_key": "key"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://example")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://example", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module, "save_exam_test_record") as mock_save_record, \
          patch.object(module, "with_exam_overview", side_effect=lambda response, *_args: response), \
          patch.object(module, "broadcast_exam_response") as mock_broadcast:
@@ -506,9 +506,9 @@ def test_handle_exam_run_redirects_stale_check_back_to_challenge():
     with patch.object(module, "get_exam_service", return_value=exam_service), \
          patch.object(module.TaskManifest, "load", return_value=manifest), \
          patch.object(module, "get_user_data", return_value={"endpoint": "https://example", "client_certificate": "cert", "client_key": "key"}), \
-         patch.object(module, "extract_k8s_credentials", return_value=("cert", "key", "https://example")), \
+         patch.object(module, "extract_k8s_access_config", return_value={"endpoint": "https://example", "client_certificate": "cert", "client_key": "key", "kubeconfig": "apiVersion: v1", "auth_type": "client_certificate"}), \
          patch.object(module, "clear_tmp_directory"), \
-         patch.object(module, "write_user_files"), \
+         patch.object(module, "write_k8s_access_files"), \
          patch.object(module, "save_exam_test_record"), \
          patch.object(module, "with_exam_overview", side_effect=lambda response, *_args: response), \
          patch.object(module, "broadcast_exam_response"):

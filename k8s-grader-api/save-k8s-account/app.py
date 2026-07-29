@@ -1,4 +1,5 @@
 import base64
+import json
 import logging
 import subprocess
 import tempfile
@@ -13,6 +14,7 @@ from common.handler import (
     ok_response,
     setup_paths,
 )
+from common.kubeconfig import build_manual_access_config, parse_kubeconfig
 from requests_toolbelt.multipart import decoder
 
 logger = logging.getLogger(__name__)
@@ -97,7 +99,7 @@ def parse_multipart_data(post_data: bytes, content_type: str) -> Dict[str, Any]:
     return fs
 
 
-def validate_input(
+def validate_manual_input(
     email: str,
     endpoint: str,
     client_certificate: Optional[str],
@@ -115,29 +117,37 @@ def validate_input(
 
 
 def probe_endpoint(
-    endpoint: str,
-    client_certificate: Optional[str],
-    client_key: Optional[str],
+    endpoint_or_access_config,
+    client_certificate: Optional[str] = None,
+    client_key: Optional[str] = None,
 ) -> Optional[str]:
-    with tempfile.TemporaryDirectory() as tmpdir:
-        base_cmd = [
-            "kubectl",
-            "--server",
-            endpoint,
-            "--insecure-skip-tls-verify=true",
-        ]
+    if isinstance(endpoint_or_access_config, dict):
+        access_config = endpoint_or_access_config
+    elif client_certificate or client_key:
+        access_config = build_manual_access_config(
+            endpoint_or_access_config,
+            client_certificate or "",
+            client_key or "",
+        )
+    else:
+        access_config = {
+            "endpoint": endpoint_or_access_config,
+            "kubeconfig": None,
+        }
 
-        if client_certificate and client_key:
-            cert_path = Path(tmpdir) / "client.crt"
-            key_path = Path(tmpdir) / "client.key"
-            cert_path.write_text(client_certificate, encoding="utf-8")
-            key_path.write_text(client_key, encoding="utf-8")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base_cmd = ["kubectl"]
+        if access_config.get("kubeconfig"):
+            kubeconfig_path = Path(tmpdir) / "kubeconfig.yaml"
+            kubeconfig_path.write_text(access_config["kubeconfig"], encoding="utf-8")
+            base_cmd.extend(["--kubeconfig", str(kubeconfig_path)])
+        else:
+            endpoint = access_config["endpoint"]
             base_cmd.extend(
                 [
-                    "--client-certificate",
-                    str(cert_path),
-                    "--client-key",
-                    str(key_path),
+                    "--server",
+                    endpoint,
+                    "--insecure-skip-tls-verify=true",
                 ]
             )
 
@@ -175,6 +185,24 @@ def probe_endpoint(
         return " | ".join(errors)
 
 
+def _read_part_text(part) -> str:
+    content = getattr(part, "content", None)
+    if content is None:
+        return getattr(part, "text", "")
+    if isinstance(content, bytes):
+        return content.decode("utf-8")
+    return str(content)
+
+
+def _kubeconfig_from_request(fs: Dict[str, Any]) -> Optional[str]:
+    kubeconfig_part = fs.get("kubeconfig")
+    kubeconfig_file_part = fs.get("kubeconfig-file")
+
+    kubeconfig_text = _read_part_text(kubeconfig_part).strip() if kubeconfig_part else ""
+    kubeconfig_file_text = _read_part_text(kubeconfig_file_part).strip() if kubeconfig_file_part else ""
+    return kubeconfig_file_text or kubeconfig_text or None
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # pylint: disable=W0613
     if event["httpMethod"] == "GET":
         html_content = read_html_file("save-account.html")
@@ -196,30 +224,69 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:  # py
             except ValueError as exc:
                 return error_response(str(exc))
 
-            endpoint = normalize_endpoint_url(fs["endpoint"].text)
-            client_certificate = fs.get("client-certificate").text if fs.get("client-certificate") else None
-            client_key = fs.get("client-key").text if fs.get("client-key") else None
-            if not client_certificate and not client_key:
-                client_certificate = FAKE_CLIENT_CERTIFICATE
-                client_key = FAKE_CLIENT_KEY
+            kubeconfig_text = _kubeconfig_from_request(fs)
+            access_config: Dict[str, Any]
+            if kubeconfig_text:
+                try:
+                    access_config = parse_kubeconfig(kubeconfig_text)
+                except ValueError as exc:
+                    return error_response(str(exc))
+                access_config["endpoint"] = normalize_endpoint_url(access_config["endpoint"])
+            else:
+                endpoint_part = fs.get("endpoint")
+                endpoint = normalize_endpoint_url(endpoint_part.text) if endpoint_part else ""
+                client_certificate = fs.get("client-certificate").text if fs.get("client-certificate") else None
+                client_key = fs.get("client-key").text if fs.get("client-key") else None
+                if not client_certificate and not client_key:
+                    client_certificate = FAKE_CLIENT_CERTIFICATE
+                    client_key = FAKE_CLIENT_KEY
 
-            validation_error = validate_input(
-                email, endpoint, client_certificate, client_key
-            )
-            if validation_error:
-                return error_response(validation_error)
+                validation_error = validate_manual_input(
+                    email, endpoint, client_certificate, client_key
+                )
+                if validation_error:
+                    return error_response(validation_error)
 
-            if is_endpoint_exist(email, endpoint):
+                access_config = build_manual_access_config(
+                    endpoint,
+                    client_certificate or "",
+                    client_key or "",
+                )
+
+            if is_endpoint_exist(email, access_config["endpoint"]):
                 return error_response(
                     "Endpoint already exists, and no Sharing K8s cluster!"
                 )
 
-            endpoint_error = probe_endpoint(endpoint, client_certificate, client_key)
+            endpoint_error = probe_endpoint(access_config)
             if endpoint_error:
                 return error_response(f"Endpoint probe failed: {endpoint_error}")
 
-            save_account(email, endpoint, client_certificate, client_key)
-            return ok_response("Kubernetes endpoint verified and data saved successfully")
+            save_account(
+                email,
+                access_config["endpoint"],
+                access_config.get("client_certificate"),
+                access_config.get("client_key"),
+                bearer_token=access_config.get("bearer_token"),
+                ca_certificate=access_config.get("ca_certificate"),
+                kubeconfig=access_config.get("kubeconfig"),
+                auth_type=access_config.get("auth_type"),
+                insecure_skip_tls_verify=bool(access_config.get("insecure_skip_tls_verify", False)),
+            )
+            return {
+                "headers": ok_response("OK")["headers"],
+                "statusCode": 200,
+                "body": json.dumps(
+                    {
+                        "status": "OK",
+                        "message": "Kubernetes endpoint verified and data saved successfully",
+                        "endpoint": access_config["endpoint"],
+                        "authType": access_config.get("auth_type"),
+                        "context": access_config.get("context_name", ""),
+                        "cluster": access_config.get("cluster_name", ""),
+                    }
+                ),
+            }
 
         return error_response("Unsupported content type")
 

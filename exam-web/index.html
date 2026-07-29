@@ -19,15 +19,38 @@
 
       <section class="card">
         <h2>Step 1: Save Kubernetes Login</h2>
-        <label>Endpoint
-          <input id="endpoint" placeholder="https://xxxx:6443" />
-        </label>
-        <label>Client Certificate (.crt/.pem, auto-filled for minikube)
-          <input id="clientCertificate" type="file" accept=".crt,.pem,.cer" />
-        </label>
-        <label>Client Key (.key/.pem, auto-filled for minikube)
-          <input id="clientKey" type="file" accept=".key,.pem" />
-        </label>
+        <p class="field-hint">Choose one login method below. Most students should use a kubeconfig file.</p>
+        <div class="auth-method-toggle" role="radiogroup" aria-label="Kubernetes login method">
+          <label class="auth-option">
+            <input type="radio" name="exerciseAuthMethod" value="kubeconfig" checked />
+            <span>Kubeconfig (Recommended)</span>
+          </label>
+          <label class="auth-option">
+            <input type="radio" name="exerciseAuthMethod" value="manual" />
+            <span>Manual Endpoint + Cert</span>
+          </label>
+        </div>
+        <div id="kubeconfigPanel" class="k8s-auth-panel">
+          <label>Kubeconfig YAML
+            <textarea id="kubeconfig" rows="10" placeholder="Paste the kubeconfig YAML generated for your cluster access"></textarea>
+          </label>
+          <label>Kubeconfig file (.yaml/.yml/.conf)
+            <input id="kubeconfigFile" type="file" accept=".yaml,.yml,.conf" />
+          </label>
+          <p class="field-hint">Paste or upload a token-based kubeconfig such as the generated <code>local-pc-context</code> file.</p>
+        </div>
+        <div id="manualPanel" class="k8s-auth-panel hidden">
+          <label>Endpoint
+            <input id="endpoint" placeholder="https://xxxx:6443" />
+          </label>
+          <label>Client Certificate (.crt/.pem)
+            <input id="clientCertificate" type="file" accept=".crt,.pem,.cer" />
+          </label>
+          <label>Client Key (.key/.pem)
+            <input id="clientKey" type="file" accept=".key,.pem" />
+          </label>
+          <p class="field-hint">Use this only when you do not have a kubeconfig file.</p>
+        </div>
         <div class="actions">
           <button data-action="save-account">Save and Test Kubernetes Login</button>
         </div>

@@ -140,9 +140,24 @@ def save_account(
     endpoint: str,
     client_certificate: str | None,
     client_key: str | None,
+    bearer_token: str | None = None,
+    ca_certificate: str | None = None,
+    kubeconfig: str | None = None,
+    auth_type: str | None = None,
+    insecure_skip_tls_verify: bool = False,
 ) -> None:
     """Save account (backward-compatible wrapper)"""
-    _get_account_repo().save(email, endpoint, client_certificate, client_key)
+    _get_account_repo().save(
+        email,
+        endpoint,
+        client_certificate,
+        client_key,
+        bearer_token=bearer_token,
+        ca_certificate=ca_certificate,
+        kubeconfig=kubeconfig,
+        auth_type=auth_type,
+        insecure_skip_tls_verify=insecure_skip_tls_verify,
+    )
 
 
 def get_user_data(email: str):

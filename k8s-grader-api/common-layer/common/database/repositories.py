@@ -635,6 +635,11 @@ class AccountRepository:
         endpoint: str,
         client_certificate: Optional[str],
         client_key: Optional[str],
+        bearer_token: Optional[str] = None,
+        ca_certificate: Optional[str] = None,
+        kubeconfig: Optional[str] = None,
+        auth_type: Optional[str] = None,
+        insecure_skip_tls_verify: bool = False,
     ) -> bool:
         """Save user account"""
         try:
@@ -645,6 +650,11 @@ class AccountRepository:
                     "endpoint": normalized_endpoint,
                     "client_certificate": client_certificate,
                     "client_key": client_key,
+                    "bearer_token": bearer_token,
+                    "ca_certificate": ca_certificate,
+                    "kubeconfig": kubeconfig,
+                    "auth_type": auth_type,
+                    "insecure_skip_tls_verify": insecure_skip_tls_verify,
                     "time": int(time.time()),
                 }
             )

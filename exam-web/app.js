@@ -9,6 +9,9 @@ const exerciseSkippedTasksLabel = document.getElementById("exerciseSkippedTasksL
 const exerciseScoreLabel = document.getElementById("exerciseScoreLabel");
 const resetStateButton = document.getElementById("resetState");
 const buttons = document.querySelectorAll("button[data-action]");
+const authMethodInputs = document.querySelectorAll('input[name="exerciseAuthMethod"]');
+const kubeconfigPanel = document.getElementById("kubeconfigPanel");
+const manualPanel = document.getElementById("manualPanel");
 
 const BASE_URL = APP_CONFIG.baseUrl || "";
 const GAME_WS_URL = APP_CONFIG.gameWsUrl || "";
@@ -33,14 +36,30 @@ function exerciseActionStatusText(action, phase = "active") {
 }
 
 function readInputs() {
+  const selectedAuthMethod = document.querySelector('input[name="exerciseAuthMethod"]:checked');
   return {
     apiKey: document.getElementById("apiKey").value.trim(),
+    authMethod: selectedAuthMethod ? selectedAuthMethod.value : "kubeconfig",
+    kubeconfig: document.getElementById("kubeconfig").value,
+    kubeconfigFile: document.getElementById("kubeconfigFile").files[0],
     endpoint: document.getElementById("endpoint").value.trim(),
     clientCertificate: document.getElementById("clientCertificate").files[0],
     clientKey: document.getElementById("clientKey").files[0],
     exerciseGame: exerciseGameSelect.value.trim(),
     exerciseClient: exerciseClientSelect.value.trim(),
   };
+}
+
+function setAuthMethod(method, { persist = true } = {}) {
+  const selectedMethod = method === "manual" ? "manual" : "kubeconfig";
+  authMethodInputs.forEach((input) => {
+    input.checked = input.value === selectedMethod;
+  });
+  kubeconfigPanel.classList.toggle("hidden", selectedMethod !== "kubeconfig");
+  manualPanel.classList.toggle("hidden", selectedMethod !== "manual");
+  if (persist) {
+    saveState({ authMethod: selectedMethod, accountReady: false });
+  }
 }
 
 function write(data, target = setupOutput) {
@@ -62,6 +81,15 @@ function formatSaveAccountResponse(json, endpoint = "") {
 
   if (endpoint && status.toUpperCase() === "OK") {
     lines.push(`Endpoint: ${endpoint}`);
+  }
+  if (json.authType) {
+    lines.push(`Auth Type: ${json.authType}`);
+  }
+  if (json.context) {
+    lines.push(`Context: ${json.context}`);
+  }
+  if (json.cluster) {
+    lines.push(`Cluster: ${json.cluster}`);
   }
 
   return lines.join("\n");
@@ -448,25 +476,42 @@ function openExerciseGame() {
 }
 
 async function callApi(action) {
-  const { apiKey, endpoint, clientCertificate, clientKey, exerciseGame } = readInputs();
+  const { apiKey, authMethod, kubeconfig, kubeconfigFile, endpoint, clientCertificate, clientKey, exerciseGame } = readInputs();
   if (!apiKey) {
     write("API Key is required.", setupOutput);
     return;
   }
 
   if (action === "save-account") {
-    if (!endpoint) {
-      write("Endpoint is required.", setupOutput);
-      return;
-    }
-    if ((clientCertificate && !clientKey) || (!clientCertificate && clientKey)) {
-      write("Client certificate and client key must be provided together.", setupOutput);
-      return;
+    const hasKubeconfig = Boolean(kubeconfig.trim()) || Boolean(kubeconfigFile);
+    const useKubeconfig = authMethod === "kubeconfig";
+    if (useKubeconfig) {
+      if (!hasKubeconfig) {
+        write("Paste kubeconfig YAML or choose a kubeconfig file.", setupOutput);
+        return;
+      }
+    } else {
+      if (!endpoint) {
+        write("Endpoint is required for manual mode.", setupOutput);
+        return;
+      }
+      if ((clientCertificate && !clientKey) || (!clientCertificate && clientKey)) {
+        write("Client certificate and client key must be provided together.", setupOutput);
+        return;
+      }
     }
 
     const formData = new FormData();
-    formData.append("endpoint", endpoint);
-    if (clientCertificate && clientKey) {
+    if (useKubeconfig && kubeconfig.trim()) {
+      formData.append("kubeconfig", kubeconfig.trim());
+    }
+    if (useKubeconfig && kubeconfigFile) {
+      formData.append("kubeconfig-file", kubeconfigFile);
+    }
+    if (!useKubeconfig && endpoint) {
+      formData.append("endpoint", endpoint);
+    }
+    if (!useKubeconfig && clientCertificate && clientKey) {
       formData.append("client-certificate", clientCertificate);
       formData.append("client-key", clientKey);
     }
@@ -491,7 +536,7 @@ async function callApi(action) {
       }
       if (json && json.status === "OK") {
         k8sAccountReady = true;
-        saveState({ apiKey, endpoint, exerciseGame, accountReady: true });
+        saveState({ apiKey, endpoint, exerciseGame, authMethod, accountReady: true });
       }
       write(formatSaveAccountResponse(json, endpoint) || text, setupOutput);
     } catch (err) {
@@ -552,6 +597,33 @@ document.getElementById("endpoint").addEventListener("input", (e) => {
   saveState({ endpoint: e.target.value, accountReady: false });
 });
 
+document.getElementById("kubeconfig").addEventListener("input", () => {
+  k8sAccountReady = false;
+  saveState({ accountReady: false });
+});
+
+document.getElementById("kubeconfigFile").addEventListener("change", () => {
+  k8sAccountReady = false;
+  saveState({ accountReady: false });
+});
+
+document.getElementById("clientCertificate").addEventListener("change", () => {
+  k8sAccountReady = false;
+  saveState({ accountReady: false });
+});
+
+document.getElementById("clientKey").addEventListener("change", () => {
+  k8sAccountReady = false;
+  saveState({ accountReady: false });
+});
+
+authMethodInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    k8sAccountReady = false;
+    setAuthMethod(input.value);
+  });
+});
+
 exerciseGameSelect.addEventListener("change", (e) => {
   saveState({ exerciseGame: e.target.value, gameWsUrl: GAME_WS_URL });
   closeExerciseSocket();
@@ -565,7 +637,7 @@ exerciseClientSelect.addEventListener("change", (e) => {
 
 resetStateButton.addEventListener("click", () => {
   const ok = window.confirm(
-    "Reset saved exercise form data?\n\nThis clears the API key, endpoint, exercise selection, and cached exercise portal state from this browser."
+    "Reset saved exercise form data?\n\nThis clears the API key, kubeconfig input, endpoint, exercise selection, and cached exercise portal state from this browser."
   );
   if (!ok) {
     return;
@@ -575,9 +647,12 @@ resetStateButton.addEventListener("click", () => {
   closeExerciseSocket();
   k8sAccountReady = false;
   document.getElementById("apiKey").value = "";
+  document.getElementById("kubeconfig").value = "";
+  document.getElementById("kubeconfigFile").value = "";
   document.getElementById("endpoint").value = "";
   document.getElementById("clientCertificate").value = "";
   document.getElementById("clientKey").value = "";
+  setAuthMethod("kubeconfig", { persist: false });
   setExerciseGameOptions(getExerciseGamesFromDom());
   exerciseClientSelect.value = "doom";
   resetExerciseSummary();
@@ -589,6 +664,7 @@ setExerciseConnectionStatus("Disconnected");
 resetExerciseSummary();
 
 const restored = loadState();
+setAuthMethod(restored.authMethod || (restored.endpoint ? "manual" : "kubeconfig"), { persist: false });
 if (restored.apiKey) {
   document.getElementById("apiKey").value = restored.apiKey;
 }

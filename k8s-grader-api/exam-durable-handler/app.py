@@ -14,9 +14,10 @@ from jinja2 import Environment
 
 from common.database import ExecutionGuardRepository
 from common.database import get_user_data
-from common.file import clear_tmp_directory, write_user_files
+from common.file import clear_tmp_directory, write_k8s_access_files
 from common.google_spreadsheet import get_easter_egg_link
-from common.handler import extract_k8s_credentials, setup_paths
+from common.handler import extract_k8s_access_config, setup_paths
+from common.kubeconfig import session_data_from_access_config
 from common.models.task_manifest import TaskManifest
 from common.models.task_state import TaskStatus
 from common.services.exam_service import ExamService
@@ -457,12 +458,13 @@ def handle_exam_start(email: str, exam_code: str, game: Optional[str], task_id: 
     if not user_data:
         return error_response("User account not found")
 
-    client_certificate, client_key, endpoint = extract_k8s_credentials(user_data)
-    if not all([client_certificate, client_key, endpoint]):
+    access_config = extract_k8s_access_config(user_data)
+    endpoint = access_config.get("endpoint")
+    if not endpoint or not access_config.get("kubeconfig"):
         return error_response("K8s credentials missing or incomplete")
 
     clear_tmp_directory()
-    write_user_files(client_certificate, client_key)
+    write_k8s_access_files(access_config)
 
     manifest = TaskManifest.load(game, task_id)
     exam_service = get_exam_service()
@@ -471,9 +473,7 @@ def handle_exam_start(email: str, exam_code: str, game: Optional[str], task_id: 
         exam_service.task_repo.delete(email, game, task_id)
         state = exam_service.task_service.start_exam_task(email, game, task_id, exam_code)
 
-    state.session_data["$endpoint"] = endpoint
-    state.session_data["$client_certificate"] = client_certificate
-    state.session_data["$client_key"] = client_key
+    state.session_data.update(session_data_from_access_config(access_config))
     state.session_data["$email"] = email
     state.session_data["$exam_code"] = exam_code
     exam_service.task_repo.save(state)
@@ -568,15 +568,14 @@ def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Op
     if not user_data:
         return error_response("User account not found")
 
-    client_certificate, client_key, endpoint = extract_k8s_credentials(user_data)
-    if not all([client_certificate, client_key, endpoint]):
+    access_config = extract_k8s_access_config(user_data)
+    endpoint = access_config.get("endpoint")
+    if not endpoint or not access_config.get("kubeconfig"):
         return error_response("K8s credentials missing or incomplete")
 
     clear_tmp_directory()
-    write_user_files(client_certificate, client_key)
-    state.session_data["$endpoint"] = endpoint
-    state.session_data["$client_certificate"] = client_certificate
-    state.session_data["$client_key"] = client_key
+    write_k8s_access_files(access_config)
+    state.session_data.update(session_data_from_access_config(access_config))
     state.session_data["$email"] = email
     state.session_data["$exam_code"] = exam_code
     exam_service.task_repo.save(state)

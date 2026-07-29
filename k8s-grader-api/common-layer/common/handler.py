@@ -3,6 +3,7 @@ import os
 import re
 from typing import Any, Dict, Optional, Tuple
 
+from common.kubeconfig import build_kubeconfig
 from common.status import GamePhrase, TestResult
 from cryptography.fernet import Fernet
 
@@ -100,6 +101,46 @@ def extract_k8s_credentials(user_data: Dict[str, Any]) -> Tuple[str, str, str]:
     client_key = user_data.get("client_key")
     endpoint = user_data.get("endpoint")
     return client_certificate, client_key, endpoint
+
+
+def extract_k8s_access_config(user_data: Dict[str, Any]) -> Dict[str, Any]:
+    endpoint = user_data.get("endpoint")
+    client_certificate = user_data.get("client_certificate")
+    client_key = user_data.get("client_key")
+    bearer_token = user_data.get("bearer_token")
+    ca_certificate = user_data.get("ca_certificate")
+    kubeconfig = user_data.get("kubeconfig")
+    auth_type = user_data.get("auth_type")
+    insecure_skip_tls_verify = bool(user_data.get("insecure_skip_tls_verify", False))
+
+    if not kubeconfig and endpoint and (bearer_token or (client_certificate and client_key)):
+        kubeconfig = build_kubeconfig(
+            endpoint,
+            client_certificate=client_certificate,
+            client_key=client_key,
+            bearer_token=bearer_token,
+            ca_certificate=ca_certificate,
+            insecure_skip_tls_verify=insecure_skip_tls_verify or not bool(ca_certificate),
+        )
+
+    if not auth_type:
+        if bearer_token:
+            auth_type = "token"
+        elif client_certificate and client_key:
+            auth_type = "client_certificate"
+        else:
+            auth_type = ""
+
+    return {
+        "endpoint": endpoint,
+        "client_certificate": client_certificate,
+        "client_key": client_key,
+        "bearer_token": bearer_token,
+        "ca_certificate": ca_certificate,
+        "kubeconfig": kubeconfig,
+        "auth_type": auth_type,
+        "insecure_skip_tls_verify": insecure_skip_tls_verify,
+    }
 
 
 def get_email_game_and_npc_from_event(event: Dict[str, Any]) -> Tuple[Optional[str], Optional[str], Optional[str]]:

@@ -6,6 +6,7 @@ names_generator
 Jinja2
 requests-toolbelt
 cryptography
+PyYAML
 pytest
 pytest-html
 pytest-timeout

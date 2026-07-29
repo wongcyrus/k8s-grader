@@ -38,7 +38,7 @@ class TestRunner:
             from common.file import create_json_input
             from common.pytest import run_tests
             
-            # Create input file for tests
+            # Create input file for tests and materialize any stored kubeconfig metadata
             create_json_input(endpoint, session_data)
             
             # Run tests with timeout

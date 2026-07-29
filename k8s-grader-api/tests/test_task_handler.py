@@ -230,9 +230,9 @@ class TestLambdaHandler:
                  'client_key': 'key_data',
                  'endpoint': 'https://k8s.example.com'
              }), \
-             patch('app.extract_k8s_credentials', return_value=('cert_data', 'key_data', 'https://k8s.example.com')), \
+             patch('app.extract_k8s_access_config', return_value={'endpoint': 'https://k8s.example.com', 'client_certificate': 'cert_data', 'client_key': 'key_data', 'kubeconfig': 'apiVersion: v1', 'auth_type': 'client_certificate'}), \
              patch('app.clear_tmp_directory'), \
-             patch('app.write_user_files'), \
+             patch('app.write_k8s_access_files'), \
              patch('common.models.task_manifest.TaskManifest.load', return_value=manifest), \
              patch('app.exam_service.ensure_state', return_value=abandoned_state), \
              patch('app.exam_service.task_repo.delete') as mock_delete, \

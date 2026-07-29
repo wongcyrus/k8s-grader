@@ -2,9 +2,9 @@
 import json
 import os
 import tempfile
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from common.file import create_json_input, clear_tmp_directory, write_user_files
+from common.file import create_json_input, clear_tmp_directory, write_k8s_access_files, write_user_files
 
 
 class TestCreateJsonInput:
@@ -13,7 +13,8 @@ class TestCreateJsonInput:
     def test_basic_json_input(self):
         """Test creating basic JSON input"""
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('common.file.open', create=True) as mock_open:
+            with patch('common.file.open', create=True) as mock_open, \
+                 patch("common.file.os.path.exists", side_effect=lambda path: path in {"/tmp/client_certificate.crt", "/tmp/client_key.key"}):
                 mock_file = mock_open.return_value.__enter__.return_value
                 
                 create_json_input("https://k8s.example.com")
@@ -50,9 +51,18 @@ class TestCreateJsonInput:
     
     def test_json_input_filters_metadata_keys(self):
         """Test that metadata keys (starting with $) are filtered out"""
-        with patch('common.file.open', create=True) as mock_open:
-            mock_file = mock_open.return_value.__enter__.return_value
-            
+        cert_handle = MagicMock()
+        key_handle = MagicMock()
+        json_handle = MagicMock()
+        cert_context = MagicMock()
+        cert_context.__enter__.return_value = cert_handle
+        key_context = MagicMock()
+        key_context.__enter__.return_value = key_handle
+        json_context = MagicMock()
+        json_context.__enter__.return_value = json_handle
+
+        with patch('common.file.open', create=True, side_effect=[cert_context, key_context, json_context]) as mock_open, \
+             patch("common.file.os.path.exists", side_effect=lambda path: path in {"/tmp/client_certificate.crt", "/tmp/client_key.key"}):
             extra_data = {
                 '$instruction': 'Do something',
                 '$endpoint': 'https://k8s.example.com',
@@ -66,7 +76,7 @@ class TestCreateJsonInput:
             create_json_input("https://k8s.example.com", extra_data)
             
             # Get the JSON that was written
-            written_data = ''.join(call.args[0] for call in mock_file.write.call_args_list)
+            written_data = ''.join(call.args[0] for call in json_handle.write.call_args_list)
             data = json.loads(written_data)
             
             # Metadata keys should be removed
@@ -126,6 +136,23 @@ class TestWriteUserFiles:
             assert calls[1][0][1] == "w"
 
 
+class TestWriteK8sAccessFiles:
+    def test_write_k8s_access_files_writes_kubeconfig_and_ca(self):
+        with patch("builtins.open", create=True) as mock_open:
+            write_k8s_access_files(
+                {
+                    "endpoint": "https://k8s.example.com",
+                    "bearer_token": "token-value",
+                    "ca_certificate": "CA DATA",
+                    "kubeconfig": "apiVersion: v1\nkind: Config\n",
+                }
+            )
+
+            paths = [call.args[0] for call in mock_open.call_args_list]
+            assert "/tmp/ca.crt" in paths
+            assert "/tmp/kubeconfig.yaml" in paths
+
+
 class TestClearTmpDirectory:
     """Test tmp cleanup only touches managed files."""
 
@@ -155,3 +182,29 @@ class TestClearTmpDirectory:
         assert deleted_dirs == {"/tmp/game02"}
         assert "/tmp/systemd-private-keep" not in deleted_files
         assert "/tmp/systemd-private-keep" not in deleted_dirs
+
+    def test_json_input_includes_kubeconfig_file_when_present(self):
+        kubeconfig_handle = MagicMock()
+        json_handle = MagicMock()
+        kubeconfig_context = MagicMock()
+        kubeconfig_context.__enter__.return_value = kubeconfig_handle
+        json_context = MagicMock()
+        json_context.__enter__.return_value = json_handle
+
+        with patch("common.file.open", create=True, side_effect=[kubeconfig_context, json_context]) as mock_open, \
+             patch("common.file.os.path.exists", side_effect=lambda path: path in {"/tmp/kubeconfig.yaml"}):
+            create_json_input(
+                "https://k8s.example.com",
+                {
+                    "$kubeconfig": "apiVersion: v1\nkind: Config\n",
+                    "$bearer_token": "token-value",
+                },
+            )
+
+            written_data = "".join(call.args[0] for call in json_handle.write.call_args_list)
+            data = json.loads(written_data)
+
+            assert data["host"] == "https://k8s.example.com"
+            assert data["kubeconfig_file"] == "/tmp/kubeconfig.yaml"
+            assert "$kubeconfig" not in data
+            assert "$bearer_token" not in data

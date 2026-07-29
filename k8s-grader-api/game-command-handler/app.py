@@ -11,9 +11,10 @@ from jinja2 import Environment
 
 from common.database import ExecutionGuardRepository
 from common.database import get_npc_background, get_user_data
-from common.file import clear_tmp_directory, write_user_files
+from common.file import clear_tmp_directory, write_k8s_access_files
 from common.google_spreadsheet import get_easter_egg_link
-from common.handler import extract_k8s_credentials, setup_paths, to_player_safe_game_message
+from common.handler import extract_k8s_access_config, setup_paths, to_player_safe_game_message
+from common.kubeconfig import session_data_from_access_config
 from common.models.task_manifest import TaskManifest
 from common.models.task_state import TaskStatus
 from common.session import generate_session
@@ -409,12 +410,13 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
     if not user_data:
         return _error_payload("User account not found")
 
-    client_certificate, client_key, endpoint_url = extract_k8s_credentials(user_data)
-    if not all([client_certificate, client_key, endpoint_url]):
+    access_config = extract_k8s_access_config(user_data)
+    endpoint_url = access_config.get("endpoint")
+    if not endpoint_url or not access_config.get("kubeconfig"):
         return _error_payload("K8s credentials missing or incomplete")
 
     clear_tmp_directory()
-    write_user_files(client_certificate, client_key)
+    write_k8s_access_files(access_config)
 
     current_task = task_service.get_current_task(email, game, mode="exercise")
     if not current_task:
@@ -437,9 +439,7 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
         manifest = TaskManifest.load(game, current_task)
         _push_game_update(endpoint, connection_id, "talk", _running_payload(state, manifest))
 
-    state.session_data["$endpoint"] = endpoint_url
-    state.session_data["$client_certificate"] = client_certificate
-    state.session_data["$client_key"] = client_key
+    state.session_data.update(session_data_from_access_config(access_config))
     state.session_data["$email"] = email
     task_service.task_repo.save(state)
 
