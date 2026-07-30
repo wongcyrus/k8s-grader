@@ -162,6 +162,10 @@ Each user gets **unique, personalized task parameters** to prevent cheating:
 2. Session data is stored in `TaskState.session_data` (in TaskStateTable)
 
 3. When tests run, session data is passed to pytest via `/tmp/json_input.json`
+4. Before handlers start or run a task, managed grader files under `/tmp` are cleared, including `/tmp/<game>`, `/tmp/<game>.zip`, and `/tmp/<game>_source.txt`
+5. The next test execution re-extracts the game source into `/tmp/<game>`
+
+This means the normal Lambda path removes stale task-local bytecode by deleting the extracted game directory, rather than by running an explicit `__pycache__` cleanup step.
 
 **Example session.json template:**
 ```json

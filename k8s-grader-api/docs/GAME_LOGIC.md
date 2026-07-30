@@ -47,6 +47,42 @@ The durable game worker follows these rules:
   - Bypasses attempt count tracking (`_counts_attempts`), enabling infinite in-game retries.
   - Renders Jinja2 session variables (e.g. `{{ namespace }}`) in `_build_game_status_payload` for `NOT_STARTED` tasks so task instructions display filled parameters before execution starts.
 
+## Doom Trigger Execution Model
+
+Doom uses the same durable game backend, but with a stricter one-at-a-time interaction model so Kubernetes phase execution does not overlap.
+
+### Client-side behavior
+
+- Doom trigger events are appended to `triggerQueue` in `doom.ts/src/DoomReact/Doom.tsx`.
+- Only the first queued event becomes the active trigger.
+- Opening the overlay pauses the game (`game.paused = true`) and clears inputs.
+- The Doom client sends `talk` when the active trigger opens.
+- Under normal play, the next pickup / kill trigger is not processed until the current overlay cycle finishes.
+
+### Backend-side behavior
+
+- `game-ws-handler/app.py` places `talk`, `reset`, `reset-all`, and `skip` under the same execution guard scope:
+
+  `game#{email}#{game}#mutation`
+
+- If another Doom `talk` arrives while one mutation request is still running, the backend rejects it with:
+
+  `A game task is already running for you. Please wait for it to finish.`
+
+- This means Kubernetes work remains serialized even if the client sends another trigger too early.
+
+### Doom phase sequencing
+
+Inside `game-command-handler/app.py`, `_handle_doom_talk(...)` runs phases sequentially in a single request:
+
+- bootstrap talk: `setup -> ready`
+- gameplay talk: `challenge -> check`
+- direct `check` is only run after challenge routing has settled
+- failed `check` resets Doom back to `challenge`
+- passed `check` either completes the task or returns the next playable phase
+
+So Doom is designed to run **one phase chain at a time**, not multiple checks in parallel.
+
 ## Player-Facing Message Truth Table
 
 The RPG plugin intentionally hides backend jargon like raw phase/status combinations and instead shows what the player should do next.

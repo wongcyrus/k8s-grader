@@ -279,6 +279,8 @@ Detailed flow:
 3. load user K8s account from `AccountTable`
 4. validate client certificate, key, and endpoint
 5. clear managed `/tmp` files
+   - includes the extracted `/tmp/<game>` test tree, `/tmp/<game>.zip`, and `/tmp/<game>_source.txt`
+   - this effectively removes stale task-local `__pycache__` content before Lambda test execution
 6. write user cert/key files to `/tmp`
 7. load `TaskManifest`
 8. ensure task state exists in exam mode
