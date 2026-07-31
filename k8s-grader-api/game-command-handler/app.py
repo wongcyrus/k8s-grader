@@ -529,7 +529,6 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
             "status": "NOT_STARTED",
             "task_id": current_task,
             "message": rendered_description,
-            "task_description": rendered_description,
             "total_score": total_score,
             "completed_tasks": completed_tasks,
             "skipped_tasks": skipped_tasks,
@@ -551,14 +550,12 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
         if current_phase and getattr(current_phase, "description", "")
         else manifest.description or "Continue the task."
     )
-    task_description_source = manifest.description or phase_message or "Continue the task."
     return {
         "status": state.status.value.upper() if isinstance(state.status, TaskStatus) else str(state.status).upper(),
         "task_id": current_task,
         "current_phase": state.current_phase_id,
         "phase_name": current_phase.name if current_phase else "",
         "message": _render_template(phase_message, state.session_data),
-        "task_description": _render_template(task_description_source, state.session_data),
         "total_points": state.total_points,
         "total_score": total_score,
         "completed_tasks": completed_tasks,

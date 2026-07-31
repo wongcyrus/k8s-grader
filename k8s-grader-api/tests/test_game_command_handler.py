@@ -285,7 +285,7 @@ def test_status_action_renders_not_started_manifest_with_generated_session():
 
     assert payload["status"] == "NOT_STARTED"
     assert payload["message"] == "Create namespace student-ns"
-    assert payload["task_description"] == "Create namespace student-ns"
+    assert "task_description" not in payload
 
 
 def test_status_action_redirects_stale_check_snapshot_back_to_challenge():
@@ -305,7 +305,7 @@ def test_status_action_redirects_stale_check_snapshot_back_to_challenge():
     assert payload["status"] == "IN_PROGRESS"
     assert payload["current_phase"] == "challenge"
     assert payload["message"] == "Solve namespace"
-    assert payload["task_description"] == "Solve namespace"
+    assert "task_description" not in payload
     assert payload["next_game_phrase"] == "CHALLENGE"
     assert payload["total_score"] == 9
     assert payload["completed_tasks"] == ["01_task", "02_task"]

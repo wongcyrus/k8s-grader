@@ -254,9 +254,6 @@ function buildExerciseStatusSummary(json) {
   if (json?.phase_name) {
     lines.push(`Current phase: ${json.phase_name}`);
   }
-  if (json?.task_description) {
-    lines.push(`Task instruction: ${json.task_description}`);
-  }
   if (lines.length > 0) {
     lines.push("");
   }
