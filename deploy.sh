@@ -9,7 +9,20 @@ if [ ! -f "$API_DEPLOY_SCRIPT" ]; then
     exit 1
 fi
 
-export SAM_CONFIG_ENV="${ENV:-${SAM_CONFIG_ENV:-default}}"
+DEPLOY_ENV="${ENV:-${DEPLOY_ENV:-dev}}"
+case "$DEPLOY_ENV" in
+    dev|default)
+        export SAM_CONFIG_FILE="${SAM_CONFIG_FILE:-${SCRIPT_DIR}/k8s-grader-api/samconfig.dev.toml}"
+        ;;
+    prod)
+        export SAM_CONFIG_FILE="${SAM_CONFIG_FILE:-${SCRIPT_DIR}/k8s-grader-api/samconfig.prod.toml}"
+        ;;
+    *)
+        echo "Unsupported deploy environment: ${DEPLOY_ENV}. Use dev or prod." >&2
+        exit 1
+        ;;
+esac
+export SAM_CONFIG_ENV="${SAM_CONFIG_ENV:-default}"
 
 if [ $# -gt 0 ] && [[ "$1" != --* ]]; then
     export SECRET_HASH_OVERRIDE="$1"

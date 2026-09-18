@@ -34,6 +34,7 @@ def aws_credentials(monkeypatch):
     monkeypatch.setenv('ExamCodeTable', 'ExamCodeTable')
     monkeypatch.setenv('ExamSessionTable', 'ExamSessionTable')
     monkeypatch.setenv('AccountTable', 'AccountTable')
+    monkeypatch.setenv('TaskPhaseEstimateTable', 'TaskPhaseEstimateTable')
     monkeypatch.setenv('WebSocketThrottleTable', 'WebSocketThrottleTable')
     monkeypatch.setenv('WebSocketExecutionGuardTable', 'WebSocketExecutionGuardTable')
     # Add SECRET_HASH for handler tests
@@ -162,6 +163,19 @@ def dynamodb_tables(aws_credentials):
             BillingMode='PAY_PER_REQUEST'
         )
 
+        task_phase_estimate_table = dynamodb.create_table(
+            TableName='TaskPhaseEstimateTable',
+            KeySchema=[
+                {'AttributeName': 'gameTask', 'KeyType': 'HASH'},
+                {'AttributeName': 'phase', 'KeyType': 'RANGE'}
+            ],
+            AttributeDefinitions=[
+                {'AttributeName': 'gameTask', 'AttributeType': 'S'},
+                {'AttributeName': 'phase', 'AttributeType': 'S'}
+            ],
+            BillingMode='PAY_PER_REQUEST'
+        )
+
         ws_throttle_table = dynamodb.create_table(
             TableName='WebSocketThrottleTable',
             KeySchema=[
@@ -193,6 +207,7 @@ def dynamodb_tables(aws_credentials):
             'exam_code_table': exam_code_table,
             'exam_session_table': exam_session_table
             ,'account_table': account_table,
+            'task_phase_estimate_table': task_phase_estimate_table,
             'ws_throttle_table': ws_throttle_table,
             'ws_execution_guard_table': ws_execution_guard_table,
         }

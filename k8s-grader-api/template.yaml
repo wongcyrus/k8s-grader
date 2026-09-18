@@ -339,6 +339,21 @@ Resources:
           Projection:
             ProjectionType: "ALL"
 
+  TaskPhaseEstimateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: "gameTask"
+          AttributeType: "S"
+        - AttributeName: "phase"
+          AttributeType: "S"
+      KeySchema:
+        - AttributeName: "gameTask"
+          KeyType: "HASH"
+        - AttributeName: "phase"
+          KeyType: "RANGE"
+
   NpcAssignmentTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -679,6 +694,8 @@ Resources:
             TableName: !Ref ExamSessionTable
         - DynamoDBCrudPolicy:
             TableName: !Ref ExamWsConnectionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TaskPhaseEstimateTable
         - Statement:
             - Effect: Allow
               Action:
@@ -723,6 +740,7 @@ Resources:
           ExamCodeTable: !Ref ExamCodeTable
           ExamSessionTable: !Ref ExamSessionTable
           ExamWsConnectionTable: !Ref ExamWsConnectionTable
+          TaskPhaseEstimateTable: !Ref TaskPhaseEstimateTable
           TestResultBucket: !Ref TestResultBucket
           SecretHash: !Ref SecretHash
           EasterEggSheetId: !Ref EasterEggSheetId
@@ -877,6 +895,8 @@ Resources:
             TableName: !Ref ExamWsConnectionTable
         - DynamoDBCrudPolicy:
             TableName: !Ref WebSocketExecutionGuardTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TaskPhaseEstimateTable
         - S3CrudPolicy:
             BucketName: !Ref TestResultBucket
         - Statement:
@@ -918,6 +938,7 @@ Resources:
           ExamCodeTable: !Ref ExamCodeTable
           ExamSessionTable: !Ref ExamSessionTable
           ExamWsConnectionTable: !Ref ExamWsConnectionTable
+          TaskPhaseEstimateTable: !Ref TaskPhaseEstimateTable
           WebSocketExecutionGuardTable: !Ref WebSocketExecutionGuardTable
           TestResultBucket: !Ref TestResultBucket
           SecretHash: !Ref SecretHash
@@ -961,6 +982,8 @@ Resources:
             TableName: !Ref WebSocketThrottleTable
         - DynamoDBCrudPolicy:
             TableName: !Ref WebSocketExecutionGuardTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TaskPhaseEstimateTable
         - Statement:
             - Effect: Allow
               Action:
@@ -1091,6 +1114,7 @@ Resources:
           GameSourceTable: !Ref GameSourceTable
           NpcLockTable: !Ref NpcLockTable
           NpcAssignmentTable: !Ref NpcAssignmentTable
+          TaskPhaseEstimateTable: !Ref TaskPhaseEstimateTable
           WebSocketExecutionGuardTable: !Ref WebSocketExecutionGuardTable
           TestResultBucket: !Ref TestResultBucket
           EasterEggSheetId: !Ref EasterEggSheetId
@@ -1224,6 +1248,9 @@ Outputs:
   TaskStateTable:
     Description: "Name of the TaskStateTable (refactored)"
     Value: !Ref TaskStateTable
+  TaskPhaseEstimateTable:
+    Description: "Name of the exact task phase estimate table"
+    Value: !Ref TaskPhaseEstimateTable
   NpcAssignmentTable:
     Description: "Name of the NpcAssignmentTable (refactored)"
     Value: !Ref NpcAssignmentTable

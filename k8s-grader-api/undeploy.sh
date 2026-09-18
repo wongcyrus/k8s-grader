@@ -13,22 +13,23 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 CONFIG_ENV="${SAM_CONFIG_ENV:-default}"
+CONFIG_FILE="${SAM_CONFIG_FILE:-samconfig.dev.toml}"
 AUTO_APPROVE=false
 SKIP_WAIT=false
 
 get_stack_name() {
     if [ "${CONFIG_ENV}" = "default" ]; then
-        grep '^\[default.global.parameters\]' -A 5 samconfig.toml | grep 'stack_name' | head -n 1 | cut -d'"' -f2
+        grep '^\[default.global.parameters\]' -A 5 "${CONFIG_FILE}" | grep 'stack_name' | head -n 1 | cut -d'"' -f2
     else
-        grep "^\[${CONFIG_ENV}\.global.parameters\]" -A 5 samconfig.toml | grep 'stack_name' | head -n 1 | cut -d'"' -f2
+        grep "^\[${CONFIG_ENV}\.global.parameters\]" -A 5 "${CONFIG_FILE}" | grep 'stack_name' | head -n 1 | cut -d'"' -f2
     fi
 }
 
 get_region() {
     if [ "${CONFIG_ENV}" = "default" ]; then
-        grep '^\[default.deploy.parameters\]' -A 10 samconfig.toml | grep 'region' | head -n 1 | cut -d'"' -f2
+        grep '^\[default.deploy.parameters\]' -A 10 "${CONFIG_FILE}" | grep 'region' | head -n 1 | cut -d'"' -f2
     else
-        grep "^\[${CONFIG_ENV}\.deploy.parameters\]" -A 10 samconfig.toml | grep 'region' | head -n 1 | cut -d'"' -f2
+        grep "^\[${CONFIG_ENV}\.deploy.parameters\]" -A 10 "${CONFIG_FILE}" | grep 'region' | head -n 1 | cut -d'"' -f2
     fi
 }
 
@@ -68,10 +69,10 @@ check_prerequisites() {
         exit 1
     fi
 
-    if [ -f "samconfig.toml" ]; then
-        print_success "samconfig.toml found"
+    if [ -f "${CONFIG_FILE}" ]; then
+        print_success "SAM config found: ${CONFIG_FILE}"
     else
-        print_error "samconfig.toml not found. Run this script from k8s-grader-api/"
+        print_error "SAM config not found: ${CONFIG_FILE}"
         exit 1
     fi
 }
@@ -188,7 +189,8 @@ show_help() {
     echo "  --help       Show this help message"
     echo ""
     echo "Environment:"
-    echo "  SAM_CONFIG_ENV=<env>  Use stack/region from samconfig.toml (default: default)"
+    echo "  ENV=dev|prod         Select samconfig.dev.toml or samconfig.prod.toml"
+    echo "  SAM_CONFIG_FILE=<file>  Override the config file path explicitly"
     echo ""
 }
 

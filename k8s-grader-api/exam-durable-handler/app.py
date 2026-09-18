@@ -21,6 +21,7 @@ from common.kubeconfig import session_data_from_access_config
 from common.models.task_manifest import TaskManifest
 from common.models.task_state import TaskStatus
 from common.services.exam_service import ExamService
+from common.services.task_phase_estimate_service import TaskPhaseEstimateService
 from common.services.task_service import TaskService
 from common.status import TestResult
 
@@ -36,6 +37,7 @@ _task_service: Optional[TaskService] = None
 _exam_service: Optional[ExamService] = None
 _dynamodb_resource = None
 execution_guard_repo = ExecutionGuardRepository()
+task_phase_estimate_service = TaskPhaseEstimateService()
 
 
 def get_task_service() -> TaskService:
@@ -91,6 +93,31 @@ def render_template(template: str, session_data: Dict[str, Any]) -> str:
     except Exception as err:
         logger.warning(f"Failed to render template: {err}")
         return template
+
+
+def attach_exact_estimates(
+    response: Dict[str, Any],
+    game: Optional[str],
+    task_id: Optional[str],
+    current_phase_id: Optional[str],
+    manifest: Optional[TaskManifest],
+) -> Dict[str, Any]:
+    if not game or not task_id or manifest is None:
+        return response
+    body = response.get("body")
+    if not isinstance(body, str):
+        return response
+    payload = json.loads(body)
+    payload.update(
+        task_phase_estimate_service.get_estimate_payload(
+            game,
+            task_id,
+            current_phase_id=current_phase_id,
+            manifest=manifest,
+        )
+    )
+    response["body"] = json.dumps(payload, cls=DecimalEncoder)
+    return response
 
 
 def broadcast_exam_update(email: str, exam_code: str, game: str, task_id: str, source_action: str, payload: Dict[str, Any]) -> None:
@@ -170,7 +197,7 @@ def task_started_response(state, manifest) -> Dict[str, Any]:
     task_description = manifest_description if isinstance(manifest_description, str) and manifest_description else phase_message
     phase_message = render_template(phase_message, state.session_data)
     task_description = render_template(task_description, state.session_data)
-    return {
+    response = {
         "statusCode": 200,
         "headers": cors_headers(),
         "body": json.dumps(
@@ -186,6 +213,13 @@ def task_started_response(state, manifest) -> Dict[str, Any]:
             cls=DecimalEncoder,
         ),
     }
+    return attach_exact_estimates(
+        response,
+        getattr(state, "game", None),
+        getattr(state, "task_id", None),
+        getattr(state, "current_phase_id", None),
+        manifest,
+    )
 
 
 def should_auto_chain_exam_phase(phase_id: Optional[str], next_phase_id: Optional[str]) -> bool:
@@ -347,7 +381,7 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
     task_description_src = manifest_description if isinstance(manifest_description, str) and manifest_description else next_phase_message
     task_description = render_template(task_description_src, updated_state.session_data)
 
-    return {
+    response = {
         "statusCode": 200,
         "headers": cors_headers(),
         "body": json.dumps(
@@ -365,6 +399,13 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
             cls=DecimalEncoder,
         ),
     }
+    return attach_exact_estimates(
+        response,
+        getattr(updated_state, "game", None),
+        getattr(updated_state, "task_id", None),
+        getattr(updated_state, "current_phase_id", None),
+        manifest,
+    )
 
 
 def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
@@ -379,7 +420,7 @@ def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
     test_result = result.get("test_result", TestResult.TESTS_FAILED)
     easter_egg = get_easter_egg_link(test_result)
 
-    return {
+    response = {
         "statusCode": 200,
         "headers": cors_headers(),
         "body": json.dumps(
@@ -399,12 +440,19 @@ def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
             cls=DecimalEncoder,
         ),
     }
+    return attach_exact_estimates(
+        response,
+        getattr(updated_state, "game", None),
+        getattr(updated_state, "task_id", None),
+        getattr(updated_state, "current_phase_id", None),
+        manifest,
+    )
 
 
 def task_completed_response(completion_result, report_url) -> Dict[str, Any]:
     state = completion_result["state"]
     easter_egg = get_easter_egg_link(TestResult.OK)
-    return {
+    response = {
         "statusCode": 200,
         "headers": cors_headers(),
         "body": json.dumps(
@@ -420,13 +468,14 @@ def task_completed_response(completion_result, report_url) -> Dict[str, Any]:
             cls=DecimalEncoder,
         ),
     }
+    return response
 
 
 def task_abandoned_response(abandon_result, report_url) -> Dict[str, Any]:
     state = abandon_result["state"]
     reason = abandon_result["reason"]
     easter_egg = get_easter_egg_link(TestResult.TESTS_FAILED)
-    return {
+    response = {
         "statusCode": 200,
         "headers": cors_headers(),
         "body": json.dumps(
@@ -443,6 +492,7 @@ def task_abandoned_response(abandon_result, report_url) -> Dict[str, Any]:
             cls=DecimalEncoder,
         ),
     }
+    return response
 
 
 def handle_exam_start(email: str, exam_code: str, game: Optional[str], task_id: Optional[str]) -> Dict[str, Any]:
@@ -676,6 +726,12 @@ def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id:
                 cls=DecimalEncoder,
             ),
         }
+        if manifest:
+            current_phase_id = state.current_phase_id if state else None
+            if not current_phase_id:
+                first_phase = manifest.get_first_phase()
+                current_phase_id = first_phase.id if first_phase else None
+            response = attach_exact_estimates(response, game, task_id, current_phase_id, manifest)
         response = with_exam_overview(response, email, exam_code, game)
         broadcast_exam_response(email, exam_code, game, task_id, "status", response)
         return response

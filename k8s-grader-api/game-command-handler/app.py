@@ -18,6 +18,7 @@ from common.kubeconfig import session_data_from_access_config
 from common.models.task_manifest import TaskManifest
 from common.models.task_state import TaskStatus
 from common.session import generate_session
+from common.services.task_phase_estimate_service import TaskPhaseEstimateService
 from common.services.task_service import TaskService
 from common.state_machine.task_state_machine import TaskStateMachine
 from common.status import TestResult
@@ -31,6 +32,7 @@ setup_paths()
 
 task_service = TaskService()
 execution_guard_repo = ExecutionGuardRepository()
+task_phase_estimate_service = TaskPhaseEstimateService()
 DOOM_TASK_SOURCE = "doom"
 
 
@@ -322,6 +324,31 @@ def _base_task_payload(state, manifest, *, status: str, message: str, report_url
     }
     if report_url:
         payload["report_url"] = report_url
+    return _attach_exact_estimates(
+        payload,
+        getattr(state, "game", None),
+        getattr(state, "task_id", None),
+        manifest,
+        getattr(state, "current_phase_id", None),
+    )
+
+
+def _attach_exact_estimates(
+    payload: Dict[str, Any],
+    game: Optional[str],
+    task_id: Optional[str],
+    manifest,
+    current_phase_id: Optional[str],
+) -> Dict[str, Any]:
+    if not game or not task_id or manifest is None:
+        return payload
+    estimates = task_phase_estimate_service.get_estimate_payload(
+        game,
+        task_id,
+        current_phase_id=current_phase_id,
+        manifest=manifest,
+    )
+    payload.update(estimates)
     return payload
 
 
@@ -400,7 +427,7 @@ def _phase_failed_payload(result: Dict[str, Any], manifest) -> Dict[str, Any]:
 
 def _task_completed_payload(completion_result: Dict[str, Any], report_url: str) -> Dict[str, Any]:
     state = completion_result["state"]
-    return {
+    payload = {
         "status": "COMPLETED",
         "task_id": state.task_id,
         "message": f"🎉 Task completed! You earned {state.total_points} points!",
@@ -410,12 +437,13 @@ def _task_completed_payload(completion_result: Dict[str, Any], report_url: str) 
         "total_points": state.total_points,
         "next_game_phrase": "",
     }
+    return payload
 
 
 def _task_abandoned_payload(abandon_result: Dict[str, Any], report_url: str) -> Dict[str, Any]:
     state = abandon_result["state"]
     reason = abandon_result["reason"]
-    return {
+    payload = {
         "status": "ABANDONED",
         "task_id": state.task_id,
         "message": f"❌ Task abandoned: {reason}. You can try again with the same NPC.",
@@ -426,6 +454,7 @@ def _task_abandoned_payload(abandon_result: Dict[str, Any], report_url: str) -> 
         "total_points": state.total_points,
         "next_game_phrase": "",
     }
+    return payload
 
 
 def _handle_game_skip(email: str, game: str) -> Dict[str, Any]:
@@ -525,7 +554,7 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
         task_description = manifest.description or "Talk to the NPC to begin."
         rendered_description = _render_template(task_description, session_data)
         first_phase = manifest.get_first_phase()
-        return {
+        payload = {
             "status": "NOT_STARTED",
             "task_id": current_task,
             "message": rendered_description,
@@ -534,6 +563,7 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
             "skipped_tasks": skipped_tasks,
             "next_game_phrase": _phase_hint(first_phase.id if first_phase else None),
         }
+        return _attach_exact_estimates(payload, game, current_task, manifest, first_phase.id if first_phase else None)
 
     manifest = TaskManifest.load(game, current_task)
     _advance_game_answer_phase(state, manifest)
@@ -550,7 +580,7 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
         if current_phase and getattr(current_phase, "description", "")
         else manifest.description or "Continue the task."
     )
-    return {
+    payload = {
         "status": state.status.value.upper() if isinstance(state.status, TaskStatus) else str(state.status).upper(),
         "task_id": current_task,
         "current_phase": state.current_phase_id,
@@ -563,6 +593,7 @@ def _build_game_status_payload(email: str, game: str) -> Dict[str, Any]:
         "progress": state.calculate_progress(manifest),
         "next_game_phrase": _phase_hint(state.current_phase_id),
     }
+    return _attach_exact_estimates(payload, game, current_task, manifest, state.current_phase_id)
 
 
 def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection_id: str) -> Dict[str, Any]:

@@ -8,6 +8,11 @@ const phaseOutput = document.getElementById("phaseOutput");
 const connectionStatus = document.getElementById("connectionStatus");
 const gameLabel = document.getElementById("gameLabel");
 const nextStepOutput = document.getElementById("nextStepOutput");
+const examPhaseEstimateRow = document.getElementById("examPhaseEstimateRow");
+const examPhaseEstimateLabel = document.getElementById("examPhaseEstimateLabel");
+const examTaskEstimateRow = document.getElementById("examTaskEstimateRow");
+const examTaskEstimateTitle = document.getElementById("examTaskEstimateTitle");
+const examTaskEstimateLabel = document.getElementById("examTaskEstimateLabel");
 const buttons = document.querySelectorAll("button[data-action]");
 const examScope = document.getElementById("examScope");
 const examActionButtons = document.querySelectorAll(".exam-action");
@@ -155,6 +160,19 @@ function renderMarkdown(text) {
 
 function writeMarkdown(text, target = questionOutput) {
   target.innerHTML = renderMarkdown(text);
+}
+
+function formatEstimateDuration(seconds) {
+  const totalSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  if (minutes === 0) {
+    return `${remainingSeconds} sec`;
+  }
+  if (remainingSeconds === 0) {
+    return `${minutes} min`;
+  }
+  return `${minutes} min ${remainingSeconds} sec`;
 }
 
 function normalizeTaskStatus(status) {
@@ -709,12 +727,40 @@ function showExamCompletionReport(data = {}) {
     examScoreOutput.textContent = String(data.exam_score);
   }
   phaseOutput.textContent = "Phase: Exam completed";
+  examPhaseEstimateRow.classList.add("hidden");
+  examTaskEstimateRow.classList.add("hidden");
   setNextStep("Exam completed. Review the report below.");
   updateExamButtons();
   updateStateMachineUI();
 }
 
+function updateExamEstimates(json) {
+  const phaseSeconds = Number.isFinite(Number(json?.estimated_phase_seconds)) ? Number(json.estimated_phase_seconds) : null;
+  const remainingSeconds = Number.isFinite(Number(json?.estimated_remaining_task_seconds))
+    ? Number(json.estimated_remaining_task_seconds)
+    : null;
+  const taskSeconds = Number.isFinite(Number(json?.estimated_task_seconds)) ? Number(json.estimated_task_seconds) : null;
+  const taskStatus = String(json?.status || json?.state?.status || "").toUpperCase();
+
+  if (phaseSeconds !== null) {
+    examPhaseEstimateLabel.textContent = formatEstimateDuration(phaseSeconds);
+    examPhaseEstimateRow.classList.remove("hidden");
+  } else {
+    examPhaseEstimateRow.classList.add("hidden");
+  }
+
+  const taskEstimate = remainingSeconds !== null ? remainingSeconds : taskStatus === "NOT_STARTED" ? taskSeconds : null;
+  if (taskEstimate !== null) {
+    examTaskEstimateTitle.textContent = taskStatus === "NOT_STARTED" ? "Task estimate" : "Remaining task time";
+    examTaskEstimateLabel.textContent = formatEstimateDuration(taskEstimate);
+    examTaskEstimateRow.classList.remove("hidden");
+  } else {
+    examTaskEstimateRow.classList.add("hidden");
+  }
+}
+
 function updateExamSummary(json, action) {
+  updateExamEstimates(json);
   if (json.task_description) {
     writeMarkdown(json.task_description, questionOutput);
   }
@@ -860,6 +906,7 @@ function showResponse(text, target = output, action = "") {
       if (Array.isArray(json.remaining_tasks) && json.remaining_tasks.length === 0) {
         showExamCompletionReport(json);
       } else {
+        updateExamEstimates(json);
         connectExamSocket();
       }
     } else if (action === "verify" && json.status === "ERROR") {
@@ -868,6 +915,8 @@ function showResponse(text, target = output, action = "") {
       statusSyncPending = false;
       markOutput.textContent = "0";
       examScoreOutput.textContent = "0";
+      examPhaseEstimateRow.classList.add("hidden");
+      examTaskEstimateRow.classList.add("hidden");
       closeExamSocket();
     }
 
@@ -906,6 +955,7 @@ function showResponse(text, target = output, action = "") {
       phaseOutput.textContent = "Phase: -";
       markOutput.textContent = "0";
       examScoreOutput.textContent = "0";
+      updateExamEstimates(json);
       if (json.message) {
         writeMarkdown(json.message, questionOutput);
       }
@@ -1166,6 +1216,8 @@ resetStateButton.addEventListener("click", () => {
   markOutput.textContent = "0";
   examScoreOutput.textContent = "0";
   phaseOutput.textContent = "Phase: -";
+  examPhaseEstimateRow.classList.add("hidden");
+  examTaskEstimateRow.classList.add("hidden");
   setConnectionStatus("Disconnected");
   examFlowState = "unverified";
   setCurrentPhaseState("setup");
@@ -1177,6 +1229,8 @@ setExamReady(false);
 setConnectionStatus("Disconnected");
 updateExamButtons();
 writeMarkdown("Press Start to load the question.", questionOutput);
+examPhaseEstimateRow.classList.add("hidden");
+examTaskEstimateRow.classList.add("hidden");
 
 const restored = loadState();
 setAuthMethod(restored.authMethod || (restored.endpoint ? "manual" : "kubeconfig"), { persist: false });

@@ -5,6 +5,20 @@
 
 set -e  # Exit on error
 
+DEPLOY_ENV="${ENV:-${DEPLOY_ENV:-dev}}"
+case "$DEPLOY_ENV" in
+    dev|default)
+        CONFIG_FILE="${SAM_CONFIG_FILE:-samconfig.dev.toml}"
+        ;;
+    prod)
+        CONFIG_FILE="${SAM_CONFIG_FILE:-samconfig.prod.toml}"
+        ;;
+    *)
+        echo "Unsupported deploy environment: ${DEPLOY_ENV}. Use dev or prod." >&2
+        exit 1
+        ;;
+esac
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -51,7 +65,7 @@ print_success "Updated timestamps for modified files"
 # Step 3: Build with --use-container flag (ensures clean build)
 print_header "Building with Clean Environment"
 print_info "Running: sam build --use-container"
-sam build --use-container
+sam build --use-container --config-file "$CONFIG_FILE" --config-env default
 
 if [ $? -eq 0 ]; then
     print_success "Build completed successfully"
@@ -63,7 +77,7 @@ fi
 # Step 4: Deploy
 print_header "Deploying to AWS"
 print_info "Running: sam deploy --no-confirm-changeset"
-sam deploy --no-confirm-changeset
+sam deploy --config-file "$CONFIG_FILE" --config-env default --no-confirm-changeset
 
 if [ $? -eq 0 ]; then
     print_success "Deployment completed successfully"
@@ -75,7 +89,7 @@ fi
 # Step 5: Get stack outputs
 print_header "Deployment Complete"
 
-STACK_NAME=$(grep stack_name samconfig.toml | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
+STACK_NAME=$(grep '^\[default.global.parameters\]' -A 5 "$CONFIG_FILE" | grep 'stack_name' | head -n 1 | cut -d'"' -f2 || echo "k8s-grader-api-dev")
 
 print_success "Stack deployed: $STACK_NAME"
 echo ""

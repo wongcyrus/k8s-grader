@@ -7,6 +7,11 @@ const exerciseClientSelect = document.getElementById("exerciseClient");
 const exerciseCompletedTasksLabel = document.getElementById("exerciseCompletedTasksLabel");
 const exerciseSkippedTasksLabel = document.getElementById("exerciseSkippedTasksLabel");
 const exerciseScoreLabel = document.getElementById("exerciseScoreLabel");
+const exercisePhaseEstimateRow = document.getElementById("exercisePhaseEstimateRow");
+const exercisePhaseEstimateLabel = document.getElementById("exercisePhaseEstimateLabel");
+const exerciseTaskEstimateRow = document.getElementById("exerciseTaskEstimateRow");
+const exerciseTaskEstimateLabel = document.getElementById("exerciseTaskEstimateLabel");
+const exerciseTaskEstimateTitle = document.getElementById("exerciseTaskEstimateTitle");
 const resetStateButton = document.getElementById("resetState");
 const buttons = document.querySelectorAll("button[data-action]");
 const authMethodInputs = document.querySelectorAll('input[name="exerciseAuthMethod"]');
@@ -219,6 +224,46 @@ function resetExerciseSummary() {
   exerciseCompletedTasksLabel.textContent = "-";
   exerciseSkippedTasksLabel.textContent = "-";
   exerciseScoreLabel.textContent = "0";
+  exercisePhaseEstimateRow.classList.add("hidden");
+  exerciseTaskEstimateRow.classList.add("hidden");
+}
+
+function formatEstimateDuration(seconds) {
+  const totalSeconds = Math.max(0, Math.round(Number(seconds) || 0));
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainingSeconds = totalSeconds % 60;
+  if (minutes === 0) {
+    return `${remainingSeconds} sec`;
+  }
+  if (remainingSeconds === 0) {
+    return `${minutes} min`;
+  }
+  return `${minutes} min ${remainingSeconds} sec`;
+}
+
+function updateExerciseEstimates(json) {
+  const phaseSeconds = Number.isFinite(Number(json?.estimated_phase_seconds)) ? Number(json.estimated_phase_seconds) : null;
+  const remainingSeconds = Number.isFinite(Number(json?.estimated_remaining_task_seconds))
+    ? Number(json.estimated_remaining_task_seconds)
+    : null;
+  const taskSeconds = Number.isFinite(Number(json?.estimated_task_seconds)) ? Number(json.estimated_task_seconds) : null;
+  const taskStatus = String(json?.status || "").toUpperCase();
+
+  if (phaseSeconds !== null) {
+    exercisePhaseEstimateLabel.textContent = formatEstimateDuration(phaseSeconds);
+    exercisePhaseEstimateRow.classList.remove("hidden");
+  } else {
+    exercisePhaseEstimateRow.classList.add("hidden");
+  }
+
+  const taskEstimate = remainingSeconds !== null ? remainingSeconds : taskStatus === "NOT_STARTED" ? taskSeconds : null;
+  if (taskEstimate !== null) {
+    exerciseTaskEstimateTitle.textContent = taskStatus === "NOT_STARTED" ? "Task estimate" : "Remaining task estimate";
+    exerciseTaskEstimateLabel.textContent = formatEstimateDuration(taskEstimate);
+    exerciseTaskEstimateRow.classList.remove("hidden");
+  } else {
+    exerciseTaskEstimateRow.classList.add("hidden");
+  }
 }
 
 function buildExerciseStatusSummary(json) {
@@ -283,6 +328,7 @@ function updateExerciseSummary(json) {
         ? String(json.total_points)
         : "0";
 
+  updateExerciseEstimates(json);
   write(buildExerciseStatusSummary(json), exerciseOutput);
 }
 

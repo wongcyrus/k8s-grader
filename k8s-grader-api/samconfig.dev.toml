@@ -1,0 +1,35 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "k8s-grader-api-dev"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false
+resolve_s3 = true
+s3_prefix = "k8s-grader-api-dev"
+region = "us-east-1"
+image_repositories = []
+parameter_overrides = "PythonVersion=python3.14 TeacherEmails=\"cywong@vtc.edu.hk,kcheung@vtc.edu.hk,kakaleung@vtc.edu.hk\""
+tags = "Project=\"k8s-grader\" Environment=\"dev\""
+disable_rollback = false
+
+[default.package.parameters]
+resolve_s3 = true
+
+[default.sync.parameters]
+watch = true
+dependency_layer = true
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+
+[default.local_start_lambda.parameters]
+warm_containers = "EAGER"

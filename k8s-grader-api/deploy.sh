@@ -14,21 +14,22 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 CONFIG_ENV="${SAM_CONFIG_ENV:-default}"
+CONFIG_FILE="${SAM_CONFIG_FILE:-samconfig.dev.toml}"
 PYTHON_VERSION_OVERRIDE="${PYTHON_VERSION_OVERRIDE:-python3.14}"
 
 get_stack_name() {
     if [ "${CONFIG_ENV}" = "default" ]; then
-        grep '^\[default.global.parameters\]' -A 5 samconfig.toml | grep 'stack_name' | head -n 1 | cut -d'"' -f2
+        grep '^\[default.global.parameters\]' -A 5 "${CONFIG_FILE}" | grep 'stack_name' | head -n 1 | cut -d'"' -f2
     else
-        grep "^\[${CONFIG_ENV}\.global.parameters\]" -A 5 samconfig.toml | grep 'stack_name' | head -n 1 | cut -d'"' -f2
+        grep "^\[${CONFIG_ENV}\.global.parameters\]" -A 5 "${CONFIG_FILE}" | grep 'stack_name' | head -n 1 | cut -d'"' -f2
     fi
 }
 
 get_region() {
     if [ "${CONFIG_ENV}" = "default" ]; then
-        grep '^\[default.deploy.parameters\]' -A 10 samconfig.toml | grep 'region' | head -n 1 | cut -d'"' -f2
+        grep '^\[default.deploy.parameters\]' -A 10 "${CONFIG_FILE}" | grep 'region' | head -n 1 | cut -d'"' -f2
     else
-        grep "^\[${CONFIG_ENV}\.deploy.parameters\]" -A 10 samconfig.toml | grep 'region' | head -n 1 | cut -d'"' -f2
+        grep "^\[${CONFIG_ENV}\.deploy.parameters\]" -A 10 "${CONFIG_FILE}" | grep 'region' | head -n 1 | cut -d'"' -f2
     fi
 }
 
@@ -36,9 +37,9 @@ get_teacher_emails() {
     local block
     local line
     if [ "${CONFIG_ENV}" = "default" ]; then
-        block=$(grep '^\[default.deploy.parameters\]' -A 20 samconfig.toml)
+        block=$(grep '^\[default.deploy.parameters\]' -A 20 "${CONFIG_FILE}")
     else
-        block=$(grep "^\[${CONFIG_ENV}\.deploy.parameters\]" -A 20 samconfig.toml)
+        block=$(grep "^\[${CONFIG_ENV}\.deploy.parameters\]" -A 20 "${CONFIG_FILE}")
     fi
 
     line=$(printf '%s\n' "$block" | grep 'parameter_overrides' | head -n 1 || true)
@@ -127,6 +128,13 @@ check_prerequisites() {
         print_error "Docker not found. Containerized SAM builds require Docker."
         exit 1
     fi
+
+    if [ -f "${CONFIG_FILE}" ]; then
+        print_success "SAM config found: ${CONFIG_FILE}"
+    else
+        print_error "SAM config file not found: ${CONFIG_FILE}"
+        exit 1
+    fi
 }
 
 # Run tests
@@ -164,7 +172,7 @@ build() {
     print_header "Building Application"
     
     print_info "Running sam build --use-container..."
-    if sam build --use-container --config-env "${CONFIG_ENV}"; then
+    if sam build --use-container --config-file "${CONFIG_FILE}" --config-env "${CONFIG_ENV}"; then
         print_success "Build completed successfully"
     else
         print_error "Build failed"
@@ -242,6 +250,63 @@ seed_game_source_table() {
         --item "{\"game\":{\"S\":\"game01\"},\"source\":{\"S\":\"${GAME_SOURCE_URI}\"}}"
 
     print_success "Game source table seeded for game01"
+}
+
+import_task_phase_estimates() {
+    print_header "Importing Task Phase Estimates"
+
+    local stack_name region table_name game_rule_repo python_cmd
+    local -a candidate_csvs available_csvs import_cmd
+
+    stack_name="$(get_stack_name || echo "k8s-grader-api-dev")"
+    region="$(get_region || echo "us-east-1")"
+    game_rule_repo="$(cd ../../k8s-game-rule && pwd)"
+
+    table_name=$(aws cloudformation describe-stacks \
+        --stack-name "$stack_name" \
+        --region "$region" \
+        --query 'Stacks[0].Outputs[?OutputKey==`TaskPhaseEstimateTable`].OutputValue' \
+        --output text \
+        --no-cli-pager)
+
+    if [ -z "$table_name" ] || [ "$table_name" = "None" ]; then
+        print_error "TaskPhaseEstimateTable output not found"
+        exit 1
+    fi
+
+    candidate_csvs=(
+        "${game_rule_repo}/.artifacts/minikube-fresh-runs/20260802-083417/aggregate-phase-summary.csv"
+        "${game_rule_repo}/.artifacts/minikube-fresh-runs/20260801-225527/aggregate-phase-summary.csv"
+        "${game_rule_repo}/.artifacts/minikube-fresh-runs/20260801-161620/aggregate-phase-summary.csv"
+    )
+
+    for csv_path in "${candidate_csvs[@]}"; do
+        if [ -f "$csv_path" ]; then
+            available_csvs+=("$csv_path")
+        fi
+    done
+
+    if [ ${#available_csvs[@]} -eq 0 ]; then
+        print_info "No aggregate-phase-summary.csv files found, skipping estimate import"
+        return 0
+    fi
+
+    if [ -x "./venv/bin/python" ]; then
+        python_cmd="./venv/bin/python"
+    else
+        python_cmd="python3"
+    fi
+
+    import_cmd=(
+        "$python_cmd"
+        scripts/import_task_phase_estimates.py
+        --table-name "$table_name"
+    )
+    import_cmd+=("${available_csvs[@]}")
+
+    print_info "Importing exact phase timings into ${table_name}"
+    "${import_cmd[@]}"
+    print_success "Task phase estimates imported"
 }
 
 deploy_exam_website() {
@@ -424,10 +489,10 @@ deploy() {
 
     if [ "${guided_flag}" == "--guided" ]; then
         print_info "Running guided deployment..."
-        sam deploy --guided --config-env "${CONFIG_ENV}" --parameter-overrides "${parameter_overrides[@]}" --no-fail-on-empty-changeset
+        sam deploy --guided --config-file "${CONFIG_FILE}" --config-env "${CONFIG_ENV}" --parameter-overrides "${parameter_overrides[@]}" --no-fail-on-empty-changeset
     else
         print_info "Deploying with saved configuration (${CONFIG_ENV})..."
-        sam deploy --config-env "${CONFIG_ENV}" --parameter-overrides "${parameter_overrides[@]}" --no-fail-on-empty-changeset
+        sam deploy --config-file "${CONFIG_FILE}" --config-env "${CONFIG_ENV}" --parameter-overrides "${parameter_overrides[@]}" --no-fail-on-empty-changeset
     fi
     
     if [ $? -eq 0 ]; then
@@ -573,6 +638,10 @@ main() {
                 echo ""
                 echo "Usage: ./deploy.sh [OPTIONS]"
                 echo ""
+                echo "Environment selection:"
+                echo "  ENV=dev  ./deploy.sh    # uses samconfig.dev.toml"
+                echo "  ENV=prod ./deploy.sh    # uses samconfig.prod.toml"
+                echo ""
                 echo "Options:"
                 echo "  --guided              Run guided deployment (first time)"
                 echo "  --skip-tests          Skip running unit tests"
@@ -588,6 +657,11 @@ main() {
                 echo "    • Auto-generate encrypted API key"
                 echo "    • Run all tests"
                 echo "    • Clean up all test data"
+                echo ""
+                echo "Timing Estimates:"
+                echo "  If fresh Minikube aggregate-phase-summary.csv artifacts exist under"
+                echo "  ../../k8s-game-rule/.artifacts/minikube-fresh-runs/, exact task"
+                echo "  phase timings will be imported automatically after deploy."
                 echo ""
                 echo "  No manual API key setup required!"
                 echo ""
@@ -626,6 +700,7 @@ main() {
 
     prepare_game_source
     seed_game_source_table
+    import_task_phase_estimates
     deploy_exam_website
     
     get_outputs

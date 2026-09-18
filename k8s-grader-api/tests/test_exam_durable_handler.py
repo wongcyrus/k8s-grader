@@ -228,6 +228,32 @@ def test_phase_failed_response_uses_updated_result_state():
     assert body["test_result"] == "TIME_OUT"
 
 
+def test_task_started_response_includes_exact_estimates_when_present():
+    module = load_module()
+    state = SimpleNamespace(
+        game="game02",
+        task_id="087_task",
+        current_phase_id="challenge",
+        session_data={},
+    )
+    manifest = SimpleNamespace(
+        description="Task description",
+        get_phase=lambda phase_id: SimpleNamespace(name="Challenge", description="Do it"),
+    )
+
+    with patch.object(module.task_phase_estimate_service, "get_estimate_payload", return_value={
+        "estimated_phase_seconds": 45.0,
+        "estimated_remaining_task_seconds": 90.0,
+        "estimated_task_seconds": 120.0,
+    }):
+        response = module.task_started_response(state, manifest)
+
+    body = json.loads(response["body"])
+    assert body["estimated_phase_seconds"] == 45.0
+    assert body["estimated_remaining_task_seconds"] == 90.0
+    assert body["estimated_task_seconds"] == 120.0
+
+
 class FakePhase:
     def __init__(self, phase_id, name, description, *, required=True, auto_run=False, count_attempts=False, max_attempts=3, points=0):
         self.id = phase_id

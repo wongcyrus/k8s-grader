@@ -5,6 +5,7 @@ import time
 import boto3
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from boto3.dynamodb.conditions import Key, Attr
 import logging
 from urllib.parse import urlsplit, urlunsplit
@@ -895,6 +896,87 @@ class TestRecordRepository:
             return response.get('Items', [])
         except Exception as e:
             logger.error(f"Failed to list test records: {e}")
+            return []
+
+
+class TaskPhaseEstimateRepository:
+    """Repository for exact task and phase timing estimates."""
+
+    def __init__(self, table_name: Optional[str] = None):
+        self.table_name = table_name or os.getenv('TaskPhaseEstimateTable', 'TaskPhaseEstimateTable')
+        self._table = None
+
+    @property
+    def table(self):
+        if self._table is None:
+            dynamodb = _get_dynamodb_resource()
+            self._table = dynamodb.Table(self.table_name)
+        return self._table
+
+    @staticmethod
+    def _deserialize_item(item: Dict[str, Any]) -> Dict[str, Any]:
+        duration = item.get("durationSeconds")
+        if isinstance(duration, Decimal):
+            item = dict(item)
+            item["durationSeconds"] = float(duration)
+        sample_count = item.get("sampleCount")
+        if isinstance(sample_count, Decimal):
+            item = dict(item)
+            item["sampleCount"] = int(sample_count)
+        return item
+
+    def save(
+        self,
+        game: str,
+        task_id: str,
+        phase: str,
+        duration_seconds: float,
+        *,
+        updated_at: Optional[str] = None,
+        source_run_id: str = "",
+        source_type: str = "fresh-minikube",
+        sample_count: int = 1,
+    ) -> bool:
+        try:
+            item = {
+                "gameTask": f"{game}#{task_id}",
+                "phase": phase,
+                "durationSeconds": Decimal(str(round(duration_seconds, 2))),
+                "updatedAt": updated_at or datetime.now(timezone.utc).isoformat(),
+                "sourceRunId": source_run_id,
+                "sourceType": source_type,
+                "sampleCount": sample_count,
+            }
+            self.table.put_item(Item=item)
+            logger.info("Saved phase estimate for %s %s %s", game, task_id, phase)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save task phase estimate: {e}")
+            return False
+
+    def get(self, game: str, task_id: str, phase: str) -> Optional[Dict[str, Any]]:
+        try:
+            response = self.table.get_item(
+                Key={
+                    "gameTask": f"{game}#{task_id}",
+                    "phase": phase,
+                }
+            )
+            item = response.get("Item")
+            return self._deserialize_item(item) if item else None
+        except Exception as e:
+            logger.error(f"Failed to get task phase estimate: {e}")
+            return None
+
+    def list_by_task(self, game: str, task_id: str) -> List[Dict[str, Any]]:
+        try:
+            response = self.table.query(
+                KeyConditionExpression=Key("gameTask").eq(f"{game}#{task_id}")
+            )
+            items = response.get("Items", [])
+            return [self._deserialize_item(item) for item in items]
+        except Exception as e:
+            logger.error(f"Failed to list task phase estimates: {e}")
             return []
 
 

@@ -139,3 +139,21 @@ When adding new tools:
 - [k8s-grader-api/README.md](../k8s-grader-api/README.md) - Main API documentation
 - [k8s-grader-api/DEPLOYMENT_GUIDE.md](../k8s-grader-api/DEPLOYMENT_GUIDE.md) - Deployment guide
 - [k8s-grader-api/DATABASE_GUIDE.md](../k8s-grader-api/DATABASE_GUIDE.md) - Database structure
+
+### 3. generate_api_keys.py
+
+Generate or retrieve API keys for a class list. The input file contains one email
+address per line; blank lines and lines beginning with `#` are ignored.
+
+```bash
+source venv/bin/activate
+python tools/generate_api_keys.py students.txt \
+  --output student-api-keys.csv \
+  --stack-name k8s-grader-api-dev \
+  --region us-east-1
+```
+
+The output CSV has `email` and `api_key` columns and is written with owner-only
+permissions (`0600`). Treat it as sensitive and distribute each key only to its
+corresponding student. Re-running the command returns the existing key for each
+email instead of creating another one.

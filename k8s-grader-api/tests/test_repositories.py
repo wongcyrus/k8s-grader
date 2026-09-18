@@ -7,6 +7,7 @@ from common.database.repositories import (
     ExecutionGuardRepository,
     NpcRepository,
     RequestThrottleRepository,
+    TaskPhaseEstimateRepository,
     TaskStateRepository,
     normalize_endpoint,
 )
@@ -233,14 +234,44 @@ class TestNpcRepository:
         # Initially no assignment
         npc = repo.get_assigned_npc("user@test.com", "game01")
         assert npc is None
-        
+
         # Assign task
         success = repo.assign_task("user@test.com", "game01", "npc1", "01_task")
         assert success is True
-        
+
         # Get assigned NPC
         npc = repo.get_assigned_npc("user@test.com", "game01")
         assert npc == "npc1"
+
+
+class TestTaskPhaseEstimateRepository:
+    """Test exact task phase timing estimates."""
+
+    def test_save_and_get(self, dynamodb_tables):
+        repo = TaskPhaseEstimateRepository()
+
+        assert repo.save("game02", "070_projected_volumes_beginner", "check", 22.03, source_run_id="20260802-083417")
+
+        item = repo.get("game02", "070_projected_volumes_beginner", "check")
+
+        assert item is not None
+        assert item["gameTask"] == "game02#070_projected_volumes_beginner"
+        assert item["phase"] == "check"
+        assert item["durationSeconds"] == pytest.approx(22.03)
+        assert item["sourceRunId"] == "20260802-083417"
+
+    def test_list_by_task(self, dynamodb_tables):
+        repo = TaskPhaseEstimateRepository()
+
+        repo.save("game02", "070_projected_volumes_beginner", "setup", 1.0)
+        repo.save("game02", "070_projected_volumes_beginner", "check", 22.03)
+        repo.save("game02", "087_kustomize_configuration", "check", 0.98)
+
+        rows = repo.list_by_task("game02", "070_projected_volumes_beginner")
+
+        by_phase = {row["phase"]: row["durationSeconds"] for row in rows}
+        assert by_phase["setup"] == pytest.approx(1.0)
+        assert by_phase["check"] == pytest.approx(22.03)
     
     def test_clear_assignment(self, dynamodb_tables):
         """Test clearing assignment"""

@@ -268,6 +268,31 @@ def test_status_action_returns_completed_when_all_tasks_finished():
     assert payload["skipped_tasks"] == ["03_task"]
 
 
+def test_status_payload_includes_exact_estimates_when_present():
+    module = load_module()
+    state = _state("01_task", "challenge", total_points=9)
+    state.game = "game01"
+    manifest = FakeManifest()
+
+    with patch.object(module, "task_service") as mock_task_service, \
+         patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module.task_phase_estimate_service, "get_estimate_payload", return_value={
+             "estimated_phase_seconds": 21.37,
+             "estimated_remaining_task_seconds": 22.83,
+             "estimated_task_seconds": 54.2,
+         }):
+        mock_task_service.get_total_score.return_value = 9
+        mock_task_service.get_completed_tasks.return_value = ["01_task", "02_task"]
+        mock_task_service.get_skipped_tasks.return_value = ["03_task"]
+        mock_task_service.get_current_task.return_value = "03_task"
+        mock_task_service.task_repo.get.return_value = state
+        payload = module._build_game_status_payload("student@example.com", "game01")
+
+    assert payload["estimated_phase_seconds"] == 21.37
+    assert payload["estimated_remaining_task_seconds"] == 22.83
+    assert payload["estimated_task_seconds"] == 54.2
+
+
 def test_status_action_renders_not_started_manifest_with_generated_session():
     module = load_module()
     manifest = FakeManifest()
