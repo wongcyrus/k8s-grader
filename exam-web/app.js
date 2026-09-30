@@ -680,8 +680,19 @@ exerciseGameSelect.addEventListener("change", (e) => {
   write("Choose a game, open it from the portal, then use Check Total Score.", exerciseOutput);
 });
 
+function updateExerciseClientCredit() {
+  const creditEl = document.getElementById("exerciseHkzeroCredit");
+  if (!creditEl) return;
+  if (exerciseClientSelect.value === "hkzero") {
+    creditEl.classList.remove("hidden");
+  } else {
+    creditEl.classList.add("hidden");
+  }
+}
+
 exerciseClientSelect.addEventListener("change", (e) => {
   saveState({ exerciseClient: e.target.value });
+  updateExerciseClientCredit();
 });
 
 resetStateButton.addEventListener("click", () => {
@@ -704,6 +715,7 @@ resetStateButton.addEventListener("click", () => {
   setAuthMethod("kubeconfig", { persist: false });
   setExerciseGameOptions(getExerciseGamesFromDom());
   exerciseClientSelect.value = "doom";
+  updateExerciseClientCredit();
   resetExerciseSummary();
   write("Ready.", setupOutput);
   write("Choose a game, open it from the portal, then use Check Total Score.", exerciseOutput);
@@ -723,6 +735,7 @@ if (restored.endpoint) {
 if (restored.exerciseClient) {
   exerciseClientSelect.value = restored.exerciseClient;
 }
+updateExerciseClientCredit();
 if (restored.accountReady) {
   k8sAccountReady = true;
 }
