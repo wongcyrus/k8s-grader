@@ -22,6 +22,7 @@ const BASE_URL = APP_CONFIG.baseUrl || "";
 const GAME_WS_URL = APP_CONFIG.gameWsUrl || "";
 const PORTAL_RPG_PATH = "./game/index.html";
 const PORTAL_DOOM_PATH = "./doom/";
+const PORTAL_HKZERO_PATH = "./hkzero/";
 const STORAGE_KEY = "k8s-student-portal-state-v1";
 const DEFAULT_EXERCISE_GAMES = Array.isArray(APP_CONFIG.exerciseGames) ? APP_CONFIG.exerciseGames : [];
 
@@ -205,12 +206,17 @@ function clearState() {
 }
 
 function exerciseClientUrl(game, client) {
-  const path = client === "rpg" ? PORTAL_RPG_PATH : PORTAL_DOOM_PATH;
+  let path = PORTAL_DOOM_PATH;
+  if (client === "rpg") {
+    path = PORTAL_RPG_PATH;
+  } else if (client === "hkzero") {
+    path = PORTAL_HKZERO_PATH;
+  }
   const url = new URL(path, window.location.href);
   if (game) {
     url.searchParams.set("game", game);
   }
-  if (client === "doom") {
+  if (client === "doom" || client === "hkzero") {
     url.searchParams.set("wsUrl", GAME_WS_URL);
   }
   return url.toString();

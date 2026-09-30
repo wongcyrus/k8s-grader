@@ -313,13 +313,14 @@ deploy_exam_website() {
     print_header "Deploying Student Portal"
 
     local stack_name region exam_web_dir game_web_dir doom_web_dir doom_dist_dir bucket website_url
-    local base_url game_ws_url exam_ws_url config_path distribution_id
+    local base_url game_ws_url exam_ws_url config_path distribution_id hkzero_web_dir
     stack_name="$(get_stack_name || echo "k8s-grader-api-dev")"
     region="$(get_region || echo "us-east-1")"
     exam_web_dir="$(cd ../exam-web && pwd)"
     game_web_dir="$(cd ../../k8s-isekai && pwd)"
     doom_web_dir="$(cd ../../doom.ts && pwd)"
     doom_dist_dir="${doom_web_dir}/dist"
+    hkzero_web_dir="$(cd ../../hkzero && pwd)"
     config_path="${exam_web_dir}/config.js"
 
     if [ ! -d "$exam_web_dir" ]; then
@@ -395,7 +396,7 @@ EOF
     trap "rm -f '$config_path'" RETURN
 
     print_info "Uploading student portal files to s3://${bucket}"
-    aws s3 sync "$exam_web_dir" "s3://${bucket}" --delete --exclude "game/*" --exclude "doom/*" --no-cli-pager >/dev/null
+    aws s3 sync "$exam_web_dir" "s3://${bucket}" --delete --exclude "game/*" --exclude "doom/*" --exclude "hkzero/*" --no-cli-pager >/dev/null
     print_success "Student portal uploaded"
 
     print_info "Uploading RPG game files to s3://${bucket}/game"
@@ -427,6 +428,15 @@ EOF
     print_info "Uploading Doom web files to s3://${bucket}/doom"
     aws s3 sync "$doom_dist_dir" "s3://${bucket}/doom" --delete --no-cli-pager >/dev/null
     print_success "Doom web uploaded"
+
+    if [ -d "$hkzero_web_dir" ]; then
+        print_info "Uploading Hong Kong Zero web files to s3://${bucket}/hkzero"
+        aws s3 sync "$hkzero_web_dir" "s3://${bucket}/hkzero" \
+            --delete \
+            --exclude ".git/*" \
+            --no-cli-pager >/dev/null
+        print_success "Hong Kong Zero uploaded"
+    fi
 
     distribution_id=$(aws cloudformation describe-stack-resources \
         --stack-name "$stack_name" \
