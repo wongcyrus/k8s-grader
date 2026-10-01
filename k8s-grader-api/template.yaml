@@ -69,6 +69,17 @@ Resources:
               - s3:GetObject
             Resource: !Sub "arn:aws:s3:::${ExamWebsiteBucket}/*"
 
+  HkzeroAssetsResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "${AWS::StackName}-hkzero-assets-cache"
+        CustomHeadersConfig:
+          Items:
+            - Header: Cache-Control
+              Value: "public, max-age=86400"
+              Override: true
+
   ExamWebsiteCloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -102,6 +113,24 @@ Resources:
               Forward: none
           TargetOriginId: ExamWebsiteS3WebsiteOrigin
           ViewerProtocolPolicy: redirect-to-https
+        CacheBehaviors:
+          - PathPattern: /hkzero/assets/*
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            Compress: true
+            ForwardedValues:
+              QueryString: false
+              Cookies:
+                Forward: none
+            ResponseHeadersPolicyId: !Ref HkzeroAssetsResponseHeadersPolicy
+            TargetOriginId: ExamWebsiteS3WebsiteOrigin
+            ViewerProtocolPolicy: redirect-to-https
         CustomErrorResponses:
           - ErrorCode: 403
             ResponseCode: 200
