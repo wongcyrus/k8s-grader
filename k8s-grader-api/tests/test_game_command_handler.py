@@ -406,7 +406,7 @@ def test_talk_action_maps_missing_account_to_player_message():
     assert result == {"status": "ERROR", "message": "Please save your Kubernetes account first."}
 
 
-def test_talk_action_accepts_doom_without_npc_background():
+def test_talk_action_accepts_hkzero_without_npc_background():
     module = load_module()
 
     with patch.object(module, "task_service") as mock_task_service, \
@@ -418,7 +418,7 @@ def test_talk_action_accepts_doom_without_npc_background():
             "talk",
             "student@example.com",
             "game01",
-            module.DOOM_TASK_SOURCE,
+            module.HKZERO_TASK_SOURCE,
             "https://example.execute-api.us-east-1.amazonaws.com/Prod",
             "conn-1",
         )

@@ -462,6 +462,10 @@ EOF
             /doom \
             /doom/ \
             /doom/index.html \
+            /hkzero \
+            /hkzero/ \
+            /hkzero/index.html \
+            '/hkzero/k8s-bridge.js*' \
             --no-cli-pager >/dev/null
         print_success "CloudFront invalidation requested"
     fi
@@ -625,6 +629,7 @@ main() {
     SKIP_TESTS=false
     SKIP_BUILD=false
     SKIP_INTEGRATION=false
+    IMPORT_ESTIMATES=false
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -644,6 +649,10 @@ main() {
                 SKIP_INTEGRATION=true
                 shift
                 ;;
+            --import-estimates)
+                IMPORT_ESTIMATES=true
+                shift
+                ;;
             --help)
                 echo ""
                 echo "Usage: ./deploy.sh [OPTIONS]"
@@ -657,6 +666,7 @@ main() {
                 echo "  --skip-tests          Skip running unit tests"
                 echo "  --skip-build          Skip build step (use existing build)"
                 echo "  --skip-integration    Skip self-contained integration tests"
+                echo "  --import-estimates    Import Minikube task phase timing benchmarks"
                 echo "  --help                Show this help message"
                 echo ""
                 echo "Integration Tests:"
@@ -669,9 +679,9 @@ main() {
                 echo "    • Clean up all test data"
                 echo ""
                 echo "Timing Estimates:"
-                echo "  If fresh Minikube aggregate-phase-summary.csv artifacts exist under"
-                echo "  ../../k8s-game-rule/.artifacts/minikube-fresh-runs/, exact task"
-                echo "  phase timings will be imported automatically after deploy."
+                echo "  Timing estimates are optional and do not affect task execution."
+                echo "  Use --import-estimates to import fresh Minikube"
+                echo "  aggregate-phase-summary.csv benchmark artifacts."
                 echo ""
                 echo "  No manual API key setup required!"
                 echo ""
@@ -710,7 +720,11 @@ main() {
 
     prepare_game_source
     seed_game_source_table
-    import_task_phase_estimates
+    if [ "$IMPORT_ESTIMATES" = true ]; then
+        import_task_phase_estimates
+    else
+        print_info "Skipping optional task phase estimate import"
+    fi
     deploy_exam_website
     
     get_outputs

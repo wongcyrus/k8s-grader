@@ -22,6 +22,11 @@ from common.services.task_phase_estimate_service import TaskPhaseEstimateService
 from common.services.task_service import TaskService
 from common.state_machine.task_state_machine import TaskStateMachine
 from common.status import TestResult
+from common.task_sources import (
+    DOOM_TASK_SOURCE,
+    HKZERO_TASK_SOURCE,
+    is_interactive_task_source,
+)
 
 
 logging.setLogRecordFactory(logging.LogRecord)
@@ -33,7 +38,6 @@ setup_paths()
 task_service = TaskService()
 execution_guard_repo = ExecutionGuardRepository()
 task_phase_estimate_service = TaskPhaseEstimateService()
-DOOM_TASK_SOURCE = "doom"
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -601,10 +605,10 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
         return _error_payload("Missing required websocket parameters")
     if not game.isalnum():
         return _error_payload("Game parameter must be alphanumeric")
-    if npc != DOOM_TASK_SOURCE and not get_npc_background(npc):
+    if not is_interactive_task_source(npc) and not get_npc_background(npc):
         return _error_payload(f"NPC '{npc}' not found")
 
-    if npc != DOOM_TASK_SOURCE:
+    if not is_interactive_task_source(npc):
         can_access, error = task_service.validate_npc_access(email, game, npc)
         if not can_access:
             return _error_payload(error)
@@ -649,7 +653,7 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
     if state.status == TaskStatus.COMPLETED:
         return _task_completed_payload({"state": state}, state.get_phase_state(state.current_phase_id).report_url if state.current_phase_id else "")
 
-    if npc == DOOM_TASK_SOURCE:
+    if is_interactive_task_source(npc):
         return _handle_doom_talk(email, game, current_task, endpoint, connection_id, state, manifest)
 
     while True:

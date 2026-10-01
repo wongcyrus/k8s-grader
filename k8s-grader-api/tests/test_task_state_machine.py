@@ -89,9 +89,10 @@ class TestTaskStateMachine:
         assert can_execute is False
         assert "Must complete phase 'setup' first" in error
 
-    def test_can_execute_phase_ignores_max_attempts_for_doom(self, sample_manifest, in_progress_task_state):
-        """Test Doom tasks can still retry after the normal max-attempt threshold."""
-        in_progress_task_state.npc = "doom"
+    @pytest.mark.parametrize("source", ["doom", "hkzero"])
+    def test_can_execute_phase_ignores_max_attempts_for_interactive_client(self, sample_manifest, in_progress_task_state, source):
+        """Test interactive client tasks can retry after the normal max-attempt threshold."""
+        in_progress_task_state.npc = source
         in_progress_task_state.phase_states["setup"] = PhaseState("setup", PhaseStatus.FAILED, attempts=3)
 
         sm = TaskStateMachine(sample_manifest, in_progress_task_state)
@@ -147,9 +148,10 @@ class TestTaskStateMachine:
         can_execute, _ = sm.can_execute_phase("challenge")
         assert can_execute is True
 
-    def test_execute_phase_failure_does_not_increment_attempts_for_doom(self, sample_manifest, in_progress_task_state):
-        """Test Doom task failures remain retryable without consuming attempts."""
-        in_progress_task_state.npc = "doom"
+    @pytest.mark.parametrize("source", ["doom", "hkzero"])
+    def test_execute_phase_failure_does_not_increment_attempts_for_interactive_client(self, sample_manifest, in_progress_task_state, source):
+        """Test interactive client failures remain retryable without consuming attempts."""
+        in_progress_task_state.npc = source
         sm = TaskStateMachine(sample_manifest, in_progress_task_state)
 
         success, error = sm.execute_phase("setup", TestResult.TESTS_FAILED, "https://report.url")

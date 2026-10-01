@@ -3,6 +3,8 @@
 from typing import Optional, Tuple
 import logging
 
+from common.task_sources import is_interactive_task_source
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,7 +29,9 @@ class TaskStateMachine:
 
     def _counts_attempts(self, phase) -> bool:
         """Return whether failures for this phase should consume attempts."""
-        return phase.count_attempts and getattr(self.state, "npc", None) != "doom"
+        return phase.count_attempts and not is_interactive_task_source(
+            getattr(self.state, "npc", None)
+        )
     
     def start_task(self) -> Tuple[bool, Optional[str]]:
         """

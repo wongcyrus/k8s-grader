@@ -10,9 +10,9 @@ from common.database.repositories import TaskStateRepository, NpcRepository
 from common.services.test_runner import TestRunner
 from common.session import generate_session
 from common.status import TestResult
+from common.task_sources import is_interactive_task_source
 
 logger = logging.getLogger(__name__)
-DOOM_TASK_SOURCE = "doom"
 
 
 class TaskService:
@@ -576,7 +576,7 @@ class TaskService:
         Returns:
             Tuple of (can_access, error_message)
         """
-        if npc == DOOM_TASK_SOURCE:
+        if is_interactive_task_source(npc):
             return True, None
 
         # Check NPC lock
