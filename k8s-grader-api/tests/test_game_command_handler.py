@@ -172,6 +172,7 @@ def test_lambda_handler_routes_through_context_and_broadcasts():
         "",
         "https://example.execute-api.us-east-1.amazonaws.com/Prod",
         "conn-1",
+        "",
     )
     assert context.calls == [{"status": "NOT_STARTED"}]
     mock_push.assert_called_once_with(
@@ -181,6 +182,54 @@ def test_lambda_handler_routes_through_context_and_broadcasts():
         {"status": "NOT_STARTED"},
     )
     assert result["statusCode"] == 200
+
+
+def test_accessible_start_dispatches_selected_task_without_npc():
+    module = load_module()
+
+    with patch.object(module, "_handle_accessible_start", return_value={"status": "STARTED"}) as mock_start:
+        result = module.execute_game_command(
+            "accessible-start",
+            "student@example.com",
+            "game02",
+            "",
+            "https://example",
+            "conn-1",
+            "task_01",
+        )
+
+    mock_start.assert_called_once_with("student@example.com", "game02", "task_01")
+    assert result == {"status": "STARTED"}
+
+
+def test_accessible_task_catalog_is_available_only_in_game02_exercise_mode():
+    module = load_module()
+    with patch.object(module.game_access_repo, "get_mode", return_value="exam"), \
+         patch("common.pytest.get_tasks") as mock_get_tasks:
+        result = module._accessible_task_catalog("student@example.com", "game02")
+
+    assert result["status"] == "ERROR"
+    mock_get_tasks.assert_not_called()
+
+
+def test_accessible_task_catalog_returns_exercise_task_metadata():
+    module = load_module()
+    manifest = FakeManifest()
+    with patch.object(module.game_access_repo, "get_mode", return_value="exercise"), \
+         patch("common.pytest.get_tasks", return_value=["task_01"]), \
+         patch.object(module.task_service.task_repo, "list_by_game", return_value=[]), \
+         patch.object(module.TaskManifest, "load", return_value=manifest):
+        result = module._accessible_task_catalog("student@example.com", "game02")
+
+    assert result["status"] == "TASK_LIST"
+    assert result["tasks"] == [{
+        "task_id": "task_01",
+        "description": "Solve {{ target }}",
+        "status": "not_started",
+        "current_phase": None,
+        "progress": 0.0,
+        "total_points": 0,
+    }]
 
 
 def test_lambda_handler_releases_execution_guard():

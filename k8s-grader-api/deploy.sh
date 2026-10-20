@@ -397,6 +397,8 @@ EOF
 
     print_info "Uploading student portal files to s3://${bucket}"
     aws s3 sync "$exam_web_dir" "s3://${bucket}" --delete --exclude "game/*" --exclude "doom/*" --exclude "hkzero/*" --no-cli-pager >/dev/null
+    aws s3 cp "${exam_web_dir}/accessible-exercise.html" "s3://${bucket}/accessible-exercise.html" --content-type text/html --cache-control no-cache --no-cli-pager >/dev/null
+    aws s3 cp "${exam_web_dir}/accessible-exercise.js" "s3://${bucket}/accessible-exercise.js" --content-type application/javascript --cache-control no-cache --no-cli-pager >/dev/null
     print_success "Student portal uploaded"
 
     print_info "Uploading RPG game files to s3://${bucket}/game"
@@ -456,6 +458,8 @@ EOF
             /app.js \
             /exam.html \
             /exam.js \
+            /accessible-exercise.html \
+            /accessible-exercise.js \
             /teacher.html \
             /teacher.js \
             /styles.css \
@@ -494,11 +498,15 @@ deploy() {
     local guided_flag="${1:-}"
     local parameter_overrides=("PythonVersion=${PYTHON_VERSION_OVERRIDE}")
     local teacher_emails="${TEACHER_EMAILS_OVERRIDE:-$(get_teacher_emails)}"
+    local accessible_exercise_emails="${ACCESSIBLE_EXERCISE_EMAILS:-}"
     if [ -n "${SECRET_HASH_OVERRIDE:-}" ]; then
         parameter_overrides+=("SecretHash=${SECRET_HASH_OVERRIDE}")
     fi
     if [ -n "${teacher_emails}" ]; then
         parameter_overrides+=("TeacherEmails=${teacher_emails}")
+    fi
+    if [ -n "${accessible_exercise_emails}" ]; then
+        parameter_overrides+=("AccessibleExerciseEmails=${accessible_exercise_emails}")
     fi
 
     if [ "${guided_flag}" == "--guided" ]; then

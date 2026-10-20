@@ -3,6 +3,19 @@
 ## Overview
 This guide walks through deploying the refactored K8s Grader API to AWS using SAM CLI.
 
+The accessible exercise page uses the existing game WebSocket actions, not a task
+catalog or a separate Start/Run workflow. Its grading button sends `talk` with
+`npc: "hkzero"` to simulate the game's enemy-defeat event. The server selects and
+resumes the current exercise task using the same interactive grading flow.
+Score, reset, whole-exercise reset, and skip use the same `status`, `reset`,
+`reset-all`, and `skip` actions and confirmation safeguards as the exercise portal.
+Like the Doom and hkzero overlays, the page renders `task_description` as
+sanitized Markdown and `message` as grading status, hiding duplicate messages.
+It keeps task instructions separate from grading results,
+so queued requests, failures, and score checks do not erase the task. The full
+task description arrives with the existing grading responses, just as in the
+games; no additional server-side response fields are required.
+
 ## Pre-Deployment Checklist
 
 Before deploying, ensure you have completed:
@@ -203,6 +216,10 @@ Recommended operator flow for `game02`:
 2. Confirm the portal can open `game02`.
 3. Run `seed_exam_code.py` and apply it to publish the exam scope for `game02`.
 4. Distribute the exam code to students for the Exam Page.
+
+For an approved student who needs a text-focused exercise interface without switching the game into exam mode, set `ACCESSIBLE_EXERCISE_EMAILS` to the comma-separated account email allowlist and deploy. The student can use `StudentPortalUrl/accessible-exercise.html` with her normal API key to select a task, start it, and run its checks without entering an NPC name or using RPG chat. Tasks remain in exercise mode and use exercise progress; this does not seed an exam code or change the game's exercise access mode. Leave the variable unset to disable access.
+
+The accessible page and script are uploaded with `Cache-Control: no-cache` so browsers revalidate them. When changing the script or its HTML controls, also update the script's `?v=` revision in `accessible-exercise.html` to prevent an older cached script from running against new controls. Run `node --test tests/test_accessible_exercise.mjs` from the API directory to check the page/script contract and access-to-task-list flow.
 
 ---
 

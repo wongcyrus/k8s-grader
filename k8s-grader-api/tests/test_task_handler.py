@@ -52,6 +52,68 @@ def mock_user_data():
 class TestLambdaHandler:
     """Test Lambda handler"""
 
+    @patch('app.get_email_from_event', return_value='student@example.com')
+    def test_accessible_exercise_denies_non_allowlisted_email(self, _mock_email, monkeypatch):
+        monkeypatch.setenv('AccessibleExerciseEmails', 'other@example.com')
+        event = {
+            'path': '/portal/accessible-exercise',
+            'httpMethod': 'GET',
+            'headers': {'x-api-key': 'test-key'},
+        }
+
+        response = lambda_handler(event, None)
+
+        body = json.loads(response['body'])
+        assert response['statusCode'] == 200
+        assert body['status'] == 'ERROR'
+        assert 'not enabled' in body['message']
+
+    @patch('app.get_email_from_event', return_value='Student@Example.com')
+    def test_accessible_exercise_allows_allowlisted_account_without_changing_game_mode(
+        self, _mock_email, monkeypatch
+    ):
+        monkeypatch.setenv('AccessibleExerciseEmails', ' student@example.com ')
+        event = {
+            'path': '/portal/accessible-exercise',
+            'httpMethod': 'GET',
+            'headers': {'x-api-key': 'test-key'},
+        }
+
+        with patch('app.game_access_repo.get_mode', return_value='exercise') as mock_mode, \
+             patch('app.game_source_repo.list_games', return_value=['game02']):
+            response = lambda_handler(event, None)
+
+        body = json.loads(response['body'])
+        assert response['statusCode'] == 200
+        assert body == {'status': 'OK', 'game': 'game02'}
+        mock_mode.assert_called_once_with('game02')
+
+    @patch('app.get_email_from_event', return_value='student@example.com')
+    def test_accessible_exercise_rejects_game_in_exam_mode(self, _mock_email, monkeypatch):
+        monkeypatch.setenv('AccessibleExerciseEmails', 'student@example.com')
+        event = {
+            'path': '/portal/accessible-exercise',
+            'httpMethod': 'GET',
+            'headers': {'x-api-key': 'test-key'},
+        }
+
+        with patch('app.game_access_repo.get_mode', return_value='exam'):
+            response = lambda_handler(event, None)
+
+        body = json.loads(response['body'])
+        assert body['status'] == 'ERROR'
+        assert 'exercise mode' in body['message']
+
+    def test_accessible_exercise_options_is_cors_enabled(self):
+        response = lambda_handler({
+            'path': '/portal/accessible-exercise',
+            'httpMethod': 'OPTIONS',
+            'headers': {},
+        }, None)
+
+        assert response['statusCode'] == 200
+        assert response['headers']['Access-Control-Allow-Origin'] == '*'
+
     def test_legacy_task_route_removed(self, api_event):
         """Non-exam routes should reject the removed legacy game API."""
         response = lambda_handler(api_event, None)

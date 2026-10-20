@@ -72,6 +72,8 @@ Recommended order for a new private game such as `game02`:
 3. Run `seed_exam_code.py` to publish the exam scope for `game02`.
 4. Open the Exam Page and use the exam code there.
 
+For a text-focused exercise interface that avoids NPC conversations, configure `AccessibleExerciseEmails` with the approved student's account email and deploy. The student can use `StudentPortalUrl/accessible-exercise.html` with her normal API key to select a task, start it, and run its checks. Tasks remain in exercise mode and use exercise progress; this does not create an exam session or change `game02`'s access mode. Set the comma-separated `ACCESSIBLE_EXERCISE_EMAILS` environment variable when deploying. Leave it unset to keep the view disabled.
+
 ### Reset Task Stage (DB state fix)
 ```bash
 # Dry-run reset to CHECK phase (no write)

@@ -296,7 +296,7 @@ function buildExerciseStatusSummary(json) {
   }
 
   const lines = [];
-  if (json?.message) {
+  if (json?.message && (status === "COMPLETED" || status === "RESET" || status === "RESET_ALL" || json?.skipped_task)) {
     lines.push(String(json.message));
   }
   if (json?.task_id) {
@@ -514,6 +514,7 @@ function openExerciseGame() {
   const launchUrl = exerciseClientUrl(exerciseGame, exerciseClient);
   saveState({
     apiKey,
+    baseUrl: BASE_URL,
     exerciseClient,
     exerciseGame,
     gameWsUrl: GAME_WS_URL,

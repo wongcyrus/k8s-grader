@@ -9,18 +9,28 @@ from common.handler import get_email_from_api_key, to_player_safe_game_message
 
 
 GAME_COMMAND_FUNCTION_ARN = os.getenv("GameCommandDurableFunctionArn", "")
+ACCESSIBLE_EXERCISE_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("AccessibleExerciseEmails", "").split(",")
+    if email.strip()
+}
 GAME_ACTION_COOLDOWN_SECONDS = {
     "talk": 2,
     "status": 3,
     "reset": 5,
     "reset-all": 10,
     "skip": 5,
+    "accessible-list": 3,
+    "accessible-start": 3,
+    "accessible-run": 3,
 }
 GAME_ACTION_GUARD_TTL_SECONDS = {
     "talk": 180,
     "reset": 30,
     "reset-all": 45,
     "skip": 30,
+    "accessible-start": 30,
+    "accessible-run": 900,
 }
 request_throttle_repo = RequestThrottleRepository()
 execution_guard_repo = ExecutionGuardRepository()
@@ -79,7 +89,7 @@ def _game_throttle_scope(email: str, game: str, action: str) -> str:
 
 
 def _game_execution_guard_scope(email: str, game: str, action: str) -> str:
-    if action in {"talk", "reset", "reset-all", "skip"}:
+    if action in {"talk", "reset", "reset-all", "skip", "accessible-start", "accessible-run"}:
         return f"game#{email}#{game}#mutation"
     return f"game#{email}#{game}#{action}"
 
@@ -107,6 +117,7 @@ def _handle_default(event: Dict[str, Any]) -> Dict[str, Any]:
     api_key = body.get("apiKey", "")
     game = body.get("game", "")
     npc = body.get("npc", "")
+    task_id = body.get("task_id", "")
 
     if action == "subscribe":
         if not api_key or not game:
@@ -117,7 +128,11 @@ def _handle_default(event: Dict[str, Any]) -> Dict[str, Any]:
             return _error_response(401, str(err))
         return _response(200, {"status": "SUBSCRIBED", "game": game})
 
-    if action not in {"talk", "status", "reset", "reset-all", "skip"}:
+    supported_actions = {
+        "talk", "status", "reset", "reset-all", "skip",
+        "accessible-list", "accessible-start", "accessible-run",
+    }
+    if action not in supported_actions:
         return _response(200, {"status": "OK"})
 
     if not api_key or not game:
@@ -127,6 +142,13 @@ def _handle_default(event: Dict[str, Any]) -> Dict[str, Any]:
         email = get_email_from_api_key(api_key)
     except ValueError as err:
         return _error_response(401, str(err))
+
+    if action.startswith("accessible-") and (
+        game != "game02" or email.strip().lower() not in ACCESSIBLE_EXERCISE_EMAILS
+    ):
+        return _error_response(403, "This account is not enabled for the accessible exercise view.")
+    if action in {"accessible-start", "accessible-run"} and not task_id:
+        return _error_response(400, "Missing task selection.")
 
     cooldown_seconds = GAME_ACTION_COOLDOWN_SECONDS.get(action, 0)
     if cooldown_seconds > 0:
@@ -170,6 +192,7 @@ def _handle_default(event: Dict[str, Any]) -> Dict[str, Any]:
                 "email": email,
                 "game": game,
                 "npc": npc,
+                "task_id": task_id,
                 "execution_guard_key": execution_guard_key,
             }
         )

@@ -370,6 +370,34 @@ class TestTaskService:
         assert state.npc == 'exam'
         assert state.status == TaskStatus.IN_PROGRESS
         assert task_service.npc_repo.get_assigned_npc('student@test.com', 'exam01') is None
+
+    def test_start_accessible_task_uses_exercise_state_without_npc_assignment(self, task_service, sample_manifest):
+        with patch('common.services.task_service.TaskManifest.load', return_value=sample_manifest), \
+             patch('common.services.task_service.generate_session', return_value={'key': 'value'}):
+            state = task_service.start_accessible_task('student@test.com', 'game02', 'task_01')
+
+        assert state.mode == 'exercise'
+        assert state.exam_code is None
+        assert state.npc == 'accessible-exercise'
+        assert state.status == TaskStatus.IN_PROGRESS
+        assert state.current_phase_id == 'setup'
+        assert task_service.npc_repo.get_assigned_npc('student@test.com', 'game02') is None
+
+    def test_start_accessible_task_rejects_existing_exam_state(self, task_service):
+        exam_state = TaskState(
+            email='student@test.com',
+            game='game02',
+            task_id='task_01',
+            npc='exam',
+            mode='exam',
+            status=TaskStatus.IN_PROGRESS,
+            current_phase_id='setup',
+            exam_code='EXAM-001',
+        )
+        task_service.task_repo.save(exam_state)
+
+        with pytest.raises(ValueError, match='not available in exercise mode'):
+            task_service.start_accessible_task('student@test.com', 'game02', 'task_01')
     
     def test_execute_phase_success(self, task_service, sample_manifest, in_progress_task_state):
         """Test executing phase successfully"""

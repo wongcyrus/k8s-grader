@@ -147,6 +147,41 @@ def portal_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]
     """Handle public portal metadata routes."""
     path = (event.get('path') or event.get('resource') or '').rstrip('/')
 
+    if path.endswith('/accessible-exercise'):
+        if (event.get('httpMethod') or '').upper() == 'OPTIONS':
+            return {
+                'statusCode': 200,
+                'headers': cors_headers(),
+                'body': json.dumps({'status': 'OK'}),
+            }
+
+        email = get_email_from_event(event)
+        if not email:
+            return error_response("A valid API key is required.")
+
+        allowed_emails = {
+            value.strip().lower()
+            for value in os.getenv('AccessibleExerciseEmails', '').split(',')
+            if value.strip()
+        }
+        if email.strip().lower() not in allowed_emails:
+            return error_response("Accessible exercise view is not enabled for this account.")
+
+        game = 'game02'
+        if game_access_repo.get_mode(game) != 'exercise':
+            return error_response("game02 is not currently configured for exercise mode.")
+        if game not in game_source_repo.list_games():
+            return error_response("game02 is not currently available.")
+
+        return {
+            'statusCode': 200,
+            'headers': cors_headers(),
+            'body': json.dumps({
+                'status': 'OK',
+                'game': game,
+            }, cls=DecimalEncoder)
+        }
+
     if path.endswith('/games'):
         games = [
             game

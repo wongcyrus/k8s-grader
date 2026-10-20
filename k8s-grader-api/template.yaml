@@ -28,6 +28,10 @@ Parameters:
     Type: String
     Description: "Comma-separated teacher email allowlist for the dashboard"
     Default: ""
+  AccessibleExerciseEmails:
+    Type: String
+    Description: "Comma-separated email allowlist for the accessible game02 exercise view"
+    Default: ""
 Globals:
   Function:
     Timeout: 29
@@ -774,6 +778,7 @@ Resources:
           SecretHash: !Ref SecretHash
           EasterEggSheetId: !Ref EasterEggSheetId
           TeacherEmails: !Ref TeacherEmails
+          AccessibleExerciseEmails: !Ref AccessibleExerciseEmails
           ExamWebSocketManagementEndpoint: !Sub "https://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
           ExamWebSocketUrl: !Sub "wss://${ExamWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
           ExamCommandDurableFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-exam-command-durable:live"
@@ -885,6 +890,18 @@ Resources:
           Properties:
             RestApiId: !Ref ApiGatewayApi
             Path: /portal/games
+            Method: options
+        AccessibleExerciseAccess:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /portal/accessible-exercise
+            Method: get
+        AccessibleExerciseAccessOptions:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGatewayApi
+            Path: /portal/accessible-exercise
             Method: options
 
   ExamCommandDurableFunction:
@@ -1180,6 +1197,7 @@ Resources:
           WebSocketThrottleTable: !Ref WebSocketThrottleTable
           WebSocketExecutionGuardTable: !Ref WebSocketExecutionGuardTable
           GameCommandDurableFunctionArn: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-game-command-durable:live"
+          AccessibleExerciseEmails: !Ref AccessibleExerciseEmails
 
   GameWebSocketHandlerInvokePermission:
     Type: AWS::Lambda::Permission

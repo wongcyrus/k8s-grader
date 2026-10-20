@@ -65,6 +65,46 @@ class TestGameWebSocketHandler:
         assert body == {"status": "QUEUED", "action": "status", "request_id": "request-2"}
 
     @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
+    @patch("game_ws_app._queue_game_command", return_value="request-accessible")
+    def test_accessible_start_queues_task_id_for_allowlisted_game02_account(self, mock_queue, _mock_email):
+        with patch.object(game_ws_app, "ACCESSIBLE_EXERCISE_EMAILS", {"student@example.com"}), \
+             patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "acquire", return_value=True), \
+             patch.object(game_ws_app.execution_guard_repo, "attach_request_id", return_value=True):
+            response = lambda_handler(
+                _ws_event({
+                    "action": "accessible-start",
+                    "apiKey": "k",
+                    "game": "game02",
+                    "task_id": "task_01",
+                }),
+                None,
+            )
+
+        queued_payload = mock_queue.call_args.args[0]
+        assert queued_payload["action"] == "accessible-start"
+        assert queued_payload["task_id"] == "task_01"
+        assert queued_payload["npc"] == ""
+        assert queued_payload["execution_guard_key"] == "game#student@example.com#game02#mutation"
+        assert json.loads(response["body"])["status"] == "QUEUED"
+
+    @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
+    @patch("game_ws_app._queue_game_command")
+    def test_accessible_action_rejects_non_allowlisted_account(self, mock_queue, _mock_email):
+        with patch.object(game_ws_app, "ACCESSIBLE_EXERCISE_EMAILS", set()):
+            response = lambda_handler(
+                _ws_event({
+                    "action": "accessible-list",
+                    "apiKey": "k",
+                    "game": "game02",
+                }),
+                None,
+            )
+
+        mock_queue.assert_not_called()
+        assert response["statusCode"] == 403
+
+    @patch("game_ws_app.get_email_from_api_key", return_value="student@example.com")
     @patch("game_ws_app._queue_game_command", return_value="request-3")
     def test_skip_action_queues_game_command(self, mock_queue, _mock_email):
         with patch.object(game_ws_app.request_throttle_repo, "claim_request", return_value=True), \

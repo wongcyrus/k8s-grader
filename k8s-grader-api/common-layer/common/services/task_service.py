@@ -10,7 +10,7 @@ from common.database.repositories import TaskStateRepository, NpcRepository
 from common.services.test_runner import TestRunner
 from common.session import generate_session
 from common.status import TestResult
-from common.task_sources import is_interactive_task_source
+from common.task_sources import ACCESSIBLE_EXERCISE_TASK_SOURCE, is_interactive_task_source
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,13 @@ class TaskService:
         self.task_repo = task_repo or TaskStateRepository()
         self.npc_repo = npc_repo or NpcRepository()
         self.test_runner = test_runner or TestRunner()
+
+    @staticmethod
+    def _uses_npc_assignment(state: TaskState) -> bool:
+        return (
+            getattr(state, "mode", "exercise") != "exam"
+            and getattr(state, "npc", None) != ACCESSIBLE_EXERCISE_TASK_SOURCE
+        )
 
     def _list_game_states(self, email: str, game: str, mode: Optional[str] = None) -> list[TaskState]:
         states = self.task_repo.list_by_game(email, game)
@@ -177,7 +184,7 @@ class TaskService:
         state.mark_completed()
         self.task_repo.save(state)
 
-        if state.mode != 'exam':
+        if self._uses_npc_assignment(state):
             self.npc_repo.clear_assignment(email, game)
 
         logger.info(f"Skipped task {task_id} for {email}")
@@ -210,7 +217,7 @@ class TaskService:
 
         self.task_repo.delete(email, game, task_id)
 
-        if state.mode != 'exam':
+        if self._uses_npc_assignment(state):
             self.npc_repo.clear_assignment(email, game)
 
         logger.info(f"Reset task {task_id} for {email}")
@@ -279,7 +286,7 @@ class TaskService:
         existing = self.task_repo.get(email, game, task_id)
         if existing:
             # Verify it's the same NPC
-            if existing.npc != npc:
+            if existing.npc != npc and existing.npc != ACCESSIBLE_EXERCISE_TASK_SOURCE:
                 raise ValueError(f"Complete task from {existing.npc} first!")
             logger.info(f"Task {task_id} already started for {email}")
             return existing
@@ -364,6 +371,40 @@ class TaskService:
 
         self.task_repo.save(state)
         logger.info(f"Started exam task {task_id} for {email} with code {exam_code}")
+        return state
+
+    def start_accessible_task(self, email: str, game: str, task_id: str) -> TaskState:
+        """Start an exercise task without requiring or assigning an NPC."""
+        existing = self.task_repo.get(email, game, task_id)
+        if existing:
+            if getattr(existing, "mode", "exercise") != "exercise":
+                raise ValueError("This task is not available in exercise mode.")
+            if existing.status == TaskStatus.ABANDONED:
+                self.task_repo.delete(email, game, task_id)
+                existing = None
+            else:
+                return existing
+
+        manifest = TaskManifest.load(game, task_id)
+        session_data = generate_session(email, game, task_id)
+        session_data["$instruction"] = manifest.description
+        state = TaskState(
+            email=email,
+            game=game,
+            task_id=task_id,
+            npc=ACCESSIBLE_EXERCISE_TASK_SOURCE,
+            mode="exercise",
+            status=TaskStatus.NOT_STARTED,
+            current_phase_id=None,
+            session_data=session_data,
+        )
+
+        success, error = TaskStateMachine(manifest, state).start_task()
+        if not success:
+            raise ValueError(f"Failed to start exercise task: {error}")
+
+        self.task_repo.save(state)
+        logger.info("Started accessible exercise task %s for %s", task_id, email)
         return state
     
     def execute_phase(self, email: str, game: str, task_id: str, 
@@ -486,7 +527,7 @@ class TaskService:
         # Save state
         self.task_repo.save(state)
         
-        if state.mode != 'exam':
+        if self._uses_npc_assignment(state):
             # Lock NPC for 30 minutes
             self.npc_repo.lock_npc(email, game, state.npc, minutes=30)
             
@@ -552,7 +593,7 @@ class TaskService:
         # Save state
         self.task_repo.save(state)
         
-        if state.mode != 'exam':
+        if self._uses_npc_assignment(state):
             # Clear NPC assignment (don't lock - allow immediate retry)
             self.npc_repo.clear_assignment(email, game)
         

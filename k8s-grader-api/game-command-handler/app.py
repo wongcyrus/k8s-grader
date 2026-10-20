@@ -9,7 +9,7 @@ import boto3
 from aws_durable_execution_sdk_python import DurableContext, durable_execution, durable_step
 from jinja2 import Environment
 
-from common.database import ExecutionGuardRepository
+from common.database import ExecutionGuardRepository, GameAccessRepository
 from common.database import get_npc_background, get_user_data
 from common.file import clear_tmp_directory, write_k8s_access_files
 from common.google_spreadsheet import get_easter_egg_link
@@ -38,6 +38,7 @@ setup_paths()
 task_service = TaskService()
 execution_guard_repo = ExecutionGuardRepository()
 task_phase_estimate_service = TaskPhaseEstimateService()
+game_access_repo = GameAccessRepository()
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -144,8 +145,9 @@ def _execute_game_phase(
     connection_id: str,
     state,
     manifest,
+    source_action: str = "talk",
 ):
-    _push_game_update(endpoint, connection_id, "talk", _running_payload(state, manifest))
+    _push_game_update(endpoint, connection_id, source_action, _running_payload(state, manifest))
     executed_phase_id = state.current_phase_id
     result = task_service.execute_phase(email, game, task_id)
     manifest = result["manifest"]
@@ -683,6 +685,113 @@ def _handle_game_talk(email: str, game: str, npc: str, endpoint: str, connection
             return _task_completed_payload(completion_result, result.get("report_url", ""))
 
 
+def _accessible_task_catalog(email: str, game: str) -> Dict[str, Any]:
+    if game != "game02" or game_access_repo.get_mode(game) != "exercise":
+        return _error_payload("The accessible task view is only available while game02 is in exercise mode.")
+
+    from common.pytest import get_tasks
+
+    states = {
+        state.task_id: state
+        for state in task_service.task_repo.list_by_game(email, game)
+        if getattr(state, "mode", "exercise") == "exercise"
+    }
+    tasks = []
+    for task_id in get_tasks(game):
+        manifest = TaskManifest.load(game, task_id)
+        state = states.get(task_id)
+        tasks.append(
+            {
+                "task_id": task_id,
+                "description": manifest.description or task_id,
+                "status": state.status.value if state else TaskStatus.NOT_STARTED.value,
+                "current_phase": state.current_phase_id if state else None,
+                "progress": state.calculate_progress(manifest) if state else 0.0,
+                "total_points": state.total_points if state else 0,
+            }
+        )
+    return {"status": "TASK_LIST", "game": game, "tasks": tasks}
+
+
+def _handle_accessible_start(email: str, game: str, task_id: str) -> Dict[str, Any]:
+    catalog = _accessible_task_catalog(email, game)
+    if catalog.get("status") == "ERROR":
+        return catalog
+    if task_id not in {task["task_id"] for task in catalog["tasks"]}:
+        return _error_payload("The selected task is not available in game02.")
+
+    try:
+        state = task_service.start_accessible_task(email, game, task_id)
+    except ValueError as err:
+        return _error_payload(str(err))
+
+    manifest = TaskManifest.load(game, task_id)
+    if state.status == TaskStatus.COMPLETED:
+        return _task_completed_payload({"state": state}, "")
+    return _task_started_payload(state, manifest)
+
+
+def _handle_accessible_run(
+    email: str,
+    game: str,
+    task_id: str,
+    endpoint: str,
+    connection_id: str,
+) -> Dict[str, Any]:
+    catalog = _accessible_task_catalog(email, game)
+    if catalog.get("status") == "ERROR":
+        return catalog
+    if task_id not in {task["task_id"] for task in catalog["tasks"]}:
+        return _error_payload("The selected task is not available in game02.")
+
+    state = task_service.task_repo.get(email, game, task_id)
+    if not state or getattr(state, "mode", "exercise") != "exercise":
+        return _error_payload("Start this exercise task before selecting Run.")
+    if state.status != TaskStatus.IN_PROGRESS:
+        if state.status == TaskStatus.COMPLETED:
+            return _task_completed_payload({"state": state}, "")
+        return _error_payload("This exercise task is not currently in progress.")
+
+    user_data = get_user_data(email)
+    if not user_data:
+        return _error_payload("K8s credentials not found. Please sign in through the exercise portal first.")
+    access_config = extract_k8s_access_config(user_data)
+    if not access_config.get("endpoint") or not access_config.get("kubeconfig"):
+        return _error_payload("K8s credentials are missing or incomplete.")
+
+    clear_tmp_directory()
+    write_k8s_access_files(access_config)
+    state.session_data.update(session_data_from_access_config(access_config))
+    state.session_data["$email"] = email
+    task_service.task_repo.save(state)
+    manifest = TaskManifest.load(game, task_id)
+    _advance_game_answer_phase(state, manifest)
+    _ensure_game_challenge_before_check(state, manifest)
+
+    if not state.current_phase_id:
+        completion_result = task_service.complete_task(email, game, task_id, state)
+        return _task_completed_payload(completion_result, "")
+
+    result, manifest, state, _ = _execute_game_phase(
+        email,
+        game,
+        task_id,
+        endpoint,
+        connection_id,
+        state,
+        manifest,
+        source_action="accessible-run",
+    )
+    if not result["success"]:
+        return _phase_failed_payload(result, manifest)
+
+    can_complete, _ = TaskStateMachine(manifest, state).can_complete_task()
+    if can_complete:
+        completion_result = task_service.complete_task(email, game, task_id, state)
+        return _task_completed_payload(completion_result, result.get("report_url", ""))
+    return _phase_passed_payload(result, manifest)
+
+
 def execute_game_command(
     action: str,
     email: str,
@@ -690,6 +799,7 @@ def execute_game_command(
     npc: str,
     endpoint: str,
     connection_id: str,
+    task_id: str = "",
 ) -> Dict[str, Any]:
     if action == "talk":
         return _handle_game_talk(email, game, npc, endpoint, connection_id)
@@ -701,13 +811,28 @@ def execute_game_command(
         return _handle_game_reset_all(email, game)
     if action == "skip":
         return _handle_game_skip(email, game)
+    if action == "accessible-list":
+        return _accessible_task_catalog(email, game)
+    if action == "accessible-start":
+        return _handle_accessible_start(email, game, task_id)
+    if action == "accessible-run":
+        return _handle_accessible_run(email, game, task_id, endpoint, connection_id)
     return _error_payload(f"Unsupported game action: {action}")
 
 
 @durable_step
-def execute_game_command_step(step_context, action: str, email: str, game: str, npc: str, endpoint: str, connection_id: str) -> Dict[str, Any]:
+def execute_game_command_step(
+    step_context,
+    action: str,
+    email: str,
+    game: str,
+    npc: str,
+    endpoint: str,
+    connection_id: str,
+    task_id: str = "",
+) -> Dict[str, Any]:
     del step_context
-    return execute_game_command(action, email, game, npc, endpoint, connection_id)
+    return execute_game_command(action, email, game, npc, endpoint, connection_id, task_id)
 
 
 @durable_execution
@@ -718,6 +843,7 @@ def lambda_handler(event: Dict[str, Any], context: DurableContext) -> Dict[str, 
     email = event.get("email", "")
     game = event.get("game", "")
     npc = event.get("npc", "")
+    task_id = event.get("task_id", "")
     execution_guard_key = event.get("execution_guard_key", "")
 
     if not connection_id or not endpoint:
@@ -727,7 +853,9 @@ def lambda_handler(event: Dict[str, Any], context: DurableContext) -> Dict[str, 
         }
 
     try:
-        payload = context.step(execute_game_command_step(action, email, game, npc, endpoint, connection_id))
+        payload = context.step(
+            execute_game_command_step(action, email, game, npc, endpoint, connection_id, task_id)
+        )
     except Exception as err:
         logger.exception("Game command failed")
         payload = _error_payload(str(err))
