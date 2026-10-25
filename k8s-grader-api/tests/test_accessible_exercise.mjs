@@ -6,12 +6,12 @@ import vm from "node:vm";
 const html = readFileSync(new URL("../../exam-web/accessible-exercise.html", import.meta.url), "utf8");
 const script = readFileSync(new URL("../../exam-web/accessible-exercise.js", import.meta.url), "utf8");
 
-function createHarness({ confirm = true, prompt = "RESET game02", access = true } = {}) {
+function createHarness({ confirm = true, prompt = "RESET game02", access = true, loginOk = true, loginError = false } = {}) {
   const elements = new Map([...html.matchAll(/\bid="([^"]+)"/g)].map(([, id]) => [
     id,
     {
-      value: "", textContent: "", disabled: false, listeners: {},
-      classList: { add() {}, remove() {} },
+      value: "", textContent: "", disabled: false, listeners: {}, files: [], checked: false,
+      classList: { add() {}, remove() {}, toggle() {} },
       style: { setProperty() {} },
       addEventListener(name, callback) { this.listeners[name] = callback; },
     },
@@ -19,6 +19,7 @@ function createHarness({ confirm = true, prompt = "RESET game02", access = true 
   const sent = [];
   const connections = [];
   const confirmations = [];
+  const requests = [];
   class FakeWebSocket {
     static CONNECTING = 0;
     static OPEN = 1;
@@ -54,21 +55,35 @@ function createHarness({ confirm = true, prompt = "RESET game02", access = true 
       },
     },
     localStorage: { getItem: () => null },
-    fetch: async () => ({
-      ok: access,
-      json: async () => access ? { status: "OK", game: "game02" } : { status: "ERROR", message: "Access denied." },
-    }),
+    fetch: async (url, options) => {
+      requests.push({ url, options });
+      if (url.endsWith("/save-k8s-account")) {
+        if (loginError) throw new Error("Network unavailable");
+        return {
+          ok: loginOk,
+          text: async () => JSON.stringify(loginOk
+            ? { status: "OK", message: "Kubernetes endpoint verified and data saved successfully" }
+            : { status: "ERROR", message: "Endpoint probe failed" }),
+        };
+      }
+      return {
+        ok: access,
+        json: async () => access ? { status: "OK", game: "game02" } : { status: "ERROR", message: "Access denied." },
+      };
+    },
+    FormData,
     WebSocket: FakeWebSocket,
     console,
   });
   vm.runInContext(script, context);
   elements.get("apiKey").value = "test-key";
   return {
-    elements, context, sent, connections, confirmations,
+    elements, context, sent, connections, confirmations, requests,
     click(id) { elements.get(id).listeners.click(); },
     async unlock() { await vm.runInContext("unlockAccessibleView()", context); },
     get connection() { return connections.at(-1); },
     ready() {
+      vm.runInContext('verifiedApiKey = "test-key"; setActionBusy(false)', context);
       this.connection.open();
       this.connection.receive({ status: "NOT_STARTED", task_id: "task_01", total_score: 0 });
     },
@@ -79,6 +94,113 @@ test("page has versioned assets and game-event controls, not task selection", ()
   assert.match(html, /src="\.\/accessible-exercise\.js\?v=[^"]+"/);
   assert.doesNotMatch(html, /id="(?:taskSelection|refreshTasks|startTask|runTask)"/);
   assert.doesNotMatch(script, /accessible-(?:list|start|run)|task_list_chunk/);
+});
+
+test("login and gateway status are explicitly distinct", () => {
+  assert.match(html, /Game gateway \(WebSocket\)/);
+  assert.match(html, /Kubernetes login check/);
+  assert.match(html, /does not verify Kubernetes access/);
+  assert.match(html, /Step 1: Save Kubernetes Login/);
+  assert.match(html, /Submit Kubernetes Login/);
+});
+
+test("grading requires a verified login, not just an open WebSocket", async () => {
+  const harness = createHarness();
+  await harness.unlock();
+  harness.connection.open();
+  harness.connection.receive({ status: "NOT_STARTED", task_id: "task_01" });
+  assert.equal(harness.elements.get("triggerGrading").disabled, true);
+  harness.click("triggerGrading");
+  assert.equal(harness.sent.at(-1).action, "status");
+  assert.match(harness.elements.get("exerciseOutput").textContent, /Submit Kubernetes Login/);
+});
+
+test("kubeconfig login uses the existing endpoint and enables grading only on success", async () => {
+  const harness = createHarness();
+  await harness.unlock();
+  harness.connection.open();
+  harness.connection.receive({ status: "OK" });
+  harness.elements.get("kubeconfig").value = "apiVersion: v1";
+  await vm.runInContext("submitKubernetesLogin()", harness.context);
+  const request = harness.requests.at(-1);
+  assert.equal(request.url, "https://example.test/save-k8s-account");
+  assert.equal(request.options.method, "POST");
+  assert.deepEqual(request.options.headers["x-api-key"], "test-key");
+  assert.equal(request.options.headers.Authorization, "test-key");
+  assert.equal(request.options.body.get("kubeconfig"), "apiVersion: v1");
+  assert.equal(harness.elements.get("triggerGrading").disabled, false);
+  assert.match(harness.elements.get("kubernetesStatus").textContent, /Verified by AWS Lambda on last submission/);
+  harness.elements.get("kubeconfig").listeners.input();
+  assert.equal(harness.elements.get("triggerGrading").disabled, true);
+  assert.match(harness.elements.get("kubernetesStatus").textContent, /Not verified/);
+});
+
+test("file upload and manual credentials use the same multipart fields as the portal", async () => {
+  const harness = createHarness();
+  harness.elements.get("kubeconfigFile").files = [new Blob(["apiVersion: v1"])];
+  await vm.runInContext("submitKubernetesLogin()", harness.context);
+  assert.ok(harness.requests.at(-1).options.body.get("kubeconfig-file"));
+  harness.elements.get("manualMethod").listeners.change();
+  harness.elements.get("endpoint").value = "https://cluster.test:6443";
+  harness.elements.get("clientCertificate").files = [new Blob(["certificate"])];
+  harness.elements.get("clientKey").files = [new Blob(["key"])];
+  await vm.runInContext("submitKubernetesLogin()", harness.context);
+  const body = harness.requests.at(-1).options.body;
+  assert.equal(body.get("endpoint"), "https://cluster.test:6443");
+  assert.ok(body.get("client-certificate"));
+  assert.ok(body.get("client-key"));
+  assert.equal(body.has("kubeconfig"), false);
+});
+
+test("missing login inputs and failed verification never claim Kubernetes is connected", async () => {
+  for (const options of [{ loginOk: false }, { loginError: true }]) {
+    const harness = createHarness(options);
+    await vm.runInContext("submitKubernetesLogin()", harness.context);
+    assert.equal(harness.requests.length, 0);
+    harness.elements.get("kubeconfig").value = "apiVersion: v1";
+    await vm.runInContext("submitKubernetesLogin()", harness.context);
+    assert.equal(harness.elements.get("kubernetesStatus").textContent, "Verification failed");
+    assert.equal(harness.elements.get("triggerGrading").disabled, true);
+    assert.match(harness.elements.get("setupOutput").textContent, /Could not save/);
+  }
+});
+
+test("manual login validates endpoint and paired certificate files before submitting", async () => {
+  const harness = createHarness();
+  harness.elements.get("manualMethod").listeners.change();
+  await vm.runInContext("submitKubernetesLogin()", harness.context);
+  assert.match(harness.elements.get("setupOutput").textContent, /Endpoint is required/);
+  harness.elements.get("endpoint").value = "https://cluster.test:6443";
+  harness.elements.get("clientCertificate").files = [new Blob(["certificate"])];
+  await vm.runInContext("submitKubernetesLogin()", harness.context);
+  assert.match(harness.elements.get("setupOutput").textContent, /must be provided together/);
+  assert.equal(harness.requests.length, 0);
+});
+
+test("changing API key closes the gateway and requires new access and login checks", async () => {
+  const harness = createHarness();
+  await harness.unlock();
+  harness.ready();
+  harness.elements.get("apiKey").value = "different-key";
+  harness.elements.get("apiKey").listeners.input();
+  assert.equal(harness.connection.readyState, 3);
+  assert.equal(harness.elements.get("triggerGrading").disabled, true);
+  assert.match(harness.elements.get("accessStatus").textContent, /Check access again/);
+  assert.match(harness.elements.get("kubernetesStatus").textContent, /Not verified/);
+  const count = harness.sent.length;
+  harness.click("triggerGrading");
+  assert.equal(harness.sent.length, count);
+});
+
+test("changing login method invalidates previous verification without claiming gateway failure", async () => {
+  const harness = createHarness();
+  await harness.unlock();
+  harness.ready();
+  assert.equal(harness.elements.get("triggerGrading").disabled, false);
+  harness.elements.get("manualMethod").listeners.change();
+  assert.equal(harness.elements.get("triggerGrading").disabled, true);
+  assert.equal(harness.elements.get("connectionStatus").textContent, "Connected");
+  assert.match(harness.elements.get("kubernetesStatus").textContent, /Not verified/);
 });
 
 test("unlock checks current progress without fetching the task catalog", async () => {

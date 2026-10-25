@@ -15,6 +15,34 @@ It keeps task instructions separate from grading results,
 so queued requests, failures, and score checks do not erase the task. The full
 task description arrives with the existing grading responses, just as in the
 games; no additional server-side response fields are required.
+The accessible page also submits kubeconfig or manual credentials to the existing
+`/save-k8s-account` endpoint, like the exam page. Grading requires a successful
+login check in the current page session. The UI labels the WebSocket as the game
+gateway separately from the last Lambda-to-Kubernetes endpoint verification;
+neither label claims continuous cluster-health monitoring.
+
+### Accessible exercise setup and verification
+
+1. Enter the student API key and choose **Check access**.
+2. Under **Step 1: Save Kubernetes Login**, paste/upload a token-based kubeconfig,
+   or choose **Manual Endpoint + Cert** and provide the endpoint and matching
+   certificate/key files. Choose **Submit Kubernetes Login**.
+3. Check that **Kubernetes login check** reports verification by AWS Lambda on
+   the last submission. **Game gateway (WebSocket): Connected** alone does not
+   indicate cluster access.
+4. Use **Trigger grading** to simulate the game's grading event. Instructions
+   remain visible separately from grading results.
+
+Changing login inputs, the login method, or the API key invalidates the previous
+login check. Changing the API key also closes the gateway and requires another
+access check. Reloading the page requires another Kubernetes login verification;
+the accessible page does not persist kubeconfig or certificate/key contents.
+
+From `k8s-grader-api`, run `node --test tests/test_accessible_exercise.mjs`.
+These tests cover login request fields, validation and failure handling,
+verification invalidation, independent connection labels, grading-event parity,
+and persistent task instructions. They use mocked services and do not establish
+real cluster connectivity.
 
 ## Pre-Deployment Checklist
 
@@ -217,9 +245,9 @@ Recommended operator flow for `game02`:
 3. Run `seed_exam_code.py` and apply it to publish the exam scope for `game02`.
 4. Distribute the exam code to students for the Exam Page.
 
-For an approved student who needs a text-focused exercise interface without switching the game into exam mode, set `ACCESSIBLE_EXERCISE_EMAILS` to the comma-separated account email allowlist and deploy. The student can use `StudentPortalUrl/accessible-exercise.html` with her normal API key to select a task, start it, and run its checks without entering an NPC name or using RPG chat. Tasks remain in exercise mode and use exercise progress; this does not seed an exam code or change the game's exercise access mode. Leave the variable unset to disable access.
+For an approved student who needs a text-focused exercise interface without switching the game into exam mode, set `ACCESSIBLE_EXERCISE_EMAILS` to the comma-separated account email allowlist and deploy. The student can use `StudentPortalUrl/accessible-exercise.html` with their normal API key to save and verify Kubernetes login, then trigger the same grading event as the game without entering an NPC name or using RPG chat. The server selects the current task; there is no task catalog or separate Start/Run workflow. Tasks remain in exercise mode and use exercise progress; this does not seed an exam code or change the game's exercise access mode. Leave the variable unset to disable access.
 
-The accessible page and script are uploaded with `Cache-Control: no-cache` so browsers revalidate them. When changing the script or its HTML controls, also update the script's `?v=` revision in `accessible-exercise.html` to prevent an older cached script from running against new controls. Run `node --test tests/test_accessible_exercise.mjs` from the API directory to check the page/script contract and access-to-task-list flow.
+The accessible page and script are uploaded with `Cache-Control: no-cache` so browsers revalidate them. When changing the script or its HTML controls, also update the script's `?v=` revision in `accessible-exercise.html` to prevent an older cached script from running against new controls. Run `node --test tests/test_accessible_exercise.mjs` from the API directory to check the page/script contract, login verification, and game-event flow.
 
 ---
 

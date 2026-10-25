@@ -20,6 +20,12 @@ const currentStep = document.getElementById("currentStep");
 const contrastToggle = document.getElementById("contrastToggle");
 const textSizeInput = document.getElementById("textSize");
 const textSizeLabel = document.getElementById("textSizeLabel");
+const saveLoginButton = document.getElementById("saveLogin");
+const setupOutput = document.getElementById("setupOutput");
+const kubernetesStatus = document.getElementById("kubernetesStatus");
+const kubeconfigMethod = document.getElementById("kubeconfigMethod");
+const manualMethod = document.getElementById("manualMethod");
+const loginInputIds = ["kubeconfig", "kubeconfigFile", "endpoint", "clientCertificate", "clientKey"];
 const actionButtons = [
   triggerGradingButton, checkScoreButton, resetTaskButton, resetExerciseButton, skipTaskButton,
 ];
@@ -30,6 +36,8 @@ let socketReady = false;
 let pendingAction = null;
 let actionInFlight = false;
 let displayedTaskId = "";
+let loginInFlight = false;
+let verifiedApiKey = "";
 
 function writeOutput(text) {
   exerciseOutput.textContent = text;
@@ -48,7 +56,97 @@ function writeTaskInstructions(text) {
 function setActionBusy(busy) {
   actionInFlight = busy;
   for (const button of actionButtons) {
-    button.disabled = busy || !allowedGame;
+    button.disabled = busy || loginInFlight || !allowedGame;
+  }
+  triggerGradingButton.disabled ||= verifiedApiKey !== apiKeyInput.value.trim();
+  saveLoginButton.disabled = busy || loginInFlight;
+  apiKeyInput.disabled = busy || loginInFlight;
+  for (const id of [...loginInputIds, "kubeconfigMethod", "manualMethod"]) {
+    document.getElementById(id).disabled = busy || loginInFlight;
+  }
+}
+
+function invalidateLogin() {
+  verifiedApiKey = "";
+  kubernetesStatus.textContent = "Not verified - submit Kubernetes Login";
+  setActionBusy(actionInFlight);
+}
+
+function selectLoginMethod(manual) {
+  manualMethod.checked = manual;
+  kubeconfigMethod.checked = !manual;
+  document.getElementById("kubeconfigPanel").classList.toggle("hidden", manual);
+  document.getElementById("manualPanel").classList.toggle("hidden", !manual);
+  invalidateLogin();
+}
+
+async function submitKubernetesLogin() {
+  if (loginInFlight || actionInFlight) return;
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey || !BASE_URL) {
+    setupOutput.textContent = !apiKey ? "API Key is required." : "The exercise service is not configured.";
+    return;
+  }
+  const get = (id) => document.getElementById(id);
+  const formData = new FormData();
+  if (!manualMethod.checked) {
+    const yaml = get("kubeconfig").value.trim();
+    const file = get("kubeconfigFile").files[0];
+    if (!yaml && !file) {
+      setupOutput.textContent = "Paste kubeconfig YAML or choose a kubeconfig file.";
+      return;
+    }
+    if (yaml) formData.append("kubeconfig", yaml);
+    if (file) formData.append("kubeconfig-file", file);
+  } else {
+    const endpoint = get("endpoint").value.trim();
+    const certificate = get("clientCertificate").files[0];
+    const key = get("clientKey").files[0];
+    if (!endpoint || Boolean(certificate) !== Boolean(key)) {
+      setupOutput.textContent = !endpoint
+        ? "Endpoint is required for manual mode."
+        : "Client certificate and client key must be provided together.";
+      return;
+    }
+    formData.append("endpoint", endpoint);
+    if (certificate && key) {
+      formData.append("client-certificate", certificate);
+      formData.append("client-key", key);
+    }
+  }
+  verifiedApiKey = "";
+  loginInFlight = true;
+  setActionBusy(actionInFlight);
+  kubernetesStatus.textContent = "Checking from AWS Lambda...";
+  setupOutput.textContent = "Submitting Kubernetes login...";
+  try {
+    const response = await fetch(`${BASE_URL}/save-k8s-account`, {
+      method: "POST", headers: { "x-api-key": apiKey, Authorization: apiKey }, body: formData,
+    });
+    const text = await response.text();
+    let result;
+    try {
+      result = JSON.parse(text);
+    } catch {
+      throw new Error(text || "The login service returned an empty response.");
+    }
+    if (!response.ok || result?.status !== "OK") {
+      throw new Error(result?.message || text || "Kubernetes login verification failed.");
+    }
+    verifiedApiKey = apiKey;
+    kubernetesStatus.textContent = "Verified by AWS Lambda on last submission";
+    setupOutput.textContent = [
+      result.message,
+      result.authType ? `Auth Type: ${result.authType}` : "",
+      result.context ? `Context: ${result.context}` : "",
+      result.cluster ? `Cluster: ${result.cluster}` : "",
+    ].filter(Boolean).join("\n");
+  } catch (error) {
+    kubernetesStatus.textContent = "Verification failed";
+    setupOutput.textContent = `Could not save Kubernetes login: ${error.message}`;
+  } finally {
+    loginInFlight = false;
+    setActionBusy(actionInFlight);
   }
 }
 
@@ -146,6 +244,10 @@ function connectAndSend(action) {
   }
   if (actionInFlight) {
     writeOutput("A game request is already running. Please wait for its response.");
+    return;
+  }
+  if (loginInFlight || (action === "talk" && verifiedApiKey !== apiKeyInput.value.trim())) {
+    writeOutput("Submit Kubernetes Login and verify cluster access before triggering grading.");
     return;
   }
   const payload = { action, apiKey: apiKeyInput.value.trim(), game: allowedGame };
@@ -253,6 +355,19 @@ async function unlockAccessibleView() {
 }
 
 unlockButton.addEventListener("click", unlockAccessibleView);
+saveLoginButton.addEventListener("click", submitKubernetesLogin);
+kubeconfigMethod.addEventListener("change", () => selectLoginMethod(false));
+manualMethod.addEventListener("change", () => selectLoginMethod(true));
+for (const id of loginInputIds) {
+  document.getElementById(id).addEventListener(id === "kubeconfig" || id === "endpoint" ? "input" : "change", invalidateLogin);
+}
+apiKeyInput.addEventListener("input", () => {
+  closeSocket();
+  allowedGame = "";
+  exerciseView.classList.add("hidden");
+  accessStatus.textContent = "API key changed. Check access again.";
+  invalidateLogin();
+});
 triggerGradingButton.addEventListener("click", () => connectAndSend("talk"));
 checkScoreButton.addEventListener("click", () => connectAndSend("status"));
 resetTaskButton.addEventListener("click", () => {

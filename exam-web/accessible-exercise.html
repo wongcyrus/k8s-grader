@@ -89,7 +89,7 @@
       <p>This text-focused view uses the same game02 exercise flow as the game. Trigger grading with a button instead of shooting or defeating an enemy. It does not use exam codes or exam scoring.</p>
 
       <section class="card">
-        <h2>Unlock this view</h2>
+        <h2>API Key</h2>
         <p class="field-hint">Use your student API key. Access is enabled only for accounts approved for this view.</p>
         <label for="apiKey">Student API key</label>
         <input id="apiKey" type="password" autocomplete="off" aria-describedby="accessHelp" />
@@ -100,9 +100,39 @@
         <p id="accessStatus" class="accessible-status" role="status" aria-live="polite">Access not checked.</p>
       </section>
 
+      <section class="card" aria-labelledby="loginHeading">
+        <h2 id="loginHeading">Step 1: Save Kubernetes Login</h2>
+        <p class="field-hint">Choose one login method below. Most students should use a kubeconfig file.</p>
+        <div class="auth-method-toggle" role="radiogroup" aria-label="Kubernetes login method">
+          <label class="auth-option"><input id="kubeconfigMethod" type="radio" name="accessibleAuthMethod" value="kubeconfig" checked /> Kubeconfig (Recommended)</label>
+          <label class="auth-option"><input id="manualMethod" type="radio" name="accessibleAuthMethod" value="manual" /> Manual Endpoint + Cert</label>
+        </div>
+        <div id="kubeconfigPanel" class="k8s-auth-panel">
+          <label>Kubeconfig YAML
+            <textarea id="kubeconfig" rows="10" placeholder="Paste the kubeconfig YAML generated for your cluster access"></textarea>
+          </label>
+          <label>Kubeconfig file (.yaml/.yml/.conf)
+            <input id="kubeconfigFile" type="file" accept=".yaml,.yml,.conf" />
+          </label>
+          <p class="field-hint">Paste or upload a token-based kubeconfig such as the generated <code>local-pc-context</code> file.</p>
+        </div>
+        <div id="manualPanel" class="k8s-auth-panel hidden">
+          <label>Endpoint <input id="endpoint" placeholder="https://xxxx:6443" /></label>
+          <label>Client Certificate (.crt/.pem) <input id="clientCertificate" type="file" accept=".crt,.pem,.cer" /></label>
+          <label>Client Key (.key/.pem) <input id="clientKey" type="file" accept=".key,.pem" /></label>
+          <p class="field-hint">Use this only when you do not have a kubeconfig file.</p>
+        </div>
+        <div class="actions accessible-actions">
+          <button id="saveLogin" type="button">Submit Kubernetes Login</button>
+        </div>
+        <p><strong>Kubernetes login check:</strong> <span id="kubernetesStatus" role="status">Not verified in this page session</span></p>
+        <pre id="setupOutput" role="status" aria-live="polite">Submit your login to verify access from AWS Lambda to your Kubernetes endpoint.</pre>
+      </section>
+
       <section id="exerciseView" class="card hidden" aria-labelledby="exerciseHeading">
-        <h2 id="exerciseHeading">Game02 Exercise</h2>
-        <p><strong>Connection:</strong> <span id="connectionStatus">Not connected</span></p>
+        <h2 id="exerciseHeading">Step 2: Game02 Exercise</h2>
+        <p><strong>Game gateway (WebSocket):</strong> <span id="connectionStatus">Not connected</span></p>
+        <p class="field-hint">The game gateway status only describes this browser's WebSocket connection to AWS. It does not verify Kubernetes access. Submit Kubernetes Login above to check that separately; this check is not continuous monitoring.</p>
         <section aria-labelledby="currentTaskHeading">
           <h3 id="currentTaskHeading">Current task</h3>
           <p id="currentTask" class="accessible-status">Check access to load your current task.</p>
@@ -126,6 +156,6 @@
       </section>
     </main>
     <script src="./config.js"></script>
-    <script src="./accessible-exercise.js?v=persistent-instructions-20261020-4"></script>
+    <script src="./accessible-exercise.js?v=kubernetes-login-20261021-5"></script>
   </body>
 </html>
