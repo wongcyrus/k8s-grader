@@ -6,6 +6,8 @@ const apiKeyInput = document.getElementById("apiKey");
 const loadOverviewButton = document.getElementById("loadOverview");
 const resetStateButton = document.getElementById("resetState");
 const exportOverviewButton = document.getElementById("exportOverview");
+const exportCompletedRecordsButton = document.getElementById("exportCompletedRecords");
+const exportStatus = document.getElementById("exportStatus");
 const overviewSummary = document.getElementById("overviewSummary");
 const summaryBody = document.getElementById("summaryBody");
 const overviewBody = document.getElementById("overviewBody");
@@ -18,6 +20,8 @@ const sortDirectionSelect = document.getElementById("sortDirection");
 
 let overviewRows = [];
 let visibleOverviewRows = [];
+let overviewLoaded = false;
+let exportingCompletedRecords = false;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -93,7 +97,7 @@ function setFilterControl(select, values, allLabel, emptyLabel) {
     return;
   }
 
-  if (normalized.length === 1) {
+  if (normalized.length === 1 && values.every((value) => String(value || "").trim())) {
     select.innerHTML = `<option value="${escapeHtml(normalized[0])}">${escapeHtml(normalized[0])}</option>`;
     select.value = normalized[0];
     select.disabled = true;
@@ -214,6 +218,12 @@ function updateOverviewTable() {
   overviewSummary.textContent = filterSummary.length > 0
     ? `${visibleOverviewRows.length} of ${overviewRows.length} account scope(s) shown (${filterSummary.join(", ")}). Click a row for detail.`
     : `${visibleOverviewRows.length} account scope(s) loaded. Click a row for detail.`;
+  updateCompletedExportButton();
+}
+
+function updateCompletedExportButton() {
+  exportCompletedRecordsButton.disabled = exportingCompletedRecords
+    || !overviewLoaded || !filterGameSelect.value || !visibleOverviewRows.length;
 }
 
 function exportVisibleOverviewRows() {
@@ -255,19 +265,98 @@ function exportVisibleOverviewRows() {
       row.latest_report_url || "",
     ]),
   ];
+  downloadCsv(csvRows, "teacher-dashboard");
+}
+
+function downloadCsv(csvRows, filename) {
   const csvContent = csvRows
-    .map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(","))
+    .map((row) => row.map((value) => {
+      const text = String(value ?? "");
+      const safe = typeof value === "string" && /^\s*[=+\-@]/.test(text) ? `'${text}` : text;
+      return `"${safe.replace(/"/g, '""')}"`;
+    }).join(","))
     .join("\n");
   const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   const now = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   link.href = url;
-  link.download = `teacher-dashboard-${now}.csv`;
+  link.download = `${filename}-${now}.csv`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+}
+
+async function exportCompletedRecords() {
+  if (exportingCompletedRecords) {
+    return;
+  }
+  const { game, scope, examCode } = currentOverviewFilters();
+  if (!overviewLoaded || !game || !visibleOverviewRows.length) {
+    exportStatus.textContent = "Load the class overview and select a game before exporting.";
+    return;
+  }
+  const students = [...new Set(visibleOverviewRows.map((row) => row.email).filter(Boolean))];
+  const controls = [
+    apiKeyInput, loadOverviewButton, resetStateButton, exportOverviewButton,
+    filterGameSelect, filterScopeSelect, filterExamCodeSelect, sortBySelect, sortDirectionSelect,
+  ];
+  const disabledStates = controls.map((control) => control.disabled);
+  exportingCompletedRecords = true;
+  controls.forEach((control) => { control.disabled = true; });
+  updateCompletedExportButton();
+  exportStatus.textContent = "Loading passed task records ...";
+
+  const csvRows = [[
+    "Account", "Game", "Scope", "Exam Code", "Task", "Task Status", "Current Phase",
+    "Task Points", "Task Started", "Task Completed", "Task Updated",
+    "Test Phase", "Test Result", "Test Time", "Report URL",
+  ]];
+  let taskCount = 0;
+  try {
+    for (const [index, email] of students.entries()) {
+      exportStatus.textContent = `Loading passed task records (${index + 1}/${students.length} accounts) ...`;
+      const detail = await apiGet("/teacher/student", {
+        studentEmail: email, game, mode: scope, examCode, completedOnly: "true",
+      });
+      if (detail.completed_only !== true) {
+        throw new Error("Passed-task export requires the updated teacher API. Deploy the backend and try again.");
+      }
+      const tasks = Array.isArray(detail.task_states) ? detail.task_states : [];
+      const reports = Array.isArray(detail.reports) ? detail.reports : [];
+      for (const task of tasks) {
+        if (task.status !== "completed" || task.skipped) {
+          continue;
+        }
+        taskCount += 1;
+        const taskReports = reports.filter((report) => report.game === task.game
+          && report.task_id === task.task_id
+          && (report.mode || "exercise") === (task.mode || "exercise")
+          && (report.exam_code || "") === (task.exam_code || ""));
+        for (const report of taskReports.length ? taskReports : [{}]) {
+          csvRows.push([
+            email, task.game || "", task.mode || "exercise", task.exam_code || "",
+            task.task_id || "", task.status, task.current_phase || "", task.total_points ?? 0,
+            task.created_at || "", task.completed_at || "", task.updated_at || "",
+            report.phase || "", report.test_result || "", report.time || "", report.report_url || "",
+          ]);
+        }
+      }
+    }
+    if (!taskCount) {
+      exportStatus.textContent = "No passed tasks found for the selected filters.";
+      return;
+    }
+    downloadCsv(csvRows, `teacher-passed-tasks-${game.replace(/[^a-zA-Z0-9_-]/g, "_")}`);
+    exportStatus.textContent = `Exported ${taskCount} passed task(s) in ${csvRows.length - 1} record row(s) across ${students.length} account(s).`;
+  } catch (error) {
+    exportStatus.textContent = `Export failed. No CSV was downloaded. ${error.message}`;
+  } finally {
+    controls.forEach((control, index) => { control.disabled = disabledStates[index]; });
+    exportingCompletedRecords = false;
+    updateCompletedExportButton();
+  }
 }
 
 async function apiGet(path, params = {}) {
@@ -457,12 +546,16 @@ function renderDetail(detail) {
 }
 
 async function loadOverview() {
+  overviewLoaded = false;
+  updateCompletedExportButton();
+  exportStatus.textContent = "";
   overviewSummary.textContent = "Loading class overview ...";
   studentDetail.textContent = "Select an account row to load detail.";
 
   try {
     const payload = await apiGet("/teacher/overview");
     overviewRows = Array.isArray(payload.students) ? payload.students : [];
+    overviewLoaded = true;
     refreshOverviewFilters();
     const savedFilters = loadState().teacherOverview || {};
     if (savedFilters.game) {
@@ -517,11 +610,16 @@ exportOverviewButton.addEventListener("click", () => {
   exportVisibleOverviewRows();
 });
 
+exportCompletedRecordsButton.addEventListener("click", exportCompletedRecords);
+
 resetStateButton.addEventListener("click", () => {
   clearState();
   apiKeyInput.value = "";
   overviewRows = [];
   visibleOverviewRows = [];
+  overviewLoaded = false;
+  exportStatus.textContent = "";
+  updateCompletedExportButton();
   filterGameSelect.value = "";
   filterScopeSelect.innerHTML = '<option value="">All scopes</option><option value="exercise">exercise</option><option value="exam">exam</option>';
   filterScopeSelect.value = "";

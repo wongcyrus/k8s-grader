@@ -84,9 +84,9 @@ class TeacherDashboardService:
 
         for account in accounts:
             email = account.get("email", "")
-            states = self.task_repo.list_by_email(email)
+            states = self.task_repo.list_by_email(email, all_pages=True)
             sessions = self.exam_session_repo.list_by_email(email)
-            records = self.test_record_repo.list_by_email(email)
+            records = self.test_record_repo.list_by_email(email, all_pages=True)
             rows.extend(self._build_scope_summaries(account, states, sessions, records))
 
         return rows
@@ -97,14 +97,16 @@ class TeacherDashboardService:
         game: Optional[str] = None,
         mode: Optional[str] = None,
         exam_code: Optional[str] = None,
+        completed_only: bool = False,
     ) -> Dict[str, Any]:
         account = self.account_repo.get(student_email)
         if not account:
             raise ValueError("Student account not found")
 
-        states = self.task_repo.list_by_email(student_email)
+        read_options = {"all_pages": True} if completed_only else {}
+        states = self.task_repo.list_by_email(student_email, **read_options)
         sessions = self.exam_session_repo.list_by_email(student_email)
-        records = self.test_record_repo.list_by_email(student_email)
+        records = self.test_record_repo.list_by_email(student_email, **read_options)
 
         filtered_states, filtered_sessions, filtered_records = self._filter_scope_items(
             states,
@@ -114,6 +116,26 @@ class TeacherDashboardService:
             mode,
             exam_code,
         )
+
+        if completed_only:
+            filtered_states = [
+                state for state in filtered_states
+                if state.status == TaskStatus.COMPLETED
+                and not getattr(state, "skipped", False)
+            ]
+            completed_tasks = {
+                (state.game, state.task_id, state.mode, state.exam_code or "")
+                for state in filtered_states
+            }
+            filtered_records = [
+                record for record in filtered_records
+                if (
+                    record.get("gameTime", "").split("#", 1)[0],
+                    record.get("task", ""),
+                    record.get("mode") or "exercise",
+                    record.get("examCode") or "",
+                ) in completed_tasks
+            ]
 
         summary = self._build_scope_summary(
             account,
@@ -137,6 +159,8 @@ class TeacherDashboardService:
                     "current_phase": state.current_phase_id or "",
                     "total_points": state.total_points,
                     "skipped": bool(getattr(state, "skipped", False)),
+                    "created_at": state.created_at,
+                    "completed_at": state.completed_at or "",
                     "updated_at": state.updated_at,
                 }
             )
@@ -158,7 +182,10 @@ class TeacherDashboardService:
             )
 
         report_items = []
-        for item in sorted(filtered_records, key=lambda entry: entry.get("time", ""), reverse=True)[:50]:
+        sorted_records = sorted(filtered_records, key=lambda entry: entry.get("time", ""), reverse=True)
+        if not completed_only:
+            sorted_records = sorted_records[:50]
+        for item in sorted_records:
             report_items.append(
                 {
                     "game": item.get("gameTime", "").split("#", 1)[0],
@@ -172,12 +199,15 @@ class TeacherDashboardService:
                 }
             )
 
-        return {
+        detail = {
             "student": summary.to_dict(),
             "task_states": task_states,
             "exam_sessions": exam_sessions,
             "reports": report_items,
         }
+        if completed_only:
+            detail["completed_only"] = True
+        return detail
 
     def _build_scope_summaries(
         self,

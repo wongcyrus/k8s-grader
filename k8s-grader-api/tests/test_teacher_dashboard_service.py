@@ -233,3 +233,87 @@ class TestTeacherDashboardService:
             assert str(err) == "Student account not found"
         else:
             raise AssertionError("Expected ValueError for missing student")
+
+    def test_completed_export_keeps_all_attempts_only_for_passed_tasks_and_scope(self):
+        email = "student@example.com"
+        passed = build_state(
+            email, "game01", "task01", status=TaskStatus.COMPLETED, points=5,
+        )
+        passed.completed_at = "2026-01-01T10:00:00+00:00"
+        states = [
+            passed,
+            build_state(
+                email, "game01", "task01", mode="exam", exam_code="EXAM-001",
+                status=TaskStatus.COMPLETED, points=10,
+            ),
+            build_state(email, "game01", "unfinished"),
+            build_state(
+                email, "game01", "skipped", status=TaskStatus.COMPLETED, skipped=True,
+            ),
+            build_state(email, "game01", "abandoned", status=TaskStatus.ABANDONED),
+            build_state(email, "game02", "task01", status=TaskStatus.COMPLETED),
+        ]
+        records = [
+            {
+                "gameTime": f"game01#{index:03d}", "task": "task01",
+                "time": f"{index:03d}", "testResult": "FAIL" if index == 0 else "OK",
+            }
+            for index in range(60)
+        ]
+        exam_record = {
+            "gameTime": "game01#exam", "task": "task01", "time": "exam",
+            "mode": "exam", "examCode": "EXAM-001", "testResult": "OK",
+        }
+        records.extend([
+            exam_record,
+            {**exam_record, "examCode": "EXAM-002"},
+            {**exam_record, "gameTime": "game02#exam"},
+            *[
+                {"gameTime": "game01#other", "task": task, "testResult": "OK"}
+                for task in ("unfinished", "skipped", "abandoned")
+            ],
+        ])
+        service = TeacherDashboardService(
+            account_repo=Mock(get=Mock(return_value={"email": email})),
+            task_repo=Mock(list_by_email=Mock(return_value=states)),
+            exam_session_repo=Mock(list_by_email=Mock(return_value=[])),
+            test_record_repo=Mock(list_by_email=Mock(return_value=records)),
+        )
+
+        result = service.get_student_detail(email, game="game01", completed_only=True)
+
+        assert result["completed_only"] is True
+        assert len(result["task_states"]) == 2
+        assert len(result["reports"]) == 61
+        assert sum(item["test_result"] == "FAIL" for item in result["reports"]) == 1
+        assert result["task_states"][0]["completed_at"] == passed.completed_at
+        service.task_repo.list_by_email.assert_called_once_with(email, all_pages=True)
+        service.test_record_repo.list_by_email.assert_called_once_with(email, all_pages=True)
+
+        scoped = service.get_student_detail(
+            email, game="game01", mode="exam", exam_code="EXAM-001", completed_only=True,
+        )
+        assert len(scoped["task_states"]) == 1
+        assert len(scoped["reports"]) == 1
+        assert scoped["reports"][0]["exam_code"] == "EXAM-001"
+
+    def test_regular_detail_preserves_recent_report_limit(self):
+        email = "student@example.com"
+        service = TeacherDashboardService(
+            account_repo=Mock(get=Mock(return_value={"email": email})),
+            task_repo=Mock(list_by_email=Mock(return_value=[])),
+            exam_session_repo=Mock(list_by_email=Mock(return_value=[])),
+            test_record_repo=Mock(list_by_email=Mock(return_value=[
+                {"gameTime": f"game01#{index:03d}", "time": f"{index:03d}"}
+                for index in range(60)
+            ])),
+        )
+
+        result = service.get_student_detail(email)
+
+        assert "completed_only" not in result
+        assert len(result["reports"]) == 50
+        assert result["reports"][0]["time"] == "059"
+        assert result["reports"][-1]["time"] == "010"
+        service.task_repo.list_by_email.assert_called_once_with(email)
+        service.test_record_repo.list_by_email.assert_called_once_with(email)

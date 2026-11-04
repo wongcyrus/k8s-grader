@@ -1,6 +1,7 @@
 """Tests for database repositories"""
 import pytest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock, patch
 
 from common.database.repositories import (
     AccountRepository,
@@ -9,9 +10,70 @@ from common.database.repositories import (
     RequestThrottleRepository,
     TaskPhaseEstimateRepository,
     TaskStateRepository,
+    TestRecordRepository as RecordRepository,
     normalize_endpoint,
 )
 from common.models.task_state import TaskState, TaskStatus, PhaseState, PhaseStatus
+
+
+def test_task_history_reads_all_query_pages(dynamodb_tables, sample_task_state):
+    repo = TaskStateRepository()
+    for index in range(3):
+        sample_task_state.task_id = f"task{index}"
+        assert repo.save(sample_task_state)
+    client = repo.table.meta.client
+    paginator = client.get_paginator("query")
+    paginate = paginator.paginate
+    with patch.object(client, "get_paginator", return_value=paginator), patch.object(
+        paginator, "paginate",
+        side_effect=lambda **kwargs: paginate(**kwargs, PaginationConfig={"PageSize": 1}),
+    ):
+        states = repo.list_by_email(sample_task_state.email, all_pages=True)
+
+    assert [state.task_id for state in states] == ["task0", "task1", "task2"]
+
+
+def test_report_history_reads_and_filters_all_query_pages(dynamodb_tables):
+    repo = RecordRepository()
+    repo.table.meta.client.create_table(
+        TableName=repo.table_name,
+        KeySchema=[
+            {"AttributeName": "email", "KeyType": "HASH"},
+            {"AttributeName": "gameTime", "KeyType": "RANGE"},
+        ],
+        AttributeDefinitions=[
+            {"AttributeName": "email", "AttributeType": "S"},
+            {"AttributeName": "gameTime", "AttributeType": "S"},
+        ],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    for index in range(3):
+        repo.table.put_item(Item={
+            "email": "student@example.com", "gameTime": f"game01#{index}",
+            "task": f"task{index}", "examCode": "EXAM-001",
+        })
+    client = repo.table.meta.client
+    paginator = client.get_paginator("query")
+    paginate = paginator.paginate
+    with patch.object(client, "get_paginator", return_value=paginator), patch.object(
+        paginator, "paginate",
+        side_effect=lambda **kwargs: paginate(**kwargs, PaginationConfig={"PageSize": 1}),
+    ):
+        records = repo.list_by_email(
+            "student@example.com", exam_code="EXAM-001", task_id="task2", all_pages=True,
+        )
+
+    assert [record["task"] for record in records] == ["task2"]
+
+
+@pytest.mark.parametrize("repo_class", [TaskStateRepository, RecordRepository])
+def test_complete_history_propagates_read_failures(repo_class):
+    repo = repo_class()
+    repo._table = Mock()
+    repo._table.meta.client.get_paginator.return_value.paginate.side_effect = RuntimeError("Read failed")
+
+    with pytest.raises(RuntimeError, match="Read failed"):
+        repo.list_by_email("student@example.com", all_pages=True)
 
 
 class TestTaskStateRepository:

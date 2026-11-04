@@ -259,6 +259,7 @@ def teacher_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any
                 game=game,
                 mode=mode,
                 exam_code=exam_code,
+                completed_only=params.get('completedOnly') == 'true',
             )
         except ValueError as err:
             return error_response(str(err))

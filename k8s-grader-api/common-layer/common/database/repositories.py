@@ -249,17 +249,29 @@ class TaskStateRepository:
             logger.error(f"Failed to delete task states for game: {e}")
             return 0
 
-    def list_by_email(self, email: str) -> List[Any]:
+    def list_by_email(self, email: str, *, all_pages: bool = False) -> List[Any]:
         """
         List all task states for a user across all games.
 
         Args:
             email: User email
+            all_pages: Read complete history and propagate read errors.
 
         Returns:
             List of TaskState instances
         """
         from common.models.task_state import TaskState
+
+        if all_pages:
+            pages = self.table.meta.client.get_paginator('query').paginate(
+                TableName=self.table_name,
+                KeyConditionExpression=Key('email').eq(email),
+            )
+            return [
+                TaskState.from_dict(item)
+                for page in pages
+                for item in page.get('Items', [])
+            ]
 
         try:
             response = self.table.query(
@@ -876,8 +888,24 @@ class TestRecordRepository:
             logger.error(f"Failed to save test record: {e}")
             return False
 
-    def list_by_email(self, email: str, exam_code: Optional[str] = None, task_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """List test records for a user, optionally filtered by exam code and task"""
+    def list_by_email(
+        self, email: str, exam_code: Optional[str] = None,
+        task_id: Optional[str] = None, *, all_pages: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """List records, propagating read errors when all_pages is requested."""
+        if all_pages:
+            pages = self.table.meta.client.get_paginator('query').paginate(
+                TableName=self.table_name,
+                KeyConditionExpression=Key('email').eq(email),
+            )
+            return [
+                item
+                for page in pages
+                for item in page.get('Items', [])
+                if (not exam_code or item.get('examCode') == exam_code)
+                and (not task_id or item.get('task') == task_id)
+            ]
+
         try:
             kwargs = {
                 'KeyConditionExpression': Key('email').eq(email)

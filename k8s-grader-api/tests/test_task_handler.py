@@ -376,7 +376,8 @@ class TestLambdaHandler:
 
     @patch.dict(os.environ, {'TeacherEmails': 'teacher@example.com'}, clear=False)
     @patch('app.get_email_from_event')
-    def test_teacher_student_route(self, mock_get_email):
+    @pytest.mark.parametrize("completed_only", [False, True])
+    def test_teacher_student_route(self, mock_get_email, completed_only):
         mock_get_email.return_value = 'teacher@example.com'
         event = {
             'path': '/teacher/student',
@@ -388,6 +389,8 @@ class TestLambdaHandler:
             },
             'headers': {'x-api-key': 'teacher-key'}
         }
+        if completed_only:
+            event['queryStringParameters']['completedOnly'] = 'true'
 
         with patch('app.teacher_dashboard_service.get_student_detail', return_value={
             'student': {'email': 'student@example.com'},
@@ -402,6 +405,7 @@ class TestLambdaHandler:
             game='game01',
             mode='exam',
             exam_code='EXAM-001',
+            completed_only=completed_only,
         )
         body = json.loads(response['body'])
         assert body['status'] == 'OK'
@@ -443,11 +447,14 @@ class TestLambdaHandler:
 
     @patch.dict(os.environ, {'TeacherEmails': 'teacher@example.com'}, clear=False)
     @patch('app.get_email_from_event')
-    def test_teacher_route_rejects_non_teacher(self, mock_get_email):
+    @pytest.mark.parametrize("path", ["/teacher/overview", "/teacher/student"])
+    def test_teacher_route_rejects_non_teacher(self, mock_get_email, path):
         mock_get_email.return_value = 'student@example.com'
         event = {
-            'path': '/teacher/overview',
-            'queryStringParameters': {},
+            'path': path,
+            'queryStringParameters': {
+                'studentEmail': 'other@example.com', 'completedOnly': 'true',
+            },
             'headers': {'x-api-key': 'student-key'}
         }
 
