@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  SAM Template for k8s-grader-api
+  Kubernetes grading platform with a private CloudFront origin and SSE-S3 storage.
 Metadata:
   AWSToolsMetrics:
     AWSAgentToolkit: aws-cloudformation@3
@@ -78,6 +78,8 @@ Resources:
 
   TestResultBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Metadata:
       com.aws.cloudformation.Context:
         why: "Preserve grading reports; only abandoned multipart uploads are temporary."
@@ -85,6 +87,19 @@ Resources:
           - "Do not expire completed exam reports."
           - "Use SSE-S3 rather than a customer-managed KMS key."
     Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3AccessLogBucket
+        LogFilePrefix: logs/reports/
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -98,32 +113,146 @@ Resources:
                 DaysAfterInitiation: 1
         - !Ref "AWS::NoValue"
 
+  TestResultBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Reject plaintext requests while preserving signed HTTPS report links."
+        must:
+          - "Never grant anonymous report access."
+    Properties:
+      Bucket: !Ref TestResultBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt TestResultBucket.Arn
+              - !Sub "${TestResultBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+                aws:PrincipalIsAWSService: false
+
   ExamWebsiteBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Only the existing CloudFront distribution may serve portal objects."
+        must:
+          - "Keep the bucket name and CloudFront URL stable during private-origin migration."
+          - "Use SSE-S3; never introduce a customer-managed KMS key."
     Properties:
       BucketName: !Sub "${AWS::StackName}-exam-web-${AWS::AccountId}-${AWS::Region}"
-      WebsiteConfiguration:
-        IndexDocument: index.html
-        ErrorDocument: index.html
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
       PublicAccessBlockConfiguration:
-        BlockPublicAcls: false
-        IgnorePublicAcls: false
-        BlockPublicPolicy: false
-        RestrictPublicBuckets: false
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3AccessLogBucket
+        LogFilePrefix: logs/website/
 
   ExamWebsiteBucketPolicy:
     Type: AWS::S3::BucketPolicy
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Replace anonymous website reads with distribution-scoped signed origin access."
+        must:
+          - "Migrate the distribution before removing the old public website permissions."
     Properties:
       Bucket: !Ref ExamWebsiteBucket
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
-          - Sid: PublicReadGetObject
+          - Sid: CloudFrontReadOnly
             Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${ExamWebsiteBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${ExamWebsiteCloudFrontDistribution}"
+          - Sid: DenyInsecureTransport
+            Effect: Deny
             Principal: "*"
-            Action:
-              - s3:GetObject
-            Resource: !Sub "arn:aws:s3:::${ExamWebsiteBucket}/*"
+            Action: s3:*
+            Resource:
+              - !GetAtt ExamWebsiteBucket.Arn
+              - !Sub "${ExamWebsiteBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+                aws:PrincipalIsAWSService: false
+
+  ExamWebsiteOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Authenticate CloudFront reads without public S3 access or KMS."
+        must:
+          - "Always sign REST-origin requests so CloudFront-to-S3 traffic uses HTTPS."
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-portal-origin"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  PortalDirectoryIndexFunction:
+    Type: AWS::CloudFront::Function
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Preserve S3 website directory-index behavior when moving to a private REST origin."
+        must:
+          - "Keep directory redirects and their query strings intact for the embedded games."
+    Properties:
+      Name: !Sub "${AWS::StackName}-portal-directory-index"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Preserve portal directory URLs with a private S3 origin
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+          if (uri === "/game" || uri === "/doom" || uri === "/hkzero") {
+            var query = [];
+            var parameters = request.querystring || {};
+            Object.keys(parameters).forEach(function (name) {
+              var values = parameters[name].multiValue || [parameters[name]];
+              values.forEach(function (item) {
+                query.push(name + "=" + item.value);
+              });
+            });
+            return {
+              statusCode: 301,
+              statusDescription: "Moved Permanently",
+              headers: {
+                location: { value: uri + "/" + (query.length ? "?" + query.join("&") : "") }
+              }
+            };
+          }
+          if (uri.charAt(uri.length - 1) === "/") {
+            request.uri += "index.html";
+          }
+          return request;
+        }
 
   HkzeroAssetsResponseHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
@@ -138,6 +267,11 @@ Resources:
 
   ExamWebsiteCloudFrontDistribution:
     Type: AWS::CloudFront::Distribution
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Keep public portal URLs while the S3 origin remains private."
+        must:
+          - "Use a signed S3 REST origin, never an HTTP-only website endpoint."
     Properties:
       DistributionConfig:
         Enabled: true
@@ -147,12 +281,11 @@ Resources:
         IPV6Enabled: true
         PriceClass: PriceClass_100
         Origins:
-          - Id: ExamWebsiteS3WebsiteOrigin
-            DomainName: !Sub "${ExamWebsiteBucket}.s3-website-${AWS::Region}.amazonaws.com"
-            CustomOriginConfig:
-              HTTPPort: 80
-              HTTPSPort: 443
-              OriginProtocolPolicy: http-only
+          - Id: ExamWebsiteS3Origin
+            DomainName: !GetAtt ExamWebsiteBucket.RegionalDomainName
+            OriginAccessControlId: !Ref ExamWebsiteOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ""
         DefaultCacheBehavior:
           AllowedMethods:
             - GET
@@ -167,8 +300,11 @@ Resources:
             QueryString: false
             Cookies:
               Forward: none
-          TargetOriginId: ExamWebsiteS3WebsiteOrigin
+          TargetOriginId: ExamWebsiteS3Origin
           ViewerProtocolPolicy: redirect-to-https
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt PortalDirectoryIndexFunction.FunctionARN
         CacheBehaviors:
           - PathPattern: /hkzero/assets/*
             AllowedMethods:
@@ -185,7 +321,7 @@ Resources:
               Cookies:
                 Forward: none
             ResponseHeadersPolicyId: !Ref HkzeroAssetsResponseHeadersPolicy
-            TargetOriginId: ExamWebsiteS3WebsiteOrigin
+            TargetOriginId: ExamWebsiteS3Origin
             ViewerProtocolPolicy: redirect-to-https
         CustomErrorResponses:
           - ErrorCode: 403
@@ -197,8 +333,18 @@ Resources:
 
   GameSourceBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Protect private grading source and retain previous source archives."
+        must:
+          - "Use SSE-S3 and preserve existing source objects and bucket identity."
     Properties:
       BucketName: !Sub "${AWS::StackName}-game-source-${AWS::AccountId}-${AWS::Region}"
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         IgnorePublicAcls: true
@@ -208,6 +354,107 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3AccessLogBucket
+        LogFilePrefix: logs/game-source/
+
+  GameSourceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Require encrypted transport for private grading-source reads and writes."
+        must:
+          - "Preserve access by existing IAM-authorized graders and deployment tooling."
+    Properties:
+      Bucket: !Ref GameSourceBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt GameSourceBucket.Arn
+              - !Sub "${GameSourceBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+                aws:PrincipalIsAWSService: false
+
+  S3AccessLogBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      guard:
+        SuppressedRules:
+          - S3_BUCKET_LOGGING_ENABLED
+          - S3_BUCKET_VERSIONING_ENABLED
+      com.aws.cloudformation.Context:
+        why: "Separate append-only access logs with bounded retention and no KMS charges."
+        must:
+          - "Expire only access logs after 30 days; never expire grading reports or source versions."
+          - "Do not log this destination bucket or retain expired logs as noncurrent versions."
+    Properties:
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireAccessLogs
+            Status: Enabled
+            Prefix: logs/
+            ExpirationInDays: 30
+
+  S3AccessLogBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Allow only this stack's source buckets to deliver access logs."
+        must:
+          - "Restrict log delivery to the source account and explicit source bucket ARNs."
+    Properties:
+      Bucket: !Ref S3AccessLogBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: S3LogDelivery
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub "${S3AccessLogBucket.Arn}/logs/*"
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn:
+                  - !GetAtt TestResultBucket.Arn
+                  - !GetAtt ExamWebsiteBucket.Arn
+                  - !GetAtt GameSourceBucket.Arn
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt S3AccessLogBucket.Arn
+              - !Sub "${S3AccessLogBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+                aws:PrincipalIsAWSService: false
 
   ApiKeyTable:
     Type: AWS::DynamoDB::Table
