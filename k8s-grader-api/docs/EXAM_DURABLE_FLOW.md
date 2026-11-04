@@ -156,6 +156,13 @@ fallback recovery, not a browser response timeout.
 
 Game commands retain their existing `game#...#mutation` keys and behavior.
 
+An independent `exam#<email>#<game>#environment` record reserves the question
+between commands, including student working time. It has no TTL: an expired
+execution lease must not imply that Kubernetes resources have been removed.
+Only successful cleanup followed by a persisted terminal state or reset releases
+this reservation. Reads also discover unfinished pre-rollout exam states, so
+reconnecting restores the owning question instead of allowing a second setup.
+
 ### `AccountTable`
 
 Stores the student Kubernetes endpoint and client credentials used during `start`, `reset`, and `run`.
@@ -337,8 +344,9 @@ Purpose:
 - create the task if needed
 - return the starting phase information
 
-Start initializes task state; it does not execute setup tests. Run performs
-setup and subsequent phases under the execution lease.
+**Start question** initializes state and runs `setup -> ready` under one execution
+lease, stopping before assessment so the student can work. Missing preparation
+phases are skipped. The development-only `answer` phase is never executed.
 
 Detailed flow:
 
@@ -366,16 +374,16 @@ Detailed flow:
     - `$email`
     - `$exam_code`
 11. save state
-12. return:
-    - `STARTED`, or
-    - `COMPLETED` if already completed
+12. run preparation and return its result, with a student-facing `lifecycle`
+    stage; return `STARTED` when no preparation is needed, or `COMPLETED` if
+    already completed
 13. broadcast the result to matching WebSocket subscribers
 
 ## 7.2 `reset`
 
 Purpose:
 
-- explicitly restart the current exam task from phase 1
+- leave the current question after removing its Kubernetes resources
 
 Allowed only when:
 
@@ -390,8 +398,9 @@ Detailed flow:
 2. load existing task state
 3. reject if not started
 4. reject if already completed
-5. delete existing task state
-6. return `RESET` response telling the student to click **Start**
+5. persist the reset intent and run the manifest's cleanup phase
+6. only after cleanup succeeds, delete task state, release environment ownership,
+   and return `RESET`; failures stay at `cleanup` and offer **Retry cleanup**
 7. broadcast to WebSocket subscribers after releasing the execution lease
 
 Important behavior:
@@ -400,12 +409,13 @@ Important behavior:
 - records history remains in `TestRecordTable`
 - reset does **not** auto-start the task again
 - the next **Start** recreates the state with deterministic per-student `session_data`
+- retrying failed reset cleanup returns `RESET`, not `COMPLETED`, and preserves history
 
 ## 7.3 `run`
 
 Purpose:
 
-- execute the next legal exam phase
+- submit an answer through `challenge -> check`, or retry preparation/cleanup
 
 Detailed flow:
 
@@ -443,6 +453,7 @@ Possible branches:
    - automatically run `ready` in the same exam `run` request
    - save records for both `setup` and `ready`
    - return both phase results in `executed_phases`
+   - similarly, a passed `challenge` automatically runs `check` in the same submission
 9. if phase execution failed:
    - if max attempts now reached -> `ABANDONED`
    - else -> `FAILED`
@@ -457,7 +468,10 @@ This is the main grading path.
 
 Important UX behavior:
 
-- a single exam `run` now auto-chains `setup -> ready`
+- **Start question** pairs `setup -> ready`; **Submit answer** pairs `challenge -> check`
+- after preparation, the UI shows **Your turn** while environment ownership remains reserved
+- a failed check returns to student work; the next deliberate submission reruns
+  the challenge/check chain, preserving attempt counts and awarding marks only once
 - exam mode awards points only for a passed `check` phase
 - the browser response includes `executed_phases`, so the student can see both results
 - `ready` failure stops the chain and leaves the task on `ready` for retry
@@ -465,6 +479,11 @@ Important UX behavior:
 - on automatic cleanup failure or exception, return `FAILED` with `cleanup_failed: true`, retain `IN_PROGRESS` at `cleanup`, and let Run retry cleanup
 - a cleanup retry after attempt exhaustion preserves the original abandonment reason
 - only successful completion/abandonment removes the task from `remaining_tasks`; automatic advancement waits for the finished command
+- student stages are **Preparing environment**, **Your turn**, **Assessing your work**,
+  **Cleaning up**, and **Finished**; failures expose the appropriate retry action
+- REST `start`, `run`, and `reset` now return `QUEUED` and use the same durable
+  worker as WebSocket commands, regardless of the legacy `async` parameter.
+  Consumers must reconcile via status/WebSocket instead of expecting synchronous grading.
 
 ## 7.4 `status`
 

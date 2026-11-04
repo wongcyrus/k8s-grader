@@ -259,13 +259,43 @@ Each phase tracks:
 Exam Start, Run, and Reset share a student/game execution lease across questions,
 exam codes, tabs, and REST requests. The UI blocks conflicting actions and
 question changes through setup, testing, and cleanup; reconnects and timeouts
-restore server state rather than cancel execution. Idle question switching is
-still allowed. Game handlers and lock keys are unchanged.
+restore server state rather than cancel execution. A started question retains
+environment ownership even while idle; switching requires completion or
+successful leave-and-cleanup. Game handlers and lock keys are unchanged.
 
 Deploy the exam backend and web UI together. See
+[Exam User Guide](docs/EXAM_USER_GUIDE.md),
 [Exam Durable Flow](docs/EXAM_DURABLE_FLOW.md),
 [coordinated deployment](docs/DEPLOYMENT_GUIDE.md#coordinated-exam-backend-and-ui-rollout),
 and [execution-lock regression tests](docs/TESTING_GUIDE.md#exam-execution-locking-regressions).
+
+### Teacher passed-task export
+
+In `teacher.html`, load the class overview with a teacher API key, select a
+**Game**, optionally narrow **Scope** and **Exam Code**, then click
+**Export Passed Task Records CSV**. This exports completed, non-skipped tasks
+for every matching account, including all available test attempts for those
+tasks, even failed attempts before the pass. Unfinished, abandoned, and skipped
+tasks are excluded.
+
+Each test attempt gets a CSV row with the account, game, scope, exam code,
+task status, task points, start/completion/update timestamps, test phase,
+result, time, and report URL. A passed task without a report still gets a row.
+Task points repeat across attempt rows; count each task's score only once.
+The existing **Export Filtered CSV** remains an account-summary export.
+
+The export uses teacher-authorized
+`GET /teacher/student?studentEmail=...&game=...&completedOnly=true`, with optional
+`mode` and `examCode` filters. This opt-in response includes `completed_only: true`
+and every matching report, rather than the normal detail view's 50-report limit.
+Teacher overview and export queries read all DynamoDB pages. Accounts are fetched
+one at a time with progress shown; any failed request prevents a partial CSV
+download. The export reflects stored data as each account is read, not an atomic
+class-wide snapshot.
+
+Deploy the updated backend and teacher web files together. The page rejects an
+older API that cannot confirm complete passed-task retrieval, rather than
+silently downloading a truncated export.
 
 ## 🔧 Development
 
@@ -300,6 +330,7 @@ curl "http://localhost:3000/exam/verify-code?examCode=EXAM-001" \
 
 ## 📚 Documentation
 
+- **[docs/EXAM_USER_GUIDE.md](docs/EXAM_USER_GUIDE.md)** - Student exam inputs, buttons, lifecycle, and recovery
 - **[docs/GAME_LOGIC.md](docs/GAME_LOGIC.md)** - Complete game flow and mechanics with diagrams
 - **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** - Complete deployment instructions
 - **[docs/MANIFEST_GUIDE.md](docs/MANIFEST_GUIDE.md)** - Task manifest creation guide

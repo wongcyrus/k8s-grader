@@ -76,10 +76,55 @@ bypass prevention, stale-owner rejection, setup/cleanup locking, retryable
 cleanup failures, read-only overview queries, reconnects and response timeouts,
 request correlation, and safe automatic advancement. The Game suites verify
 that existing Game behavior is preserved and its leases remain independent.
+Lifecycle regressions additionally cover ownership during idle student work,
+legacy-question recovery, paired preparation and assessment, optional phases,
+cleanup-first leave/reset, exhaustion followed by cleanup retry, preserved marks,
+and stage-specific UI labels with stable question instructions.
 
 These are local regressions, not end-to-end live WebSocket or Kubernetes
 validation. Follow the [deployment verification steps](DEPLOYMENT_GUIDE.md#coordinated-exam-backend-and-ui-rollout)
 after deploying both the backend and web UI.
+
+### Teacher passed-task export regressions
+
+From `k8s-grader-api`:
+
+```bash
+AWS_ACCESS_KEY_ID=testing AWS_SECRET_ACCESS_KEY=testing \
+  AWS_DEFAULT_REGION=us-east-1 AWS_EC2_METADATA_DISABLED=true \
+  venv/bin/python -m pytest \
+  tests/test_teacher_dashboard_service.py \
+  tests/test_task_handler.py \
+  tests/test_repositories.py -q
+
+node --test tests/test_teacher_web.mjs
+```
+
+These local tests cover multi-page DynamoDB history, more than 50 reports,
+completed/non-skipped task selection, scope isolation, teacher authorization,
+all-account CSV downloads, tasks without reports, CSV escaping and spreadsheet
+formula neutralization, duplicate-export prevention, filter preservation,
+older-backend rejection, and failure without partial downloads. Browser tests
+use a simulated DOM, download API, and HTTP responses; no live AWS deployment
+or Kubernetes cluster is required.
+
+### Private S3 origin regressions
+
+From `k8s-grader-api`:
+
+```bash
+venv/bin/python -m pytest tests/test_s3_template.py -q
+node --test tests/test_portal_directory_index.mjs
+sam validate --lint
+```
+
+These check private, encrypted, retained storage; HTTPS-only bucket policies;
+versioning and nonrecursive access-log retention; distribution-scoped signed
+origin access; and compatibility of directory redirects and launch queries.
+Run the AWS-managed S3 rules as well, excluding KMS-only requirements because
+this stack intentionally uses SSE-S3. The access-log destination documents its
+logging/versioning exceptions to prevent recursive logs and expired-version
+retention.
 
 ## Integration Tests
 

@@ -1,6 +1,6 @@
 # Documentation Index
 
-**Last Updated:** July 23, 2026
+**Last Updated:** November 4, 2026
 
 This directory contains all documentation for the k8s-grader-api project.
 
@@ -9,6 +9,7 @@ This directory contains all documentation for the k8s-grader-api project.
 ## Quick Links
 
 - **[Quick Start Guide](QUICK_START.md)** - Get started in 5 minutes
+- **[Exam User Guide](EXAM_USER_GUIDE.md)** - Student inputs, buttons, stages, and recovery
 - **[Bug Fix Summary](BUG_FIX_SUMMARY_FEB_2026.md)** - February 2026 bug fixes ⭐
 - **[Changelog](CHANGELOG.md)** - All changes and updates
 
@@ -18,6 +19,7 @@ This directory contains all documentation for the k8s-grader-api project.
 
 ### Getting Started
 - **[Quick Start Guide](QUICK_START.md)** - Installation and setup
+- **[Exam User Guide](EXAM_USER_GUIDE.md)** - How to use the student exam page
 - **[README](README.md)** - Project overview
 - **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - How to deploy
 

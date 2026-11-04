@@ -253,6 +253,10 @@ The accessible page and script are uploaded with `Cache-Control: no-cache` so br
 
 ### Step 4: Deploy (Subsequent Times)
 
+For an existing public website stack, complete the
+[private S3 origin migration](#private-s3-storage-and-one-time-origin-migration)
+before using the normal helper with the hardened template.
+
 After first deployment, use the helper again so deployment, portal publishing, and game-source seeding stay in sync:
 
 ```bash
@@ -286,6 +290,59 @@ See [Exam Durable Flow](EXAM_DURABLE_FLOW.md) for lease scope, recovery behavior
 and response fields, and [Testing Guide](TESTING_GUIDE.md#exam-execution-locking-regressions)
 for local regression commands. Mocked regressions do not replace these live
 WebSocket checks.
+
+### Private S3 storage and one-time origin migration
+
+The portal, test reports, and private game-source buckets use SSE-S3 (`AES256`),
+bucket-owner-enforced ownership, all four S3 public-access blocks, versioning,
+and explicit denies for non-HTTPS requests. No customer-managed KMS keys are
+created or required. Report URLs remain HTTPS presigned S3 URLs.
+
+The public portal URL remains the existing CloudFront URL. Its origin is the
+private S3 REST endpoint, authenticated by origin access control with
+`SigningBehavior: always`; only that distribution can read portal objects.
+A CloudFront Function preserves directory indexes and redirects `/game`,
+`/doom`, and `/hkzero` to slash URLs without losing launch query parameters.
+
+**Existing public website stacks require a staged first rollout.** Applying
+public-access blocking or the HTTPS deny before CloudFront stops using its
+HTTP-only S3 website endpoint can interrupt the portal:
+
+1. Prepare a transition change set with the new REST origin, origin access
+   control, directory function, and distribution-scoped bucket read grant.
+   Temporarily retain the existing website configuration, public read grant,
+   and public-access settings; omit the website bucket's HTTPS deny in this
+   transition only. Other buckets can receive their final hardening now.
+2. Wait for CloudFormation and CloudFront deployment to finish. Verify the
+   portal, teacher page, game directory URLs, and uncached assets through
+   CloudFront.
+3. Apply the final template: remove the temporary public read grant and website
+   configuration, enable all website public-access blocks, and enforce HTTPS
+   on the website bucket. Verify CloudFront still works and anonymous S3
+   requests are denied.
+
+Preserve all existing stack parameters and backend artifact references during
+this infrastructure-only rollout. Do not replace existing buckets or upload
+curriculum archives. Subsequent deployments use the final private-origin
+configuration directly.
+
+All three data buckets deliver server access logs to a separate private,
+SSE-S3-encrypted destination restricted to the same account and explicit source
+bucket ARNs. Only `logs/` objects in that destination expire after 30 days.
+The destination deliberately has neither recursive access logging nor
+versioning, so expired logs do not remain as noncurrent versions; these two
+managed-rule exceptions are documented in its metadata. Logs are delivered
+on a best-effort basis, so successful configuration is not proof of immediate
+log delivery.
+
+Existing reports and object versions are retained; enabling versioning cannot
+recover older content overwritten before it was enabled. Version history,
+access-log storage, and the directory function have usage-based charges, but
+there are no customer-managed-key charges. See
+[S3 pricing](https://aws.amazon.com/s3/pricing/) and
+[CloudFront pricing](https://aws.amazon.com/cloudfront/pricing/).
+CloudTrail S3 data events and CloudWatch request metrics provide additional
+auditing/monitoring and can be enabled separately after reviewing their costs.
 
 ---
 
@@ -375,7 +432,8 @@ python scripts/reset_task_stage.py ... --apply
 ## Student Reset Logic (Exam UI)
 
 - Student reset requires explicit confirmation in UI.
-- Student reset deletes the current task state and returns the UI to a **click Start again** state.
+- **Leave question and clean up** runs cleanup before deleting current task state.
+  Failure preserves ownership and exposes **Retry cleanup**; success permits question selection or restart.
 - Reset is allowed only when task status is:
   - `in_progress`
   - `abandoned`
@@ -383,6 +441,13 @@ python scripts/reset_task_stage.py ... --apply
 - Reset restarts the task from phase 1 and keeps audit trail in **Records**.
 - Start, Run, and Reset share a student/game execution lease across exam questions and exam codes, including REST requests.
 - Reset and question changes are blocked while a command is pending, including setup and cleanup. Reconnecting does not cancel the command or bypass the lease.
+- Environment ownership also persists while the student works between requests.
+  An execution lease expiring does not release an unfinished question's resources.
+- **Start question** pairs setup/readiness; **Submit answer** pairs challenge/check.
+  The stage display distinguishes preparation, student work, assessment, and cleanup.
+- Existing unfinished exam questions are restored on reconnect and must finish or
+  be left with successful cleanup before another question can start.
+- REST mutations return `QUEUED` and use the same durable worker as the UI.
 
 ## Student Reset Logic (Exercise Portal)
 

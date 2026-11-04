@@ -12,6 +12,7 @@ Welcome to the K8s Grader API documentation! All documentation has been organize
 
 ### Getting Started
 - [QUICK_START.md](QUICK_START.md) - Fast-track guide
+- [EXAM_USER_GUIDE.md](EXAM_USER_GUIDE.md) - Student exam inputs, buttons, stages, and recovery
 - [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - Deploy to AWS
 - [SECRET_HASH_GUIDE.md](SECRET_HASH_GUIDE.md) - API key encryption
 
@@ -65,6 +66,7 @@ docs/
 ├── README.md (this file)           # Documentation overview
 ├── DOCS_INDEX.md                   # Complete index
 ├── QUICK_START.md                  # Get started fast
+├── EXAM_USER_GUIDE.md              # Student exam page guide
 ├── DEPLOYMENT_GUIDE.md             # Deploy to AWS
 ├── TESTING_GUIDE.md                # Testing guide
 ├── ARCHITECTURE.md                 # System design
