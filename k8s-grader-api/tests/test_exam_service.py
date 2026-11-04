@@ -175,6 +175,19 @@ class TestExamService:
         assert saved_state.total_points == 0
         assert saved_state.get_phase_state("challenge").points_earned == 0
 
+    def test_read_only_overview_does_not_save_a_snapshot_over_a_running_task(self, exam_service, exam_manifest, exam_task_state):
+        exam_task_state.status = TaskStatus.IN_PROGRESS
+        exam_task_state.current_phase_id = "check"
+        exam_task_state.phase_states["challenge"] = PhaseState("challenge", PhaseStatus.PASSED, points_earned=5)
+        exam_task_state.total_points = 5
+        exam_service.task_repo.save(exam_task_state)
+        with patch("common.services.exam_service.TaskManifest.load", return_value=exam_manifest), \
+             patch.object(exam_service.task_repo, "save") as save:
+            overview = exam_service.get_exam_overview("student@example.com", "exam01", ["exam_task_01"], persist_points=False)
+        assert overview["exam_score"] == 0
+        save.assert_not_called()
+        assert exam_service.task_repo.get("student@example.com", "exam01", "exam_task_01").total_points == 5
+
     def test_get_status_normalizes_state_points_for_exam_mode(self, exam_service, exam_manifest, exam_task_state):
         exam_service.exam_code_repo.save(
             exam_code="EXAM-005",

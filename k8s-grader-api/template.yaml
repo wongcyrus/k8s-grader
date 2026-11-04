@@ -779,6 +779,9 @@ Resources:
             TableName: !Ref ExamSessionTable
         - DynamoDBCrudPolicy:
             TableName: !Ref ExamWsConnectionTable
+        # REST and WebSocket exam mutations must share the same execution leases.
+        - DynamoDBCrudPolicy:
+            TableName: !Ref WebSocketExecutionGuardTable
         - DynamoDBCrudPolicy:
             TableName: !Ref TaskPhaseEstimateTable
         - Statement:
@@ -825,6 +828,7 @@ Resources:
           ExamCodeTable: !Ref ExamCodeTable
           ExamSessionTable: !Ref ExamSessionTable
           ExamWsConnectionTable: !Ref ExamWsConnectionTable
+          WebSocketExecutionGuardTable: !Ref WebSocketExecutionGuardTable
           TaskPhaseEstimateTable: !Ref TaskPhaseEstimateTable
           TestResultBucket: !Ref TestResultBucket
           SecretHash: !Ref SecretHash

@@ -8,9 +8,16 @@ import types
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 
 MODULE_NAME = "exam_durable_app"
 HANDLER_PATH = os.path.join(os.path.dirname(__file__), "..", "exam-durable-handler", "app.py")
+
+
+@pytest.fixture(autouse=True)
+def exam_aws_tables(dynamodb_tables):
+    return dynamodb_tables
 
 
 def load_module():
@@ -106,7 +113,7 @@ def test_lambda_handler_routes_through_context_step():
     assert result == {"wrapped": {"statusCode": 200}}
 
 
-def test_lambda_handler_releases_execution_guard():
+def test_lambda_handler_routes_mutations_through_guarded_step():
     module = load_module()
     context = StubContext()
     event = {
@@ -115,19 +122,17 @@ def test_lambda_handler_releases_execution_guard():
         "exam_code": "EXAM-001",
         "game": "game02",
         "task_id": "087_task",
-        "execution_guard_key": "exam#student@example.com#EXAM-001#game02#087_task#run",
+        "execution_id": "execution-1",
     }
 
-    with patch.object(module, "run_exam_command_step", return_value={"statusCode": 200}) as mock_step, \
-         patch.object(module.execution_guard_repo, "release", return_value=True) as mock_release:
+    with patch.object(module, "guarded_exam_command_step", return_value={"statusCode": 200}) as mock_step:
         result = module.lambda_handler(event, context)
 
-    mock_step.assert_called_once_with("student@example.com", "EXAM-001", "game02", "087_task")
-    mock_release.assert_called_once_with("exam#student@example.com#EXAM-001#game02#087_task#run")
+    mock_step.assert_called_once_with("run", "student@example.com", "EXAM-001", "game02", "087_task", "execution-1")
     assert result == {"wrapped": {"statusCode": 200}}
 
 
-def test_lambda_handler_releases_execution_guard_on_invalid_action():
+def test_invalid_action_cannot_release_an_unrelated_execution_guard():
     module = load_module()
     context = StubContext()
     event = {
@@ -142,7 +147,7 @@ def test_lambda_handler_releases_execution_guard_on_invalid_action():
     with patch.object(module.execution_guard_repo, "release", return_value=True) as mock_release:
         result = module.lambda_handler(event, context)
 
-    mock_release.assert_called_once_with("exam#student@example.com#EXAM-001#game02#087_task#run")
+    mock_release.assert_not_called()
     body = json.loads(result["body"])
     assert body["status"] == "ERROR"
 
@@ -160,6 +165,117 @@ def test_handle_exam_records_broadcasts_only_with_scope():
     assert body["records"] == [{"task_id": "087_task", "phase": "check", "test_result": "OK"}]
     mock_list_records.assert_called_once_with("student@example.com", "EXAM-001", task_id="087_task")
     mock_broadcast.assert_called_once()
+
+
+def test_guarded_command_releases_before_terminal_broadcast(dynamodb_tables):
+    module = load_module()
+    guard = module.execution_guard_repo
+    guard._table = dynamodb_tables["ws_execution_guard_table"]
+    lease = guard.acquire("student@example.com", "game02", "EXAM-001", "087_task", "run")
+
+    def execute(*args):
+        assert guard.get_active("student@example.com", "game02")
+        return {"statusCode": 200, "body": '{"status":"OK"}'}
+
+    def broadcast(*args):
+        assert guard.get_active("student@example.com", "game02") is None
+        assert json.loads(args[-1]["body"])["command_finished"] is True
+
+    with patch.object(module, "execute_exam_command", side_effect=execute), \
+         patch.object(module, "broadcast_exam_response", side_effect=broadcast) as mock_broadcast:
+        module.guarded_exam_command_step(
+            None, "run", "student@example.com", "EXAM-001", "game02", "087_task", lease["execution_id"]
+        )
+    mock_broadcast.assert_called_once()
+
+
+def test_status_sync_reports_the_lease_and_echoes_the_browser_request_id(dynamodb_tables):
+    module = load_module()
+    guard = module.execution_guard_repo
+    guard._table = dynamodb_tables["ws_execution_guard_table"]
+    lease = guard.acquire("student", "game02", "EXAM-001", "task_a", "run")
+    guard.set_phase(lease, "cleanup")
+    with patch.object(module, "get_exam_service") as service, \
+         patch.object(module, "broadcast_exam_response") as broadcast:
+        response = module.synchronized_exam_status_step(None, "student", "EXAM-001", "game02", "task_b", "browser-1")
+    payload = json.loads(response["body"])
+    assert payload["status_request_id"] == "browser-1"
+    assert payload["active_execution"]["phase"] == "cleanup"
+    service.assert_not_called()
+    broadcast.assert_called_once()
+
+
+def test_exam_cleanup_keeps_the_lease_until_resources_are_removed(dynamodb_tables):
+    module = load_module()
+    from common.models.task_state import TaskState, TaskStatus
+
+    guard = module.execution_guard_repo
+    guard._table = dynamodb_tables["ws_execution_guard_table"]
+    manifest = FakeManifest([
+        FakePhase("check", "Check", "Check solution"),
+        FakePhase("cleanup", "Cleanup", "Remove resources", auto_run=True, required=False),
+    ])
+    state = TaskState(
+        email="student", game="game02", task_id="task_a", npc="exam",
+        status=TaskStatus.IN_PROGRESS, current_phase_id=None, mode="exam",
+    )
+    state.get_or_create_phase_state("check").mark_passed("", 100)
+
+    def cleanup(*args):
+        assert guard.get_active("student", "game02")["phase"] == "cleanup"
+        assert guard.acquire("student", "game02", "EXAM-001", "task_b", "run") is None
+        assert state.status == TaskStatus.IN_PROGRESS
+        return module.TestResult.OK, "cleanup-report"
+
+    service = SimpleNamespace(test_runner=SimpleNamespace(run_phase=cleanup))
+    exam_service = SimpleNamespace(task_repo=SimpleNamespace(save=lambda value: None))
+    with patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module, "get_task_service", return_value=service), \
+         patch.object(module, "get_exam_service", return_value=exam_service), \
+         patch.object(module, "broadcast_exam_update"):
+        response = guard.execute(
+            "run", "student", "EXAM-001", "game02", "task_a",
+            lambda: module.task_completed_response(module.finish_exam_task("student", "EXAM-001", "game02", "task_a", state), ""),
+        )
+    assert json.loads(response["body"])["status"] == "COMPLETED"
+    assert guard.get_active("student", "game02") is None
+
+
+@pytest.mark.parametrize("reason", ["", "Maximum attempts reached"])
+def test_exam_cleanup_failure_is_retryable_and_does_not_finish_the_task(reason):
+    module = load_module()
+    from common.models.task_state import TaskState, TaskStatus
+
+    manifest = FakeManifest([
+        FakePhase("check", "Check", "Check solution"),
+        FakePhase("cleanup", "Cleanup", "Remove resources", auto_run=True, required=False),
+    ])
+    state = TaskState(
+        email="student", game="game02", task_id="task_a", npc="exam",
+        status=TaskStatus.IN_PROGRESS, current_phase_id=None, mode="exam",
+    )
+    state.get_or_create_phase_state("check").mark_passed("", 100)
+    runner_results = [(module.TestResult.TESTS_FAILED, "failed-report"), (module.TestResult.OK, "cleanup-report")]
+    service = SimpleNamespace(test_runner=SimpleNamespace(run_phase=lambda *args: runner_results.pop(0)))
+    saved = []
+    exam_service = SimpleNamespace(task_repo=SimpleNamespace(save=lambda value: saved.append(value.status)))
+    with patch.object(module.TaskManifest, "load", return_value=manifest), \
+         patch.object(module, "get_task_service", return_value=service), \
+         patch.object(module, "get_exam_service", return_value=exam_service):
+        failed = module.finish_exam_task("student", "EXAM-001", "game02", "task_a", state, reason)
+        assert failed["cleanup_failed"] is True
+        assert state.status == TaskStatus.IN_PROGRESS
+        assert state.current_phase_id == "cleanup"
+        payload = json.loads(module.task_completed_response(failed, "")["body"])
+        assert payload["status"] == "FAILED"
+        assert payload["cleanup_failed"] is True
+
+        finished = module.finish_exam_task("student", "EXAM-001", "game02", "task_a", state)
+    assert not runner_results
+    assert state.status == (TaskStatus.ABANDONED if reason else TaskStatus.COMPLETED)
+    assert state.get_phase_state("cleanup").status.value == "passed"
+    assert finished["reason"] == reason
+    assert saved[0] == TaskStatus.IN_PROGRESS
 
 
 def test_execute_exam_command_surfaces_unhandled_action_errors():

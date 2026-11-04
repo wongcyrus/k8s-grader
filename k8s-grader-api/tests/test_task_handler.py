@@ -52,6 +52,11 @@ def mock_user_data():
 class TestLambdaHandler:
     """Test Lambda handler"""
 
+    @pytest.fixture(autouse=True)
+    def exam_guard_table(self, dynamodb_tables):
+        with patch('app.execution_guard_repo._table', dynamodb_tables['ws_execution_guard_table']):
+            yield
+
     @patch('app.get_email_from_event', return_value='student@example.com')
     def test_accessible_exercise_denies_non_allowlisted_email(self, _mock_email, monkeypatch):
         monkeypatch.setenv('AccessibleExerciseEmails', 'other@example.com')
@@ -210,6 +215,21 @@ class TestLambdaHandler:
         body = json.loads(response['body'])
         assert body['status'] == 'QUEUED'
         assert body['request_id'] == 'request-123'
+        assert mock_start.call_args.args[1]['execution_id'] == body['active_execution']['execution_id']
+
+    @pytest.mark.parametrize("action", ["start", "run", "reset"])
+    @patch('app.get_email_from_event', return_value='student@example.com')
+    def test_rest_mutations_cannot_bypass_an_active_websocket_lease(self, mock_email, action):
+        from app import execution_guard_repo
+        lease = execution_guard_repo.acquire('student@example.com', 'game02', 'EXAM-001', 'task_a', 'run')
+        event = {
+            'path': f'/exam/{action}',
+            'queryStringParameters': {'examCode': 'EXAM-002', 'game': 'game02', 'task': 'task_b'},
+        }
+        with patch(f'app.handle_exam_{action}') as handler:
+            response = lambda_handler(event, None)
+        assert json.loads(response['body'])['active_execution']['execution_id'] == lease['execution_id']
+        handler.assert_not_called()
 
     @patch('app.get_email_from_event')
     def test_exam_reset_rejects_completed_status(self, mock_get_email):

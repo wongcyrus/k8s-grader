@@ -65,7 +65,7 @@ class ExamService:
             session_id=session_id,
         )
         self.game_access_repo.save(game=game, mode="exam", allowed_tasks=allowed_tasks)
-        overview = self.get_exam_overview(email, game, allowed_tasks)
+        overview = self.get_exam_overview(email, game, allowed_tasks, persist_points=False)
         return {
             "email": email,
             "exam_code": exam_code,
@@ -122,14 +122,14 @@ class ExamService:
             "report_url": result.get("report_url", ""),
         }
 
-    def get_status(self, email: str, exam_code: str, game: str, task_id: str) -> Dict[str, Any]:
+    def get_status(self, email: str, exam_code: str, game: str, task_id: str, *, persist_points: bool = True) -> Dict[str, Any]:
         ok, error, context = self.authorize(email, exam_code, game, task_id)
         if not ok:
             raise ValueError(error)
         state = self.task_repo.get(email, game, task_id)
         manifest = TaskManifest.load(game, task_id)
-        self.normalize_exam_points(state, manifest)
-        overview = self.get_exam_overview(email, game, context["session"].get("allowedTasks", []))
+        self.normalize_exam_points(state, manifest, persist=persist_points)
+        overview = self.get_exam_overview(email, game, context["session"].get("allowedTasks", []), persist_points=persist_points)
         return {
             "state": state,
             "manifest": manifest,
@@ -154,7 +154,7 @@ class ExamService:
             })
         return normalized_records
 
-    def normalize_exam_points(self, state: Optional[TaskState], manifest: Optional[TaskManifest] = None) -> int:
+    def normalize_exam_points(self, state: Optional[TaskState], manifest: Optional[TaskManifest] = None, *, persist: bool = True) -> int:
         if not state:
             return 0
         if state.mode != "exam":
@@ -181,12 +181,12 @@ class ExamService:
             state.total_points = normalized_points
             changed = True
 
-        if changed:
+        if changed and persist:
             self.task_repo.save(state)
 
         return normalized_points
 
-    def get_exam_overview(self, email: str, game: str, allowed_tasks: List[str]) -> Dict[str, Any]:
+    def get_exam_overview(self, email: str, game: str, allowed_tasks: List[str], *, persist_points: bool = True) -> Dict[str, Any]:
         task_summaries = []
         exam_score = 0
         finished_statuses = {TaskStatus.COMPLETED.value, TaskStatus.ABANDONED.value}
@@ -195,7 +195,7 @@ class ExamService:
             state = self.task_repo.get(email, game, task_id)
             status = state.status.value if state else TaskStatus.NOT_STARTED.value
             manifest = TaskManifest.load(game, task_id) if state else None
-            total_points = self.normalize_exam_points(state, manifest) if state else 0
+            total_points = self.normalize_exam_points(state, manifest, persist=persist_points) if state else 0
             exam_score += total_points
             task_summaries.append(
                 {

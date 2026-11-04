@@ -16,6 +16,7 @@ from common.handler import (
     setup_paths
 )
 from common.database import get_user_data
+from common.exam_execution import EXAM_MUTATIONS, ExamExecutionGuard, current_exam_execution
 from common.database.repositories import GameSourceRepository, GameAccessRepository
 from common.services.task_service import TaskService
 from common.services.exam_service import ExamService
@@ -60,6 +61,7 @@ exam_service = ExamService()
 teacher_dashboard_service = TeacherDashboardService()
 game_source_repo = GameSourceRepository()
 game_access_repo = GameAccessRepository()
+execution_guard_repo = ExamExecutionGuard()
 
 _dynamodb_resource = boto3.resource('dynamodb')
 
@@ -104,6 +106,8 @@ def broadcast_exam_update(email: str, exam_code: str, game: str, task_id: str, s
 
 
 def broadcast_exam_response(email: str, exam_code: str, game: Optional[str], task_id: Optional[str], source_action: str, response: Dict[str, Any]) -> None:
+    if current_exam_execution.get():
+        return
     if not game or not task_id:
         return
 
@@ -623,17 +627,31 @@ def exam_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if not exam_code:
         return error_response("Missing required parameters: examCode")
 
-    if path.endswith('/start'):
-        return handle_exam_start(email, exam_code, game, task_id)
-    if path.endswith('/reset'):
-        return handle_exam_reset(email, exam_code, game, task_id)
-    if path.endswith('/run'):
-        run_async = str(params.get('async', '')).lower() in ('1', 'true', 'yes')
-        if run_async:
+    action = path.rsplit('/', 1)[-1]
+    if action in EXAM_MUTATIONS:
+        if not game or not task_id:
+            return error_response("Missing required parameters: game or task")
+        if action == 'run' and str(params.get('async', '')).lower() in ('1', 'true', 'yes'):
             return handle_exam_run_async(email, exam_code, game, task_id)
-        return handle_exam_run(email, exam_code, game, task_id)
+        handler = {'start': handle_exam_start, 'reset': handle_exam_reset, 'run': handle_exam_run}[action]
+        response = execution_guard_repo.execute(
+            action, email, exam_code, game, task_id,
+            lambda: handler(email, exam_code, game, task_id),
+        )
+        broadcast_exam_response(email, exam_code, game, task_id, action, response)
+        return response
     if path.endswith('/status'):
-        return handle_exam_status(email, exam_code, game, task_id)
+        active = execution_guard_repo.get_active(email, game) if game else None
+        if active:
+            return {
+                'statusCode': 200, 'headers': cors_headers(),
+                'body': json.dumps({'status': 'RUNNING', 'active_execution': active}, cls=DecimalEncoder),
+            }
+        response = handle_exam_status(email, exam_code, game, task_id)
+        payload = json.loads(response['body'])
+        payload['active_execution'] = None
+        response['body'] = json.dumps(payload, cls=DecimalEncoder)
+        return response
     if path.endswith('/records'):
         return handle_exam_records(email, exam_code, task_id)
 
@@ -659,6 +677,12 @@ def handle_exam_run_async(email: str, exam_code: str, game: Optional[str], task_
         phase_cfg = manifest.get_phase(current_phase)
         current_phase_name = phase_cfg.name if phase_cfg else ''
 
+    execution = execution_guard_repo.acquire(email, game, exam_code, task_id, 'run')
+    if not execution:
+        return {
+            'statusCode': 200, 'headers': cors_headers(),
+            'body': json.dumps(execution_guard_repo.busy_payload(email, game), cls=DecimalEncoder),
+        }
     try:
         request_id = invoke_durable_function(
             os.getenv('ExamCommandDurableFunctionArn', ''),
@@ -668,9 +692,11 @@ def handle_exam_run_async(email: str, exam_code: str, game: Optional[str], task_
                 'exam_code': exam_code,
                 'game': game,
                 'task_id': task_id,
+                'execution_id': execution['execution_id'],
             },
         )
-    except ValueError as err:
+    except Exception as err:
+        execution_guard_repo.release(execution['scope_key'], execution['execution_id'])
         return error_response(str(err))
 
     queued_payload = {
@@ -680,6 +706,7 @@ def handle_exam_run_async(email: str, exam_code: str, game: Optional[str], task_
         'phase_name': current_phase_name,
         'message': 'Run accepted. Processing in background. Wait for WebSocket update.',
         'request_id': request_id,
+        'active_execution': execution,
     }
     broadcast_exam_update(email, exam_code, game, task_id, 'run', queued_payload)
 
@@ -877,7 +904,7 @@ def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id:
     if not game or not task_id:
         return error_response("Missing required parameters: game or task")
     try:
-        payload = exam_service.get_status(email, exam_code, game, task_id)
+        payload = exam_service.get_status(email, exam_code, game, task_id, persist_points=False)
         state = payload['state']
         manifest = payload['manifest']
         next_action = None
@@ -885,7 +912,6 @@ def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id:
         if state:
             from common.state_machine.task_state_machine import TaskStateMachine
 
-            ensure_exam_challenge_before_check(state, manifest, exam_service.task_repo)
             next_action = TaskStateMachine(manifest, state).get_next_action()
             if state.current_phase_id == 'answer':
                 next_phase = manifest.get_phase('challenge') or manifest.get_next_phase('answer')

@@ -26,7 +26,9 @@ const manualPanel = document.getElementById("manualPanel");
 
 const BASE_URL = APP_CONFIG.baseUrl || "";
 const EXAM_ACTION_COOLDOWN_MS = 1500;
-const RUN_RESPONSE_TIMEOUT_MS = 360000;
+const EXECUTION_STATUS_POLL_MS = 3000;
+const STATUS_RESPONSE_TIMEOUT_MS = 30000;
+const REQUEST_ID_PREFIX = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const STORAGE_KEY = "k8s-exam-page-state-v1";
 const LEGACY_STORAGE_KEYS = ["k8s-exam-web-state-v1"];
 const LOCKED_EXAM_GUIDANCE = "Submit Kubernetes Login and verify an exam code to unlock the exam flow.";
@@ -36,7 +38,6 @@ let lastExamActionAt = 0;
 let examSocket = null;
 let examSocketBaseUrl = "";
 let examSocketReady = false;
-let runInFlight = false;
 let k8sAccountReady = false;
 let currentPhaseState = "setup";
 let backendTaskStatus = "NOT_STARTED";
@@ -45,6 +46,13 @@ let taskStarted = false;
 let runResponseTimer = null;
 let statusSyncPending = false;
 let examHasRemainingTasks = true;
+let pendingExecution = null;
+let selectedExamTask = "";
+let httpBusy = false;
+let statusRequestSequence = 0;
+let latestStatusRequestId = "";
+let statusRequestSentAt = 0;
+const finishedExecutionIds = new Set();
 
 function wsDebug(event, data = null) {
   const ts = new Date().toISOString();
@@ -201,18 +209,8 @@ function updateStateMachineUI() {
 }
 
 function setBusy(isBusy) {
-  buttons.forEach((btn) => {
-    btn.disabled = isBusy;
-  });
-  if (verifyButton && !k8sAccountReady) {
-    verifyButton.disabled = true;
-  }
-  if (!isBusy && examScope.classList.contains("hidden")) {
-    examActionButtons.forEach((btn) => {
-      btn.disabled = true;
-    });
-  }
-  updateStateMachineUI();
+  httpBusy = isBusy;
+  updateExamButtons();
 }
 
 function stopRunResponseWatchdog() {
@@ -225,14 +223,14 @@ function stopRunResponseWatchdog() {
 function startRunResponseWatchdog() {
   stopRunResponseWatchdog();
   runResponseTimer = setTimeout(() => {
-    runInFlight = false;
-    updateExamButtons();
-    write(
-      `Run response timeout after ${RUN_RESPONSE_TIMEOUT_MS / 1000}s. No WebSocket run result received. Check browser console [ExamWS] logs and backend logs, then click Run again.`,
-      output
-    );
-    wsDebug("run response timeout");
-  }, RUN_RESPONSE_TIMEOUT_MS);
+    runResponseTimer = null;
+    if (pendingExecution && examSocketReady) {
+      if (!statusSyncPending || Date.now() - statusRequestSentAt >= STATUS_RESPONSE_TIMEOUT_MS) {
+        refreshCurrentTaskStatus();
+      }
+      startRunResponseWatchdog();
+    }
+  }, EXECUTION_STATUS_POLL_MS);
 }
 
 examActionButtons.forEach((btn) => {
@@ -296,6 +294,9 @@ function connectExamSocket() {
   examSocket = socket;
 
   socket.onmessage = (event) => {
+    if (examSocket !== socket) {
+      return;
+    }
     wsDebug("onmessage raw", event.data);
     let payload = null;
     try {
@@ -306,13 +307,13 @@ function connectExamSocket() {
     }
     wsDebug("onmessage parsed", payload);
     if (payload && payload.message && payload.type !== "exam_status") {
-      stopRunResponseWatchdog();
-      runInFlight = false;
-      updateExamButtons();
       write(
         `WebSocket server error: ${payload.message}${payload.requestId ? ` (requestId: ${payload.requestId})` : ""}`,
         output
       );
+      if (pendingExecution) {
+        refreshCurrentTaskStatus();
+      }
       return;
     }
     if (!payload || payload.type !== "exam_status" || !payload.data) {
@@ -358,7 +359,6 @@ function connectExamSocket() {
     wsDebug("onclose", { code: event.code, reason: event.reason, wasClean: event.wasClean });
     examSocket = null;
     examSocketReady = false;
-    runInFlight = false;
     stopRunResponseWatchdog();
     setConnectionStatus("Disconnected");
     updateExamButtons();
@@ -373,25 +373,25 @@ function sendExamActionViaSocket(action) {
     write("WebSocket is still connecting. Wait a moment, then try again.");
     return;
   }
-  if (action === "run" && runInFlight) {
-    write("Run is already in progress. Wait for result.");
+  if (pendingExecution || statusSyncPending || httpBusy) {
+    write("An exam task is processing or restoring. Wait for setup, testing, and cleanup to finish.");
     return;
   }
 
-  examSocket.send(JSON.stringify({ action }));
-  if (action === "run") {
-    runInFlight = true;
+  if (["start", "run", "reset"].includes(action)) {
+    pendingExecution = {
+      action, task_id: readInputs().task,
+      command_request_id: `${REQUEST_ID_PREFIX}-command-${++statusRequestSequence}`,
+    };
+    latestStatusRequestId = "";
     startRunResponseWatchdog();
-    setNextStep("Run in progress. Please wait for exam result.");
     updateExamButtons();
-    writeExamResponse(
-      {
-        status: "QUEUED",
-        message: "Run request accepted. Waiting for server result...",
-      },
-      output,
-      "run"
-    );
+  }
+  try {
+    examSocket.send(JSON.stringify({ action, command_request_id: pendingExecution?.command_request_id }));
+  } catch {
+    write("Unable to confirm submission. Reconnect Exam to restore the server execution state.");
+    return;
   }
   write(`Sent exam/${action} via WebSocket ...`);
 }
@@ -407,11 +407,18 @@ function refreshCurrentTaskStatus() {
     return;
   }
   statusSyncPending = true;
-  examSocket.send(JSON.stringify({ action: "status" }));
+  latestStatusRequestId = `${REQUEST_ID_PREFIX}-status-${++statusRequestSequence}`;
+  statusRequestSentAt = Date.now();
+  examSocket.send(JSON.stringify({ action: "status", status_request_id: latestStatusRequestId }));
   updateExamButtons();
 }
 
 function showLoadingSelectedTaskState() {
+  if (pendingExecution) {
+    return;
+  }
+  stopRunResponseWatchdog();
+  examFlowState = "ready_to_start";
   backendNextAction = null;
   taskStarted = false;
   backendTaskStatus = "NOT_STARTED";
@@ -457,6 +464,7 @@ function updateTaskOptions(tasks, preferredTask = "") {
     empty.textContent = "No remaining tasks";
     taskSelect.appendChild(empty);
     taskSelect.value = "";
+    selectedExamTask = "";
     saveState({ allowedTasks: tasks, task: "" });
     if (previousValue !== taskSelect.value) {
       closeExamSocket();
@@ -473,8 +481,10 @@ function updateTaskOptions(tasks, preferredTask = "") {
   });
 
   taskSelect.value = previousValue && tasks.includes(previousValue) ? previousValue : tasks[0];
+  selectedExamTask = taskSelect.value;
   saveState({ allowedTasks: tasks, task: taskSelect.value });
   if (previousValue !== taskSelect.value) {
+    showLoadingSelectedTaskState();
     connectExamSocket();
   }
 }
@@ -504,8 +514,18 @@ function setActionVisible(button, visible) {
 }
 
 function updateExamButtons() {
+  const executing = Boolean(pendingExecution);
+  const locked = executing || statusSyncPending || httpBusy;
+  document.getElementById("task").disabled = locked;
+  resetStateButton.disabled = locked;
+  ["apiKey", "examCode", "endpoint", "kubeconfig", "kubeconfigFile", "clientCertificate", "clientKey"].forEach((id) => {
+    document.getElementById(id).disabled = locked;
+  });
+  authMethodInputs.forEach((input) => { input.disabled = locked; });
+  const saveAccountButton = document.querySelector('button[data-action="save-account"]');
+  saveAccountButton.disabled = locked;
   if (verifyButton) {
-    verifyButton.disabled = !k8sAccountReady;
+    verifyButton.disabled = locked || !k8sAccountReady;
   }
   updateStateMachineUI();
   if (examScope.classList.contains("hidden")) {
@@ -527,7 +547,8 @@ function updateExamButtons() {
   const completed = backendTaskStatus === "COMPLETED";
   const abandoned = backendTaskStatus === "ABANDONED";
   const started = taskStarted && !completed && !abandoned;
-  const restoring = statusSyncPending;
+  const restoring = statusSyncPending || httpBusy;
+  const busyReason = "Wait for setup, testing, and cleanup to finish.";
 
   setActionVisible(reconnectBtn, examHasRemainingTasks && disconnected);
   setActionVisible(startBtn, examHasRemainingTasks && !taskStarted);
@@ -536,11 +557,16 @@ function updateExamButtons() {
   setActionVisible(recordsBtn, examHasRemainingTasks && (taskStarted || completed || abandoned));
 
   setActionLock(reconnectBtn, false);
-  setActionLock(startBtn, restoring || !examSocketReady || taskStarted, restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Task already started.");
-  setActionLock(resetBtn, restoring || !examSocketReady || !taskStarted || completed, restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Start the task first.");
-  setActionLock(runBtn, restoring || !examSocketReady || !started || runInFlight, restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : runInFlight ? "Run is processing. Wait for result." : "Start the task first.");
-  setActionLock(recordsBtn, restoring || (!taskStarted && !completed && !abandoned), restoring ? "Restoring task state from the server." : "Start the task first.");
+  setActionLock(startBtn, executing || restoring || !examSocketReady || taskStarted, executing ? busyReason : restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Task already started.");
+  setActionLock(resetBtn, executing || restoring || !examSocketReady || !taskStarted || completed, executing ? busyReason : restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Start the task first.");
+  setActionLock(runBtn, executing || restoring || !examSocketReady || !started, executing ? busyReason : restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Start the task first.");
+  setActionLock(recordsBtn, executing || restoring || (!taskStarted && !completed && !abandoned), executing ? busyReason : restoring ? "Restoring task state from the server." : "Start the task first.");
 
+  if (executing) {
+    const phase = pendingExecution.phase || pendingExecution.action || "processing";
+    setNextStep(`Task ${escapeHtml(pendingExecution.task_id)}: ${escapeHtml(phase)} in progress. Wait for setup, testing, and cleanup to finish.${!examSocketReady ? " Reconnect Exam to restore progress." : ""}`);
+    return;
+  }
   if (!examHasRemainingTasks) {
     setNextStep("Exam completed. Review the report below.");
     return;
@@ -803,44 +829,36 @@ function updateExamSummary(json, action) {
       showExamCompletionReport(json);
       return;
     }
+    if (selectedTask !== document.getElementById("task").value) {
+      return;
+    }
   }
 
   if (action === "records" && Array.isArray(json.records)) {
     phaseOutput.textContent = `Records: ${json.records.length}`;
   }
 
-  if (action === "status" && json.state && json.state.status) {
-    backendTaskStatus = normalizeTaskStatus(json.state.status);
-    taskStarted = true;
-    if (json.state.current_phase_id || json.state.current_phase_name) {
-      setCurrentPhaseState(json.state.current_phase_name || json.state.current_phase_id);
-    }
-    examFlowState =
-      json.state.status === "COMPLETED"
-        ? "completed"
-        : json.state.status === "ABANDONED"
-          ? "abandoned"
-          : "started";
-    updateExamButtons();
-    return;
-  }
-
-  if (action === "status" && json.status && !json.state) {
-    backendTaskStatus = normalizeTaskStatus(json.status);
-    if (json.status !== "NOT_STARTED") {
-      taskStarted = true;
-    }
-    if (json.current_phase || json.phase_name) {
-      setCurrentPhaseState(json.phase_name || json.current_phase);
-    }
-    if (json.status === "COMPLETED") {
-      examFlowState = "completed";
-    } else if (json.status === "ABANDONED") {
-      examFlowState = "abandoned";
-    } else if (json.status === "IN_PROGRESS" || json.status === "STARTED" || json.status === "OK") {
-      examFlowState = "started";
-    } else if (json.status === "NOT_STARTED") {
+  if (action === "status" && (json.state?.status || json.status)) {
+    const status = json.state?.status || (json.status === "OK" && !json.state ? "NOT_STARTED" : json.status);
+    backendTaskStatus = normalizeTaskStatus(status);
+    taskStarted = backendTaskStatus !== "NOT_STARTED";
+    if (!taskStarted) {
       examFlowState = "ready_to_start";
+      setCurrentPhaseState("ready");
+      writeMarkdown("Press Start to load the question.", questionOutput);
+      phaseOutput.textContent = "Phase: -";
+      markOutput.textContent = "0";
+    } else {
+      examFlowState =
+        backendTaskStatus === "COMPLETED"
+          ? "completed"
+          : backendTaskStatus === "ABANDONED"
+            ? "abandoned"
+            : "started";
+      const phase = json.state?.current_phase_name || json.state?.current_phase_id || json.phase_name || json.current_phase;
+      if (phase) {
+        setCurrentPhaseState(phase);
+      }
     }
     updateExamButtons();
   }
@@ -849,8 +867,81 @@ function updateExamSummary(json, action) {
 function showResponse(text, target = output, action = "") {
   try {
     const json = JSON.parse(text);
+    if (action === "status" && json.status_request_id && json.status_request_id !== latestStatusRequestId) {
+      return;
+    }
+    if (json.active_execution) {
+      if (finishedExecutionIds.has(json.active_execution.execution_id)) {
+        return;
+      }
+      if (pendingExecution?.command_request_id
+        && !["status", "records"].includes(action)
+        && json.status !== "BUSY"
+        && json.active_execution.command_request_id !== pendingExecution.command_request_id) {
+        return;
+      }
+      pendingExecution = json.active_execution;
+      if (pendingExecution.task_id === readInputs().task && pendingExecution.phase) {
+        setCurrentPhaseState(pendingExecution.phase);
+      }
+      if (action === "status") {
+        statusSyncPending = false;
+      }
+      startRunResponseWatchdog();
+      updateExamButtons();
+      writeExamResponse(json, target, action);
+      return;
+    }
+    if (json.command_finished) {
+      if (finishedExecutionIds.has(json.execution_id)) {
+        return;
+      }
+      if (pendingExecution && (
+        (pendingExecution.execution_id && pendingExecution.execution_id !== json.execution_id)
+        || (!pendingExecution.execution_id && pendingExecution.command_request_id !== json.command_request_id)
+        || pendingExecution.task_id !== json.task_id
+      )) {
+        return;
+      }
+      finishedExecutionIds.add(json.execution_id);
+      pendingExecution = null;
+      statusSyncPending = false;
+      latestStatusRequestId = "";
+      stopRunResponseWatchdog();
+      if (json.task_id !== readInputs().task) {
+        refreshCurrentTaskStatus();
+        return;
+      }
+    } else if (pendingExecution) {
+      const authoritativeIdle = action === "status"
+        && json.status_request_id === latestStatusRequestId
+        && json.status_request_id
+        && Object.hasOwn(json, "active_execution")
+        && !["ERROR", "BUSY", "RUNNING"].includes(json.status);
+      if (!authoritativeIdle) {
+        if (json.message) {
+          writeExamResponse(json, target, action);
+        }
+        return;
+      }
+      if (pendingExecution.execution_id) {
+        finishedExecutionIds.add(pendingExecution.execution_id);
+      }
+      pendingExecution = null;
+      stopRunResponseWatchdog();
+    }
+    if (["BUSY", "RUNNING", "QUEUED"].includes(json.status)) {
+      updateExamButtons();
+      writeExamResponse(json, target, action);
+      return;
+    }
     if (action === "status") {
       statusSyncPending = false;
+    }
+    if (json.status === "ERROR" && ["start", "reset", "run", "status"].includes(action)) {
+      updateExamButtons();
+      writeExamResponse(json, target, action);
+      return;
     }
     backendNextAction = json && json.next_action ? json.next_action : null;
 
@@ -921,7 +1012,6 @@ function showResponse(text, target = output, action = "") {
     }
 
     if (action === "start") {
-      runInFlight = false;
       taskStarted = true;
       statusSyncPending = false;
       if (json.status === "STARTED" || json.status === "OK") {
@@ -945,7 +1035,6 @@ function showResponse(text, target = output, action = "") {
     }
 
     if (action === "reset") {
-      runInFlight = false;
       taskStarted = false;
       statusSyncPending = false;
       examFlowState = "ready_to_start";
@@ -964,13 +1053,6 @@ function showResponse(text, target = output, action = "") {
     }
 
     if (action === "run") {
-      if (json.status === "QUEUED") {
-        runInFlight = true;
-        startRunResponseWatchdog();
-      } else {
-        runInFlight = false;
-        stopRunResponseWatchdog();
-      }
       taskStarted = true;
       statusSyncPending = false;
       if (json.status === "COMPLETED") {
@@ -1009,6 +1091,14 @@ function showResponse(text, target = output, action = "") {
 }
 
 async function callApi(action) {
+  if ((pendingExecution || statusSyncPending || httpBusy) && !["reconnect", "status"].includes(action)) {
+    write("Wait for the current exam operation to finish before changing or submitting a task.");
+    return;
+  }
+  if (action === "status") {
+    refreshCurrentTaskStatus();
+    return;
+  }
   const { apiKey, authMethod, kubeconfig, kubeconfigFile, endpoint, clientCertificate, clientKey, examCode } = readInputs();
   if (!apiKey) {
     write("API Key is required.", setupOutput);
@@ -1184,12 +1274,22 @@ document.getElementById("examCode").addEventListener("input", (e) => {
 });
 
 document.getElementById("task").addEventListener("change", (e) => {
+  if (pendingExecution || statusSyncPending || httpBusy) {
+    e.target.value = selectedExamTask;
+    write("Wait for setup, testing, and cleanup to finish before changing questions.");
+    return;
+  }
+  selectedExamTask = e.target.value;
   saveState({ task: e.target.value });
   showLoadingSelectedTaskState();
   connectExamSocket();
 });
 
 resetStateButton.addEventListener("click", () => {
+  if (pendingExecution || statusSyncPending || httpBusy) {
+    write("Wait for the current exam operation to finish before resetting saved data.");
+    return;
+  }
   const ok = window.confirm(
     "Reset saved exam form data?\n\nThis clears the API key, kubeconfig input, endpoint, exam code, task selection, and cached exam state from this browser."
   );
@@ -1256,6 +1356,7 @@ if (Array.isArray(restored.allowedTasks) && restored.allowedTasks.length > 0) {
   updateTaskOptions(restored.allowedTasks);
   if (restored.task) {
     document.getElementById("task").value = restored.task;
+    selectedExamTask = restored.task;
   }
 }
 if (restored.examReady) {

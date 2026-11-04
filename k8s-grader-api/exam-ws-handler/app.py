@@ -5,7 +5,8 @@ from decimal import Decimal
 from typing import Any, Dict
 
 import boto3
-from common.database import ExecutionGuardRepository, RequestThrottleRepository
+from common.database import RequestThrottleRepository
+from common.exam_execution import EXAM_MUTATIONS, ExamExecutionGuard
 from common.handler import get_email_from_api_key
 from common.durable_invoker import invoke_durable_function
 
@@ -20,12 +21,9 @@ EXAM_ACTION_COOLDOWN_SECONDS = {
     "status": 2,
     "records": 2,
 }
-EXAM_ACTION_GUARD_TTL_SECONDS = {
-    "run": 600,
-}
 dynamodb = boto3.resource("dynamodb")
 request_throttle_repo = RequestThrottleRepository()
-execution_guard_repo = ExecutionGuardRepository()
+execution_guard_repo = ExamExecutionGuard()
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -38,7 +36,7 @@ class DecimalEncoder(json.JSONEncoder):
 def _response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status_code,
-        "body": json.dumps(body),
+        "body": json.dumps(body, cls=DecimalEncoder),
     }
 
 
@@ -117,11 +115,13 @@ def _exam_throttle_scope(email: str, exam_code: str, game: str, task: str, actio
     return f"exam#{email}#{exam_code}#{game}#{task}#{action}"
 
 
-def _exam_execution_guard_scope(email: str, exam_code: str, game: str, task: str, action: str) -> str:
-    return f"exam#{email}#{exam_code}#{game}#{task}#{action}"
-
-
 def _send_state_snapshot(event: Dict[str, Any], connection_id: str, email: str, exam_code: str, game: str, task: str) -> None:
+    active_execution = execution_guard_repo.get_active(email, game)
+    if active_execution:
+        _push_inline_exam_status(event, "status", {
+            "status": "RUNNING", "task_id": task, "active_execution": active_execution,
+        })
+        return
     if not TASK_STATE_TABLE:
         return
 
@@ -132,7 +132,7 @@ def _send_state_snapshot(event: Dict[str, Any], connection_id: str, email: str, 
         _send_ws_message(event, connection_id, {
             "type": "exam_status",
             "source_action": "status",
-            "data": {"status": "NOT_STARTED", "game": game, "task_id": task},
+            "data": {"status": "NOT_STARTED", "game": game, "task_id": task, "active_execution": None},
         })
         return
 
@@ -142,6 +142,7 @@ def _send_state_snapshot(event: Dict[str, Any], connection_id: str, email: str, 
         "task_id": task,
         "current_phase": current_phase,
         "total_points": item.get("total_points", 0),
+        "active_execution": None,
     }
     _send_ws_message(event, connection_id, {
         "type": "exam_status",
@@ -201,6 +202,16 @@ def _handle_default(event: Dict[str, Any]) -> Dict[str, Any]:
         exam_code = connection.get("exam_code") or ""
         game = connection.get("game") or ""
         task = connection.get("task") or ""
+        if action in {"status", "records"}:
+            active_execution = execution_guard_repo.get_active(email, game)
+            if active_execution:
+                payload = {
+                    "status": "RUNNING", "task_id": task,
+                    "active_execution": active_execution,
+                    "status_request_id": body.get("status_request_id", ""),
+                }
+                _push_inline_exam_status(event, action, payload)
+                return _response(200, payload)
         cooldown_seconds = EXAM_ACTION_COOLDOWN_SECONDS.get(action, 0)
         if cooldown_seconds > 0:
             throttle_scope = _exam_throttle_scope(email, exam_code, game, task, action)
@@ -215,20 +226,19 @@ def _handle_default(event: Dict[str, Any]) -> Dict[str, Any]:
                 _push_inline_exam_status(event, action, payload)
                 return _response(200, payload)
 
-        execution_guard_key = ""
-        guard_ttl_seconds = EXAM_ACTION_GUARD_TTL_SECONDS.get(action, 0)
-        if guard_ttl_seconds > 0:
-            execution_guard_key = _exam_execution_guard_scope(email, exam_code, game, task, action)
-            if not execution_guard_repo.acquire(
-                execution_guard_key,
-                email=email,
-                channel="exam_ws",
-                action=action,
-                ttl_seconds=guard_ttl_seconds,
-            ):
-                payload = {"status": "ERROR", "message": "An exam run is already in progress. Please wait for it to finish."}
+        execution = None
+        if action in EXAM_MUTATIONS:
+            execution = execution_guard_repo.acquire(
+                email, game, exam_code, task, action,
+                command_request_id=body.get("command_request_id", ""),
+            )
+            if not execution:
+                payload = execution_guard_repo.busy_payload(email, game)
                 _push_inline_exam_status(event, action, payload)
                 return _response(200, payload)
+            _push_inline_exam_status(event, action, {
+                "status": "QUEUED", "task_id": task, "active_execution": execution,
+            })
         try:
             request_id = invoke_durable_function(
                 EXAM_COMMAND_DURABLE_FUNCTION_ARN,
@@ -238,15 +248,21 @@ def _handle_default(event: Dict[str, Any]) -> Dict[str, Any]:
                     "exam_code": exam_code,
                     "game": game,
                     "task_id": task,
-                    "execution_guard_key": execution_guard_key,
+                    "execution_id": execution["execution_id"] if execution else "",
+                    "status_request_id": body.get("status_request_id", ""),
                 },
             )
-            if execution_guard_key:
-                execution_guard_repo.attach_request_id(execution_guard_key, request_id)
         except Exception as err:
-            if execution_guard_key:
-                execution_guard_repo.release(execution_guard_key)
-            return _response(500, {"status": "ERROR", "message": str(err)})
+            payload = {"status": "ERROR", "message": str(err), "task_id": task}
+            if execution:
+                execution_guard_repo.release(execution["scope_key"], execution["execution_id"])
+                payload.update(
+                    execution_id=execution["execution_id"], command_finished=True,
+                    command_request_id=execution.get("command_request_id", ""),
+                    active_execution=execution_guard_repo.get_active(email, game),
+                )
+            _push_inline_exam_status(event, action, payload)
+            return _response(500, payload)
         return _response(200, {"status": "QUEUED", "action": action, "request_id": request_id})
 
     if action != "subscribe":
