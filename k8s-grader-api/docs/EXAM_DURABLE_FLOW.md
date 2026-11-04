@@ -1,6 +1,6 @@
 # Exam Durable Flow
 
-**Last Updated:** July 22, 2026
+**Last Updated:** November 4, 2026
 
 This document describes the current exam-mode architecture, the end-to-end action flow, the state transitions, and the runtime issues that were fixed during the Lambda durable-function refactor.
 
@@ -38,6 +38,8 @@ It does **not** describe the removed legacy game `/task` flow; game mode now use
   - `records`
 - browser does **not** store task/question text in browser storage
 - on reconnect/refresh, browser restores exam context and auto-requests `status`
+- disables conflicting submissions, question selection, and account/form changes while an exam command is pending
+- reconnecting or waiting for a response does not cancel backend execution
 
 ### `exam-ws-handler/app.py`
 
@@ -48,6 +50,8 @@ Responsibilities:
 - resolve `connection_id -> email/exam_code/game/task`
 - forward exam actions to the durable function through `invoke_durable_function(...)`
 - send an initial state snapshot on subscribe
+- acquire a shared execution lease before queueing `start`, `run`, or `reset`
+- return active execution metadata for busy requests and status checks
 
 ### `exam-durable-handler/app.py`
 
@@ -58,6 +62,8 @@ Responsibilities:
 - load and validate exam state
 - start/reset/run/status/records behavior
 - push status responses back to matching WebSocket connections
+- retain the execution lease through phase execution and automatic cleanup
+- release the owned lease before broadcasting the terminal command response
 
 ### Supporting services
 
@@ -69,7 +75,12 @@ Responsibilities:
 - `TaskService`
   - starts tasks
   - executes phases
-  - completes or abandons tasks
+- `ExamExecutionGuard` (`common/exam_execution.py`)
+  - serializes exam mutations across questions and exam codes for one student/game
+  - uses conditional writes and ownership-safe release
+- exam durable handler's `finish_exam_task(...)`
+  - runs automatic cleanup before completing or abandoning an exam task
+  - keeps cleanup failures retryable without changing the shared game completion path
 - `TaskStateMachine`
   - determines next legal action
   - enforces phase ordering and completion logic
@@ -127,6 +138,24 @@ Current behavior:
 - the exam UI records view is filtered by the current `task_id`
 - auto-chained `setup -> ready` saves separate records for both phases when both execute in one `run`
 
+### `WebSocketExecutionGuardTable`
+
+Exam commands use the key `exam#<email>#<game>#mutation`. The key deliberately
+excludes task, exam code, and action, so another question, exam code, browser tab,
+or REST request cannot start a conflicting exam mutation for that student/game.
+
+Each lease records `execution_id`, `command_request_id`, task, exam code, action,
+phase, start time, and `expires_at`. Reads are strongly consistent; acquisition
+is conditional, and release requires the matching `execution_id`. An expired
+owner cannot remove a newer owner's lease.
+
+The lease lasts 3,660 seconds, longer than the durable function's configured
+3,600-second execution timeout, and is renewed when execution starts and phase
+progress is published. Normal completion releases it immediately; expiry is
+fallback recovery, not a browser response timeout.
+
+Game commands retain their existing `game#...#mutation` keys and behavior.
+
 ### `AccountTable`
 
 Stores the student Kubernetes endpoint and client credentials used during `start`, `reset`, and `run`.
@@ -179,20 +208,22 @@ The browser then sends:
 Behavior:
 
 1. stores or refreshes the connection metadata
-2. loads current `TaskStateTable` item for `email + game#task`
-3. sends a snapshot message back
+2. checks for an active student/game execution lease
+3. sends `RUNNING` with `active_execution` if a command is active; otherwise reads the selected task state and sends its snapshot
 
 Snapshot result:
 
+- if an execution is active:
+  - its task, action, execution ID, and current phase, even when it belongs to another question
 - if no state exists:
   - `NOT_STARTED`
 - if state exists:
   - current task status
   - current phase
   - total points
-  - rendered task description
 
-This is why the UI can reconnect and still recover current status.
+The browser also requests full `status` to restore the rendered question,
+scores, and available tasks; these are not part of the initial snapshot.
 
 ## 5.3 Action messages
 
@@ -207,7 +238,10 @@ For actions in:
 the WebSocket handler:
 
 1. looks up the stored connection
-2. builds a durable payload:
+2. returns active execution metadata immediately for `status` or `records` when a command is running
+3. applies the action cooldown
+4. acquires the shared lease for `start`, `run`, or `reset`; a conflict returns `BUSY` with `active_execution` instead of queueing another command
+5. pushes `QUEUED` with the acquired lease to the submitting connection, then builds a durable payload:
 
 ```json
 {
@@ -215,18 +249,53 @@ the WebSocket handler:
   "email": "...",
   "exam_code": "...",
   "game": "...",
-  "task_id": "..."
+  "task_id": "...",
+  "execution_id": "...",
+  "status_request_id": "..."
 }
 ```
 
-3. invokes the qualified durable function alias asynchronously
-4. returns immediate WebSocket response:
+6. invokes the qualified durable function alias asynchronously
+7. returns the invocation acknowledgement:
 
 ```json
-{"status":"QUEUED","action":"run"}
+{"status":"QUEUED","action":"run","request_id":"..."}
 ```
 
 The actual result comes later via WebSocket push from the durable Lambda.
+
+The browser supplies `command_request_id` on mutation requests. The gateway
+stores it in the lease; the server-generated `execution_id` identifies the lease
+owner. `status_request_id` correlates a status response with the browser's
+current restore request.
+
+## 5.4 Conflicting actions and REST requests
+
+- Start, Run, and Reset share one lease, not separate per-action or per-task locks.
+- The lease covers queueing, setup, chained readiness checks, grading, and automatic cleanup.
+- Cooldowns remain separate; passing a cooldown does not mean an execution has finished.
+- Synchronous `/exam/start`, `/exam/run`, and `/exam/reset` use the same guard.
+- Asynchronous REST Run acquires the lease before queueing and passes ownership to the durable worker.
+- Status/overview reads used by the exam handlers do not persist point normalization or advance phases, so polling cannot overwrite a running task's saved state.
+
+## 5.5 Browser recovery
+
+The browser locks mutation buttons, task selection, account inputs, exam
+verification, and saved-form reset as soon as it submits a mutation. It also
+locks controls while restoring task state. Reconnect remains available when
+disconnected.
+
+While a command is pending, the browser checks status every three seconds.
+It waits for an outstanding status response instead of replacing it each tick;
+after 30 seconds it retries reconciliation **without unlocking the task**.
+Socket closure, generic errors, rejected duplicates, and stale responses do
+not establish that execution has stopped.
+
+Controls unlock only after a matching terminal command result or a correlated
+status response confirming no active execution. Late messages from previous
+sockets or completed executions cannot regress the current task. Question
+switching between idle, unfinished tasks remains allowed; this is an execution
+lock, not a requirement to finish every question before browsing another one.
 
 ---
 
@@ -250,6 +319,8 @@ Important implementation rule:
 
 - the durable step now wraps a **plain helper result**
 - it does **not** nest one durable step inside another
+- mutations use `guarded_exam_command_step(...)`, which validates or acquires lease ownership, executes the command, releases the owned lease, and then broadcasts its result
+- status uses `synchronized_exam_status_step(...)` to echo the browser's status request ID
 
 That change was required because nested durable-step objects were not serializable by the AWS durable SDK.
 
@@ -265,6 +336,9 @@ Purpose:
 - attach K8s credentials into task session data
 - create the task if needed
 - return the starting phase information
+
+Start initializes task state; it does not execute setup tests. Run performs
+setup and subsequent phases under the execution lease.
 
 Detailed flow:
 
@@ -308,6 +382,7 @@ Allowed only when:
 - task exists
 - task is `IN_PROGRESS` or `ABANDONED`
 - task is **not** `COMPLETED`
+- no conflicting exam command is executing for this student/game
 
 Detailed flow:
 
@@ -315,11 +390,9 @@ Detailed flow:
 2. load existing task state
 3. reject if not started
 4. reject if already completed
-5. reload K8s credentials
-6. clear `/tmp`
-7. delete existing task state
-8. return `RESET` response telling the student to click **Start**
-9. broadcast to WebSocket subscribers
+5. delete existing task state
+6. return `RESET` response telling the student to click **Start**
+7. broadcast to WebSocket subscribers after releasing the execution lease
 
 Important behavior:
 
@@ -346,13 +419,13 @@ Possible branches:
 
 ### Branch A: `complete_task`
 
-- complete the task immediately
-- return `COMPLETED`
+- run automatic cleanup, if configured
+- mark complete and return `COMPLETED` only after successful cleanup
 
 ### Branch B: `max_attempts_reached`
 
-- abandon the task
-- return `ABANDONED`
+- run automatic cleanup, if configured
+- mark abandoned and return `ABANDONED` only after successful cleanup
 
 ### Branch C: `execute_phase` or `retry_phase`
 
@@ -388,7 +461,10 @@ Important UX behavior:
 - exam mode awards points only for a passed `check` phase
 - the browser response includes `executed_phases`, so the student can see both results
 - `ready` failure stops the chain and leaves the task on `ready` for retry
-- `check` pass and max-attempt abandonment still rely on task completion / abandonment paths, where cleanup is triggered automatically
+- setup, readiness, grading, and cleanup progress messages retain `active_execution` and keep controls locked
+- on automatic cleanup failure or exception, return `FAILED` with `cleanup_failed: true`, retain `IN_PROGRESS` at `cleanup`, and let Run retry cleanup
+- a cleanup retry after attempt exhaustion preserves the original abandonment reason
+- only successful completion/abandonment removes the task from `remaining_tasks`; automatic advancement waits for the finished command
 
 ## 7.4 `status`
 
@@ -398,6 +474,8 @@ Purpose:
 
 Returns:
 
+- `RUNNING` with `active_execution` while an exam command is active
+- otherwise, `active_execution: null` and:
 - current serialized state
 - manifest
 - rendered task description
@@ -473,7 +551,15 @@ This means the browser receives:
 So the UI can distinguish:
 
 - queued command acknowledgement from WebSocket handler
+- `RUNNING` progress with `active_execution`, including during cleanup
+- `BUSY` rejection without treating it as the active command's result
 - final durable result from durable handler
+
+Terminal mutation payloads include `task_id`, `execution_id`,
+`command_request_id`, and `command_finished: true`. They also include the
+current `active_execution` after release, normally `null`. Task status
+`IN_PROGRESS` describes saved task progress; it is not proof that tests are
+currently executing.
 
 ---
 
@@ -564,6 +650,13 @@ Use this to decide whether the logic is right:
 8. **WebSocket updates**
    - should durable results always be pushed back to all matching subscribers?  
    - current code: **yes**, by `email + exam_code + game + task` scope
+9. **Execution isolation**
+   - duplicate Run and conflicting Start/Reset/other-question requests must not queue while an exam mutation owns the lease
+   - reconnects, response timeouts, and rejected duplicates must not unlock an active execution
+10. **Cleanup and advancement**
+    - task selection stays locked through automatic cleanup
+    - cleanup failure remains retryable and is not reported as completion
+    - successful completion still restores the next question without stale state
 
 ---
 
@@ -593,8 +686,10 @@ arn:aws:lambda:us-east-1:111964674713:function:k8s-grader-api-dev-exam-command-d
 
 Primary files:
 
+- `../exam-web/exam.js`
 - `exam-ws-handler/app.py`
 - `exam-durable-handler/app.py`
+- `common-layer/common/exam_execution.py`
 - `common-layer/common/services/exam_service.py`
 - `common-layer/common/services/task_service.py`
 - `common-layer/common/state_machine/task_state_machine.py`
@@ -605,4 +700,7 @@ Helpful related files:
 - `common-layer/common/durable_invoker.py`
 - `tests/test_exam_ws_handler.py`
 - `tests/test_exam_durable_handler.py`
+- `tests/test_exam_execution.py`
+- `tests/test_exam_web.mjs`
+- `tests/test_task_handler.py`
 - `tests/test_durable_invoker.py`

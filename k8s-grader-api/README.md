@@ -256,6 +256,17 @@ Each phase tracks:
 - **Account setup:** `/save-k8s-account/`
 - **API key generation:** `/keygen/`
 
+Exam Start, Run, and Reset share a student/game execution lease across questions,
+exam codes, tabs, and REST requests. The UI blocks conflicting actions and
+question changes through setup, testing, and cleanup; reconnects and timeouts
+restore server state rather than cancel execution. Idle question switching is
+still allowed. Game handlers and lock keys are unchanged.
+
+Deploy the exam backend and web UI together. See
+[Exam Durable Flow](docs/EXAM_DURABLE_FLOW.md),
+[coordinated deployment](docs/DEPLOYMENT_GUIDE.md#coordinated-exam-backend-and-ui-rollout),
+and [execution-lock regression tests](docs/TESTING_GUIDE.md#exam-execution-locking-regressions).
+
 ## 🔧 Development
 
 ### Local Testing

@@ -261,6 +261,32 @@ After first deployment, use the helper again so deployment, portal publishing, a
 
 This reuses the saved `samconfig.toml` configuration while also publishing the student portal assets, preserving `TeacherEmails`, and reseeding the default private game source.
 
+### Coordinated exam backend and UI rollout
+
+Deploy the exam backend and `exam-web` assets from the same revision. The
+execution-lock protocol relies on active execution metadata and correlated
+terminal/status responses; publishing only the new UI against the old backend
+can leave controls waiting for metadata the backend does not send.
+
+Schedule the rollout outside active exam runs. Use the normal deployment helper
+so the common layer, exam workers/gateway, REST handler, and portal assets stay
+in sync. `TaskHandlerFunction` must reference `WebSocketExecutionGuardTable`
+and have its table-scoped DynamoDB permissions, just like the exam WebSocket
+and durable handlers. No new table or change to Game's lock keys is required.
+
+After deployment, verify in a test exam:
+
+1. Run setup and confirm question selection and Start/Run/Reset stay locked through readiness checks.
+2. Attempt another exam question from a second tab while the first is running; the server must return `BUSY` rather than queue a conflicting mutation.
+3. Disconnect/reconnect during execution; the page must restore the active task/phase without enabling another submission.
+4. Confirm controls remain locked during cleanup and automatic advancement occurs only after the terminal result.
+5. Confirm an automatic cleanup failure remains retryable rather than being reported as task completion.
+
+See [Exam Durable Flow](EXAM_DURABLE_FLOW.md) for lease scope, recovery behavior,
+and response fields, and [Testing Guide](TESTING_GUIDE.md#exam-execution-locking-regressions)
+for local regression commands. Mocked regressions do not replace these live
+WebSocket checks.
+
 ---
 
 ## Exam Code Validation (Fail-Fast) Before Enabling Exam Mode
@@ -355,6 +381,8 @@ python scripts/reset_task_stage.py ... --apply
   - `abandoned`
 - Reset is blocked when task is `completed` (teacher/admin action required).
 - Reset restarts the task from phase 1 and keeps audit trail in **Records**.
+- Start, Run, and Reset share a student/game execution lease across exam questions and exam codes, including REST requests.
+- Reset and question changes are blocked while a command is pending, including setup and cleanup. Reconnecting does not cancel the command or bypass the lease.
 
 ## Student Reset Logic (Exercise Portal)
 

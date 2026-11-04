@@ -48,6 +48,39 @@ pytest tests/test_task_handler.py::TestLambdaHandler::test_missing_parameters
 - Execution time: ~30-35 seconds
 - All tests pass ✅
 
+### Exam execution locking regressions
+
+Run from `k8s-grader-api` using the existing Python test environment and Node.js:
+
+```bash
+AWS_ACCESS_KEY_ID=testing AWS_SECRET_ACCESS_KEY=testing \
+  AWS_DEFAULT_REGION=us-east-1 AWS_EC2_METADATA_DISABLED=true \
+  venv/bin/python -m pytest \
+  tests/test_exam_execution.py \
+  tests/test_exam_ws_handler.py \
+  tests/test_exam_durable_handler.py \
+  tests/test_exam_service.py \
+  tests/test_task_handler.py \
+  tests/test_game_ws_handler.py \
+  tests/test_game_command_handler.py -q
+
+node --test tests/test_exam_web.mjs
+```
+
+The backend tests use mocked AWS services. The browser tests execute `exam.js`
+with a simulated DOM, WebSocket, storage, and timers; they require neither a
+browser installation nor a Kubernetes cluster.
+
+Coverage includes shared leases across actions/questions/exam codes, REST
+bypass prevention, stale-owner rejection, setup/cleanup locking, retryable
+cleanup failures, read-only overview queries, reconnects and response timeouts,
+request correlation, and safe automatic advancement. The Game suites verify
+that existing Game behavior is preserved and its leases remain independent.
+
+These are local regressions, not end-to-end live WebSocket or Kubernetes
+validation. Follow the [deployment verification steps](DEPLOYMENT_GUIDE.md#coordinated-exam-backend-and-ui-rollout)
+after deploying both the backend and web UI.
+
 ## Integration Tests
 
 ### What They Test
