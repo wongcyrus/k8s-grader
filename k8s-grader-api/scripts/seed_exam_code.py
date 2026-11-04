@@ -63,13 +63,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--starts-at",
-        required=True,
-        help="ISO8601 datetime, e.g. 2026-01-01T00:00:00+00:00",
+        default="",
+        help="ISO8601 datetime; omit both dates for an unrestricted exam.",
     )
     parser.add_argument(
         "--ends-at",
-        required=True,
-        help="ISO8601 datetime, e.g. 2026-12-31T23:59:59+00:00",
+        default="",
+        help="ISO8601 datetime; omit both dates for an unrestricted exam.",
     )
     parser.add_argument("--max-attempts", type=int, default=3)
     parser.add_argument("--status", default="active")
@@ -161,10 +161,13 @@ def validate_exam_plan(plan: ExamSeedPlan, game_dir: Path, task_folder: str) -> 
     if len(plan.tasks) != len(set(plan.tasks)):
         raise ValueError("Task list contains duplicates")
 
-    starts_at = parse_iso8601(plan.starts_at)
-    ends_at = parse_iso8601(plan.ends_at)
-    if ends_at <= starts_at:
-        raise ValueError("ends-at must be after starts-at")
+    if bool(plan.starts_at) != bool(plan.ends_at):
+        raise ValueError("Provide both starts-at and ends-at, or omit both")
+    if plan.starts_at:
+        starts_at = parse_iso8601(plan.starts_at)
+        ends_at = parse_iso8601(plan.ends_at)
+        if ends_at <= starts_at:
+            raise ValueError("ends-at must be after starts-at")
 
     if plan.max_attempts <= 0:
         raise ValueError("max-attempts must be > 0")

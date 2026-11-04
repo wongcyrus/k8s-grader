@@ -1,0 +1,26 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "k8s-grader-api-exam"
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.validate.parameters]
+lint = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+s3_prefix = "k8s-grader-api-exam"
+region = "us-east-1"
+image_repositories = []
+parameter_overrides = "PythonVersion=python3.14 ExamCostControls=true DefaultPhaseMaxAttempts=100 TeacherEmails=\"cywong@vtc.edu.hk,kcheung@vtc.edu.hk,kakaleung@vtc.edu.hk\""
+tags = "Project=\"k8s-grader\" Environment=\"exam\""
+disable_rollback = false
+fail_on_empty_changeset = false
+
+[default.package.parameters]
+resolve_s3 = true

@@ -170,3 +170,4 @@ k8s/minikube/minikube-client-certs/client.crt
 k8s/minikube/minikube-client-certs/client.key
 k8s/minikube/minikube-client-certs/config
 k8s/minikube/minikube-client-certs/README.txt
+tools/students.txt

@@ -92,7 +92,7 @@ class TaskManifest:
                     required=(phase_id != 'cleanup'),
                     auto_run=(phase_id == 'cleanup'),
                     timeout_seconds=30,
-                    max_attempts=3,
+                    max_attempts=int(os.getenv("DEFAULT_PHASE_MAX_ATTEMPTS", "3")),
                     points=points
                 ))
         

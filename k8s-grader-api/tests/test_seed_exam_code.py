@@ -116,3 +116,36 @@ def test_build_plan_from_args_fails_if_explicit_task_missing(tmp_path: Path):
 
     with pytest.raises(ValueError, match="not found"):
         seed_exam_code.build_plan_from_args(args)
+
+
+@pytest.mark.parametrize(
+    ("starts_at", "ends_at", "error"),
+    [
+        ("", "", None),
+        ("2026-01-01T00:00:00+00:00", "", "Provide both"),
+        ("", "2026-12-31T23:59:59+00:00", "Provide both"),
+        (
+            "2026-12-31T23:59:59+00:00",
+            "2026-01-01T00:00:00+00:00",
+            "ends-at must be after",
+        ),
+    ],
+)
+def test_validate_exam_window(tmp_path: Path, starts_at, ends_at, error):
+    create_task(tmp_path, "001_task")
+    plan = seed_exam_code.ExamSeedPlan(
+        exam_code="TEST",
+        game="game01",
+        tasks=["001_task"],
+        starts_at=starts_at,
+        ends_at=ends_at,
+        max_attempts=100,
+        status="active",
+        task_source=".",
+        order_mode="numeric_prefix",
+    )
+    if error:
+        with pytest.raises(ValueError, match=error):
+            seed_exam_code.validate_exam_plan(plan, tmp_path, ".")
+    else:
+        seed_exam_code.validate_exam_plan(plan, tmp_path, ".")

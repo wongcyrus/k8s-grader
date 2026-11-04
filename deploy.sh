@@ -17,8 +17,13 @@ case "$DEPLOY_ENV" in
     prod)
         export SAM_CONFIG_FILE="${SAM_CONFIG_FILE:-${SCRIPT_DIR}/k8s-grader-api/samconfig.prod.toml}"
         ;;
+    exam)
+        export SAM_CONFIG_FILE="${SAM_CONFIG_FILE:-${SCRIPT_DIR}/k8s-grader-api/samconfig.exam.toml}"
+        export EXAM_COST_CONTROLS=true
+        export DEFAULT_PHASE_MAX_ATTEMPTS="${DEFAULT_PHASE_MAX_ATTEMPTS:-100}"
+        ;;
     *)
-        echo "Unsupported deploy environment: ${DEPLOY_ENV}. Use dev or prod." >&2
+        echo "Unsupported deploy environment: ${DEPLOY_ENV}. Use dev, prod or exam." >&2
         exit 1
         ;;
 esac

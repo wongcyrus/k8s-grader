@@ -508,6 +508,12 @@ deploy() {
     if [ -n "${accessible_exercise_emails}" ]; then
         parameter_overrides+=("AccessibleExerciseEmails=${accessible_exercise_emails}")
     fi
+    if [ -n "${EXAM_COST_CONTROLS:-}" ]; then
+        parameter_overrides+=("ExamCostControls=${EXAM_COST_CONTROLS}")
+    fi
+    if [ -n "${DEFAULT_PHASE_MAX_ATTEMPTS:-}" ]; then
+        parameter_overrides+=("DefaultPhaseMaxAttempts=${DEFAULT_PHASE_MAX_ATTEMPTS}")
+    fi
 
     if [ "${guided_flag}" == "--guided" ]; then
         print_info "Running guided deployment..."
@@ -668,6 +674,7 @@ main() {
                 echo "Environment selection:"
                 echo "  ENV=dev  ./deploy.sh    # uses samconfig.dev.toml"
                 echo "  ENV=prod ./deploy.sh    # uses samconfig.prod.toml"
+                echo "  ENV=exam ./deploy.sh    # uses samconfig.exam.toml with cost controls"
                 echo ""
                 echo "Options:"
                 echo "  --guided              Run guided deployment (first time)"

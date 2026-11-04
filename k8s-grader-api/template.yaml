@@ -2,6 +2,9 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
   SAM Template for k8s-grader-api
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Parameters:
   SecretHash:
@@ -32,6 +35,18 @@ Parameters:
     Type: String
     Description: "Comma-separated email allowlist for the accessible game02 exercise view"
     Default: ""
+  ExamCostControls:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+    Description: "Opt-in exam log retention and disabled API tracing; no customer-managed keys."
+  DefaultPhaseMaxAttempts:
+    Type: Number
+    Default: 3
+    MinValue: 1
+    Description: "Retry limit for auto-generated task phases; explicit manifests retain their own limits."
+Conditions:
+  ExamCostControlsEnabled: !Equals [!Ref ExamCostControls, "true"]
 Globals:
   Function:
     Timeout: 29
@@ -40,11 +55,48 @@ Globals:
     Runtime: !Ref PythonVersion
     Architectures:
       - x86_64
+    LoggingConfig:
+      LogGroup: !If [ExamCostControlsEnabled, !Ref ExamFunctionLogGroup, !Ref "AWS::NoValue"]
+    Environment:
+      Variables:
+        DEFAULT_PHASE_MAX_ATTEMPTS: !Ref DefaultPhaseMaxAttempts
   Api:
-    TracingEnabled: true
+    TracingEnabled: !If [ExamCostControlsEnabled, false, true]
 Resources:
+  ExamFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: ExamCostControlsEnabled
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Shared short-lived exam diagnostics avoid indefinite log storage and CMK charges."
+        must:
+          - "Keep the name under /aws/lambda/ for basic Lambda logging permissions."
+          - "Do not configure a customer-managed KMS key."
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}"
+      RetentionInDays: 7
+
   TestResultBucket:
     Type: AWS::S3::Bucket
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: "Preserve grading reports; only abandoned multipart uploads are temporary."
+        must:
+          - "Do not expire completed exam reports."
+          - "Use SSE-S3 rather than a customer-managed KMS key."
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration: !If
+        - ExamCostControlsEnabled
+        - Rules:
+            - Id: AbortIncompleteUploads
+              Status: Enabled
+              AbortIncompleteMultipartUpload:
+                DaysAfterInitiation: 1
+        - !Ref "AWS::NoValue"
 
   ExamWebsiteBucket:
     Type: AWS::S3::Bucket

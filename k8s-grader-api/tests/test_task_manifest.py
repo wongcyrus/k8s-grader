@@ -6,6 +6,37 @@ from common.models.phase_config import PhaseConfig
 
 class TestTaskManifest:
     """Test TaskManifest model"""
+
+    @pytest.mark.parametrize(("configured", "expected"), [(None, 3), ("100", 100)])
+    def test_auto_generated_phase_retry_limit(self, mocker, monkeypatch, configured, expected):
+        if configured is None:
+            monkeypatch.delenv("DEFAULT_PHASE_MAX_ATTEMPTS", raising=False)
+        else:
+            monkeypatch.setenv("DEFAULT_PHASE_MAX_ATTEMPTS", configured)
+        mocker.patch("os.path.exists", return_value=True)
+        mocker.patch("builtins.open", mocker.mock_open(read_data="Create a namespace"))
+
+        manifest = TaskManifest._auto_generate("game01", "02_create_namespace")
+        from common.models.task_state import TaskState, TaskStatus
+        from common.state_machine.task_state_machine import TaskStateMachine
+
+        state = TaskState(
+            email="test@example.com",
+            game="game01",
+            task_id=manifest.task_id,
+            npc="exam",
+            mode="exam",
+            status=TaskStatus.IN_PROGRESS,
+            current_phase_id="setup",
+        )
+        phase = state.get_or_create_phase_state("setup")
+        phase.attempts = expected - 1
+        machine = TaskStateMachine(manifest, state)
+        assert machine.can_execute_phase("setup") == (True, None)
+        phase.attempts = expected
+        allowed, error = machine.can_execute_phase("setup")
+        assert not allowed
+        assert f"Maximum attempts ({expected})" in error
     
     def test_create_manifest(self, sample_manifest):
         """Test creating a TaskManifest instance"""
