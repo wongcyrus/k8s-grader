@@ -58,7 +58,7 @@ class TaskStateRepository:
             self._table = dynamodb.Table(self.table_name)
         return self._table
     
-    def get(self, email: str, game: str, task_id: str):
+    def get(self, email: str, game: str, task_id: str, *, consistent: bool = False):
         """
         Get task state
         
@@ -77,7 +77,8 @@ class TaskStateRepository:
                 Key={
                     'email': email,
                     'gameTask': f"{game}#{task_id}"
-                }
+                },
+                **({"ConsistentRead": True} if consistent else {}),
             )
             item = response.get('Item')
             return TaskState.from_dict(item) if item else None

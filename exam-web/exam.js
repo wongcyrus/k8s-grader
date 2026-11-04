@@ -52,6 +52,8 @@ let httpBusy = false;
 let statusRequestSequence = 0;
 let latestStatusRequestId = "";
 let statusRequestSentAt = 0;
+let activeEnvironment = null;
+let currentLifecycle = null;
 const finishedExecutionIds = new Set();
 
 function wsDebug(event, data = null) {
@@ -200,12 +202,47 @@ function normalizePhaseState(phase) {
 
 function setCurrentPhaseState(phase) {
   currentPhaseState = normalizePhaseState(phase);
+  currentLifecycle = null;
   updateStateMachineUI();
 }
 
+function getLifecycle() {
+  if (currentLifecycle) return currentLifecycle;
+  const phase = pendingExecution?.phase || pendingExecution?.action || currentPhaseState;
+  if (pendingExecution) {
+    if (["setup", "ready", "start"].includes(phase)) {
+      return { stage: "preparation", label: "Preparing environment", message: phase === "ready" ? "Checking that the environment is ready." : "Creating the question's Kubernetes resources." };
+    }
+    if (["cleanup", "reset"].includes(phase)) {
+      return { stage: "cleanup", label: "Cleaning up", message: "Removing the question's Kubernetes resources. Wait for cleanup to finish." };
+    }
+    return { stage: "assessment", label: "Assessing your work", message: phase === "challenge" ? "Running the challenge against your work." : "Checking your answer." };
+  }
+  if (backendTaskStatus === "COMPLETED") return { stage: "completed", label: "Finished", message: "Cleanup finished. You may choose another question." };
+  if (backendTaskStatus === "ABANDONED") return { stage: "abandoned", label: "Attempts exhausted", message: "The question has finished after cleanup." };
+  if (!taskStarted) return { stage: "not_started", label: "Not started", message: "Start question to prepare your environment." };
+  if (phase === "cleanup") return { stage: "cleanup", label: "Cleanup needs attention", message: "Retry cleanup before continuing.", run_label: "Retry cleanup" };
+  if (["setup", "ready"].includes(phase)) return { stage: "preparation", label: "Preparation needed", message: "Retry preparation before working on this question.", run_label: "Retry preparation" };
+  return { stage: "working", label: "Your turn", message: "Complete the question in Kubernetes, then submit your answer.", run_label: "Submit answer" };
+}
+
 function updateStateMachineUI() {
-  phaseStateLabel.textContent = currentPhaseState;
+  const lifecycle = getLifecycle();
+  phaseStateLabel.textContent = lifecycle.label;
   taskStatusLabel.textContent = backendTaskStatus;
+  const lifecycleOutput = document.getElementById("lifecycleOutput");
+  if (lifecycleOutput) lifecycleOutput.textContent = lifecycle.message || "";
+  const activities = {
+    setup: "Creating resources", ready: "Checking readiness",
+    challenge: "Running challenge", check: "Checking answer", cleanup: "Removing resources",
+  };
+  phaseOutput.textContent = lifecycle.stage === "working" ? "Waiting for your Kubernetes changes."
+    : ["completed", "abandoned"].includes(lifecycle.stage) ? "Environment released."
+      : activities[lifecycle.phase || pendingExecution?.phase] || "";
+  const stages = ["Prepare environment", "Your turn", "Assess your work", "Clean up"];
+  const index = { preparation: 0, working: 1, assessment: 2, cleanup: 3 }[lifecycle.stage];
+  const lifecycleSteps = document.getElementById("lifecycleSteps");
+  if (lifecycleSteps) lifecycleSteps.textContent = stages.map((label, position) => position === index ? `[${label}]` : label).join(" / ");
 }
 
 function setBusy(isBusy) {
@@ -379,6 +416,7 @@ function sendExamActionViaSocket(action) {
   }
 
   if (["start", "run", "reset"].includes(action)) {
+    currentLifecycle = null;
     pendingExecution = {
       action, task_id: readInputs().task,
       command_request_id: `${REQUEST_ID_PREFIX}-command-${++statusRequestSequence}`,
@@ -422,6 +460,7 @@ function showLoadingSelectedTaskState() {
   backendNextAction = null;
   taskStarted = false;
   backendTaskStatus = "NOT_STARTED";
+  currentLifecycle = null;
   statusSyncPending = true;
   setCurrentPhaseState("ready");
   writeMarkdown("Restoring task state...", questionOutput);
@@ -455,7 +494,8 @@ function updateTaskOptions(tasks, preferredTask = "") {
   }
   examHasRemainingTasks = tasks.length > 0;
   const taskSelect = document.getElementById("task");
-  const previousValue = preferredTask || taskSelect.value;
+  const previousValue = taskSelect.value;
+  const desiredValue = preferredTask || previousValue;
   taskSelect.innerHTML = "";
 
   if (tasks.length === 0) {
@@ -480,7 +520,7 @@ function updateTaskOptions(tasks, preferredTask = "") {
     taskSelect.appendChild(option);
   });
 
-  taskSelect.value = previousValue && tasks.includes(previousValue) ? previousValue : tasks[0];
+  taskSelect.value = desiredValue && tasks.includes(desiredValue) ? desiredValue : tasks[0];
   selectedExamTask = taskSelect.value;
   saveState({ allowedTasks: tasks, task: taskSelect.value });
   if (previousValue !== taskSelect.value) {
@@ -516,16 +556,17 @@ function setActionVisible(button, visible) {
 function updateExamButtons() {
   const executing = Boolean(pendingExecution);
   const locked = executing || statusSyncPending || httpBusy;
-  document.getElementById("task").disabled = locked;
-  resetStateButton.disabled = locked;
+  const ownsEnvironment = Boolean(activeEnvironment);
+  document.getElementById("task").disabled = locked || ownsEnvironment;
+  resetStateButton.disabled = locked || ownsEnvironment;
   ["apiKey", "examCode", "endpoint", "kubeconfig", "kubeconfigFile", "clientCertificate", "clientKey"].forEach((id) => {
-    document.getElementById(id).disabled = locked;
+    document.getElementById(id).disabled = locked || ownsEnvironment;
   });
-  authMethodInputs.forEach((input) => { input.disabled = locked; });
+  authMethodInputs.forEach((input) => { input.disabled = locked || ownsEnvironment; });
   const saveAccountButton = document.querySelector('button[data-action="save-account"]');
-  saveAccountButton.disabled = locked;
+  saveAccountButton.disabled = locked || ownsEnvironment;
   if (verifyButton) {
-    verifyButton.disabled = locked || !k8sAccountReady;
+    verifyButton.disabled = locked || ownsEnvironment || !k8sAccountReady;
   }
   updateStateMachineUI();
   if (examScope.classList.contains("hidden")) {
@@ -542,6 +583,9 @@ function updateExamButtons() {
   const resetBtn = document.querySelector('button[data-action="reset"]');
   const runBtn = document.querySelector('button[data-action="run"]');
   const recordsBtn = document.querySelector('button[data-action="records"]');
+  startBtn.dataset.baseLabel = "Start question";
+  resetBtn.dataset.baseLabel = "Leave question and clean up";
+  runBtn.dataset.baseLabel = getLifecycle().run_label || "Submit answer";
 
   const disconnected = !examSocketReady;
   const completed = backendTaskStatus === "COMPLETED";
@@ -552,19 +596,18 @@ function updateExamButtons() {
 
   setActionVisible(reconnectBtn, examHasRemainingTasks && disconnected);
   setActionVisible(startBtn, examHasRemainingTasks && !taskStarted);
-  setActionVisible(resetBtn, examHasRemainingTasks && taskStarted && !completed);
+  setActionVisible(resetBtn, examHasRemainingTasks && (taskStarted || ownsEnvironment) && !completed);
   setActionVisible(runBtn, examHasRemainingTasks && taskStarted && !completed && !abandoned);
   setActionVisible(recordsBtn, examHasRemainingTasks && (taskStarted || completed || abandoned));
 
   setActionLock(reconnectBtn, false);
   setActionLock(startBtn, executing || restoring || !examSocketReady || taskStarted, executing ? busyReason : restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Task already started.");
-  setActionLock(resetBtn, executing || restoring || !examSocketReady || !taskStarted || completed, executing ? busyReason : restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Start the task first.");
+  setActionLock(resetBtn, executing || restoring || !examSocketReady || (!taskStarted && !ownsEnvironment) || completed, executing ? busyReason : restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Start the task first.");
   setActionLock(runBtn, executing || restoring || !examSocketReady || !started, executing ? busyReason : restoring ? "Restoring task state from the server." : !examSocketReady ? "Wait until the exam session is connected." : "Start the task first.");
   setActionLock(recordsBtn, executing || restoring || (!taskStarted && !completed && !abandoned), executing ? busyReason : restoring ? "Restoring task state from the server." : "Start the task first.");
 
   if (executing) {
-    const phase = pendingExecution.phase || pendingExecution.action || "processing";
-    setNextStep(`Task ${escapeHtml(pendingExecution.task_id)}: ${escapeHtml(phase)} in progress. Wait for setup, testing, and cleanup to finish.${!examSocketReady ? " Reconnect Exam to restore progress." : ""}`);
+    setNextStep(`Task ${escapeHtml(pendingExecution.task_id)}: ${escapeHtml(getLifecycle().message || "Processing. Please wait.")}${!examSocketReady ? " Reconnect Exam to restore progress." : ""}`);
     return;
   }
   if (!examHasRemainingTasks) {
@@ -576,7 +619,7 @@ function updateExamButtons() {
     return;
   }
   if (!taskStarted) {
-    setNextStep(examSocketReady ? "Click Start to begin the task." : "Connect the exam session first.");
+    setNextStep(examSocketReady ? "Click Start question to prepare the environment." : "Connect the exam session first.");
     return;
   }
   if (completed) {
@@ -584,18 +627,14 @@ function updateExamButtons() {
     return;
   }
   if (abandoned) {
-    setNextStep("Max attempts reached. Click Reset Task to restart from phase 1.");
+    setNextStep("Attempts exhausted. Use Leave question and clean up to restart this question.");
     return;
   }
   if (!examSocketReady) {
     setNextStep("Reconnecting exam session ...");
     return;
   }
-  if (backendNextAction && backendNextAction.message) {
-    setNextStep(backendNextAction.message);
-    return;
-  }
-  setNextStep(`Current phase: ${currentPhaseState}. Click Run to continue.`);
+  setNextStep(escapeHtml(getLifecycle().message));
 }
 
 function renderExamResponse(json, action = "") {
@@ -605,8 +644,9 @@ function renderExamResponse(json, action = "") {
 
   const lines = [];
   const status = json.status || (json.state && json.state.status);
-  const phaseId = json.current_phase || (json.state && json.state.current_phase_id);
-  const phaseName = json.phase_name || (json.state && json.state.current_phase_name);
+  const rawPhaseId = json.current_phase || (json.state && json.state.current_phase_id);
+  const phaseId = rawPhaseId === "answer" ? null : rawPhaseId;
+  const phaseName = rawPhaseId === "answer" ? null : json.phase_name || (json.state && json.state.current_phase_name);
   const nextPhase = json.next_phase || (json.state && json.state.next_phase_id);
   const testResult = json.test_result;
   const attempts = json.attempts;
@@ -791,23 +831,7 @@ function updateExamSummary(json, action) {
     writeMarkdown(json.task_description, questionOutput);
   }
 
-  const phaseId = json.current_phase || (json.state && json.state.current_phase_id);
-  const phaseName = json.phase_name || (json.state && json.state.current_phase_name);
-  if (phaseId || phaseName) {
-    phaseOutput.textContent =
-      phaseName && phaseId && phaseName.toLowerCase() !== String(phaseId).toLowerCase()
-        ? `Phase: ${phaseName} (${phaseId})`
-        : `Phase: ${phaseName || phaseId}`;
-  }
-
-  if ((action === "start" || action === "run") && !json.task_description && json.message) {
-    writeMarkdown(json.message, questionOutput);
-  }
-
   if (action === "status" && json.state) {
-    if (json.state.current_phase_id) {
-      phaseOutput.textContent = `Phase: ${json.state.current_phase_id}`;
-    }
     if (typeof json.state.total_points !== "undefined") {
       markOutput.textContent = String(json.state.total_points);
     }
@@ -843,6 +867,7 @@ function updateExamSummary(json, action) {
     backendTaskStatus = normalizeTaskStatus(status);
     taskStarted = backendTaskStatus !== "NOT_STARTED";
     if (!taskStarted) {
+      if (!Object.hasOwn(json, "active_environment")) activeEnvironment = null;
       examFlowState = "ready_to_start";
       setCurrentPhaseState("ready");
       writeMarkdown("Press Start to load the question.", questionOutput);
@@ -859,7 +884,11 @@ function updateExamSummary(json, action) {
       if (phase) {
         setCurrentPhaseState(phase);
       }
+      if (backendTaskStatus === "IN_PROGRESS" && !activeEnvironment) {
+        activeEnvironment = { task_id: readInputs().task, exam_code: readInputs().examCode };
+      }
     }
+    currentLifecycle = json.lifecycle || null;
     updateExamButtons();
   }
 }
@@ -884,6 +913,7 @@ function showResponse(text, target = output, action = "") {
       if (pendingExecution.task_id === readInputs().task && pendingExecution.phase) {
         setCurrentPhaseState(pendingExecution.phase);
       }
+      currentLifecycle = json.lifecycle || null;
       if (action === "status") {
         statusSyncPending = false;
       }
@@ -937,6 +967,16 @@ function showResponse(text, target = output, action = "") {
     }
     if (action === "status") {
       statusSyncPending = false;
+    }
+    if (Object.hasOwn(json, "active_environment")) {
+      activeEnvironment = json.active_environment;
+    }
+    if (activeEnvironment && activeEnvironment.task_id !== readInputs().task && !pendingExecution) {
+      document.getElementById("examCode").value = activeEnvironment.exam_code;
+      const available = loadState().allowedTasks || [];
+      updateTaskOptions([...new Set([...available, activeEnvironment.task_id])], activeEnvironment.task_id);
+      write("Restoring the question that owns your environment. Finish it or leave it with cleanup before changing questions.");
+      return;
     }
     if (json.status === "ERROR" && ["start", "reset", "run", "status"].includes(action)) {
       updateExamButtons();
@@ -1011,31 +1051,9 @@ function showResponse(text, target = output, action = "") {
       closeExamSocket();
     }
 
-    if (action === "start") {
-      taskStarted = true;
-      statusSyncPending = false;
-      if (json.status === "STARTED" || json.status === "OK") {
-        examFlowState = "started";
-        backendTaskStatus = "IN_PROGRESS";
-        setCurrentPhaseState(json.current_phase || json.phase_name || "challenge");
-      } else if (json.status === "COMPLETED") {
-        examFlowState = "completed";
-        backendTaskStatus = "COMPLETED";
-        setCurrentPhaseState("cleanup");
-      } else if (json.status === "ABANDONED") {
-        examFlowState = "abandoned";
-        backendTaskStatus = "ABANDONED";
-        setCurrentPhaseState("cleanup");
-      }
-      if (json.message) {
-        writeMarkdown(json.message, questionOutput);
-      }
-      updateExamButtons();
-      updateStateMachineUI();
-    }
-
-    if (action === "reset") {
+    if (["start", "run", "reset"].includes(action) && json.status === "RESET") {
       taskStarted = false;
+      activeEnvironment = json.active_environment || null;
       statusSyncPending = false;
       examFlowState = "ready_to_start";
       backendTaskStatus = "NOT_STARTED";
@@ -1043,30 +1061,25 @@ function showResponse(text, target = output, action = "") {
       setCurrentPhaseState("ready");
       phaseOutput.textContent = "Phase: -";
       markOutput.textContent = "0";
-      examScoreOutput.textContent = "0";
       updateExamEstimates(json);
-      if (json.message) {
-        writeMarkdown(json.message, questionOutput);
-      }
+      writeMarkdown("Choose a question, then press Start question to prepare its environment.", questionOutput);
       updateExamButtons();
       updateStateMachineUI();
-    }
-
-    if (action === "run") {
+    } else if (["start", "run", "reset"].includes(action)) {
       taskStarted = true;
       statusSyncPending = false;
       if (json.status === "COMPLETED") {
         examFlowState = "completed";
         backendTaskStatus = "COMPLETED";
-        setCurrentPhaseState("check");
+        activeEnvironment = json.active_environment || null;
       } else if (json.status === "ABANDONED") {
         examFlowState = "abandoned";
         backendTaskStatus = "ABANDONED";
-        setCurrentPhaseState("cleanup");
+        activeEnvironment = json.active_environment || null;
       } else if (json.status === "FAILED" || json.status === "ERROR") {
         examFlowState = "started";
         backendTaskStatus = "IN_PROGRESS";
-        setCurrentPhaseState("check");
+        setCurrentPhaseState(json.current_phase || json.lifecycle?.phase || currentPhaseState);
       } else {
         examFlowState = "started";
         backendTaskStatus = "IN_PROGRESS";
@@ -1074,9 +1087,10 @@ function showResponse(text, target = output, action = "") {
           setCurrentPhaseState(json.phase_name || json.current_phase);
         }
       }
-      if (json.message) {
-        writeMarkdown(json.message, questionOutput);
+      if (backendTaskStatus === "IN_PROGRESS" && !activeEnvironment) {
+        activeEnvironment = { task_id: readInputs().task, exam_code: readInputs().examCode };
       }
+      currentLifecycle = json.lifecycle || null;
       updateExamButtons();
       updateStateMachineUI();
     }
@@ -1162,7 +1176,7 @@ async function callApi(action) {
 
   if (action === "reset") {
     const ok = window.confirm(
-      "Reset task to phase 1?\n\nThis clears current task progress and should be used only when necessary.\nReset action is recorded in history."
+      "Leave this question and clean up its Kubernetes resources?\n\nThis clears this question's current progress after cleanup succeeds. Attempt history is preserved. You can then choose another question or restart this one."
     );
     if (!ok) {
       write("Reset cancelled.", output);
@@ -1274,9 +1288,9 @@ document.getElementById("examCode").addEventListener("input", (e) => {
 });
 
 document.getElementById("task").addEventListener("change", (e) => {
-  if (pendingExecution || statusSyncPending || httpBusy) {
+  if (pendingExecution || statusSyncPending || httpBusy || activeEnvironment) {
     e.target.value = selectedExamTask;
-    write("Wait for setup, testing, and cleanup to finish before changing questions.");
+    write("This question still owns your environment. Finish it or use Leave question and clean up before changing questions.");
     return;
   }
   selectedExamTask = e.target.value;
@@ -1286,7 +1300,7 @@ document.getElementById("task").addEventListener("change", (e) => {
 });
 
 resetStateButton.addEventListener("click", () => {
-  if (pendingExecution || statusSyncPending || httpBusy) {
+  if (pendingExecution || statusSyncPending || httpBusy || activeEnvironment) {
     write("Wait for the current exam operation to finish before resetting saved data.");
     return;
   }

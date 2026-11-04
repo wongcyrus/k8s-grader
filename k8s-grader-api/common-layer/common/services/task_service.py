@@ -340,7 +340,7 @@ class TaskService:
 
     def start_exam_task(self, email: str, game: str, task_id: str, exam_code: str) -> TaskState:
         """Start an exam task without NPC assignment or locking."""
-        existing = self.task_repo.get(email, game, task_id)
+        existing = self.task_repo.get(email, game, task_id, consistent=True)
         if existing:
             if existing.mode != 'exam' or existing.exam_code != exam_code:
                 raise ValueError("Exam task already started with a different exam code")
@@ -407,8 +407,8 @@ class TaskService:
         logger.info("Started accessible exercise task %s for %s", task_id, email)
         return state
     
-    def execute_phase(self, email: str, game: str, task_id: str, 
-                     phase_id: Optional[str] = None) -> Dict[str, Any]:
+    def execute_phase(self, email: str, game: str, task_id: str,
+                     phase_id: Optional[str] = None, *, consistent: bool = False) -> Dict[str, Any]:
         """
         Execute a task phase
         
@@ -425,7 +425,7 @@ class TaskService:
             ValueError: If state not found or phase invalid
         """
         # Load state
-        state = self.task_repo.get(email, game, task_id)
+        state = self.task_repo.get(email, game, task_id, **({"consistent": True} if consistent else {}))
         if not state:
             raise ValueError(f"Task state not found: {task_id}")
         

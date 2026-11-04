@@ -237,7 +237,7 @@ test("switching back to an in-progress task restores Run rather than Start", () 
   });
   assert.equal(harness.buttons.get("start").classList.contains("hidden"), true);
   assert.equal(harness.buttons.get("run").disabled, false);
-  assert.equal(harness.elements.get("phaseStateLabel").textContent, "challenge");
+  assert.equal(harness.elements.get("phaseStateLabel").textContent, "Your turn");
   assert.equal(harness.elements.get("questionOutput").innerHTML, "Solve the saved task");
 });
 
@@ -277,7 +277,8 @@ test("cleanup progress stays locked until a matching terminal result", () => {
   harness.begin();
   for (const phase of ["setup", "ready", "check", "cleanup"]) {
     harness.running(phase);
-    assert.equal(harness.elements.get("phaseStateLabel").textContent, phase);
+    const label = phase === "cleanup" ? "Cleaning up" : phase === "check" ? "Assessing your work" : "Preparing environment";
+    assert.equal(harness.elements.get("phaseStateLabel").textContent, label);
     assert.equal(harness.elements.get("task").disabled, true);
     assert.equal(harness.buttons.get("reset").disabled, true);
   }
@@ -285,10 +286,10 @@ test("cleanup progress stays locked until a matching terminal result", () => {
     status: "OK", current_phase: "challenge", task_id: tasks[0],
     command_finished: true, execution_id: "execution-1", active_execution: null,
   }, "run");
-  assert.equal(harness.elements.get("task").disabled, false);
+  assert.equal(harness.elements.get("task").disabled, true);
   assert.equal(harness.buttons.get("run").disabled, false);
   harness.select(tasks[1]);
-  assert.equal(harness.connection.url.searchParams.get("task"), tasks[1]);
+  assert.equal(harness.connection.url.searchParams.get("task"), tasks[0]);
 });
 
 test("polling reconciles a lost response without blindly unlocking on a timer", () => {
@@ -300,7 +301,7 @@ test("polling reconciles a lost response without blindly unlocking on a timer", 
   assert.equal(harness.buttons.get("run").disabled, true);
   harness.status("IN_PROGRESS");
   assert.equal(harness.buttons.get("run").disabled, false);
-  assert.equal(harness.elements.get("task").disabled, false);
+  assert.equal(harness.elements.get("task").disabled, true);
 });
 
 test("disconnect and reconnect preserve the lock until the server confirms idle", () => {
@@ -390,7 +391,7 @@ test("delayed progress and completion from an older request cannot unlock a new 
   assert.equal(harness.elements.get("task").disabled, true);
   assert.equal(harness.buttons.get("run").disabled, true);
   harness.running("setup", "new-execution");
-  assert.equal(harness.elements.get("phaseStateLabel").textContent, "setup");
+  assert.equal(harness.elements.get("phaseStateLabel").textContent, "Preparing environment");
 });
 
 test("slow status requests are not replaced every polling tick", () => {
@@ -431,5 +432,79 @@ test("completed execution messages cannot regress a later settled result", () =>
     status: "OK", task_id: tasks[0], command_finished: true,
     execution_id: "first", current_phase: "challenge", active_execution: null,
   }, "run");
-  assert.equal(harness.elements.get("phaseStateLabel").textContent, "check");
+  assert.equal(harness.elements.get("phaseStateLabel").textContent, "Your turn");
+});
+
+test("the student working stage keeps environment ownership without locking submission", () => {
+  const harness = createHarness();
+  harness.connection.receive({
+    status: "OK", current_phase: "check", task_description: "Keep these instructions",
+    active_environment: { task_id: tasks[0], exam_code: "EXAM-001" },
+    lifecycle: { stage: "working", label: "Your turn", message: "Complete the question.", run_label: "Submit answer" },
+  }, "start");
+  assert.equal(harness.elements.get("phaseStateLabel").textContent, "Your turn");
+  assert.equal(harness.buttons.get("run").textContent, "Submit answer");
+  assert.equal(harness.buttons.get("run").disabled, false);
+  assert.equal(harness.elements.get("task").disabled, true);
+  harness.select(tasks[1]);
+  assert.equal(harness.elements.get("task").value, tasks[0]);
+  assert.equal(harness.elements.get("apiKey").disabled, true);
+});
+
+test("preparation and cleanup failures show the actual retry action and preserve the question", () => {
+  const harness = createHarness();
+  harness.connection.receive({
+    status: "OK", current_phase: "check", task_description: "Original question",
+    active_environment: { task_id: tasks[0], exam_code: "EXAM-001" },
+  }, "start");
+  for (const [phase, label, action] of [
+    ["ready", "Preparation needed", "Retry preparation"],
+    ["cleanup", "Cleanup needs attention", "Retry cleanup"],
+  ]) {
+    harness.connection.receive({
+      status: "FAILED", current_phase: phase, message: "This is a status message, not a new question.",
+      active_environment: { task_id: tasks[0], exam_code: "EXAM-001" },
+      lifecycle: { stage: phase === "ready" ? "preparation" : "cleanup", label, message: "Retry the failed stage.", run_label: action },
+    }, "run");
+    assert.equal(harness.elements.get("phaseStateLabel").textContent, label);
+    assert.equal(harness.buttons.get("run").textContent, action);
+    assert.equal(harness.elements.get("questionOutput").innerHTML, "Original question");
+    assert.equal(harness.elements.get("task").disabled, true);
+  }
+});
+
+test("cleanup-first leave unlocks selection only after a successful server result", () => {
+  const harness = createHarness();
+  harness.start();
+  harness.begin("reset");
+  harness.running("cleanup");
+  assert.equal(harness.elements.get("task").disabled, true);
+  harness.connection.receive({
+    status: "RESET", task_id: tasks[0], command_finished: true, execution_id: "execution-1",
+    command_request_id: harness.connection.sent.at(-1).command_request_id,
+    active_execution: null, active_environment: null,
+    lifecycle: { stage: "not_started", label: "Not started", message: "Choose a question." },
+  }, "reset");
+  assert.equal(harness.elements.get("task").disabled, false);
+  harness.select(tasks[1]);
+  assert.equal(harness.connection.url.searchParams.get("task"), tasks[1]);
+});
+
+test("reconnecting to another question restores the environment owner even while no command runs", () => {
+  const harness = createHarness();
+  harness.connection.receive({
+    status: "OK", state: null, active_execution: null,
+    active_environment: { task_id: tasks[1], exam_code: "EXAM-001" },
+  });
+  assert.equal(harness.elements.get("task").value, tasks[1]);
+  assert.equal(harness.connection.url.searchParams.get("task"), tasks[1]);
+  assert.equal(harness.buttons.get("start").disabled, true);
+  harness.connection.open();
+  harness.connection.receive({
+    status: "OK", state: { status: "IN_PROGRESS", current_phase_id: "check" },
+    active_environment: { task_id: tasks[1], exam_code: "EXAM-001" },
+    lifecycle: { stage: "working", label: "Your turn", message: "Resume your work.", run_label: "Submit answer" },
+  });
+  assert.equal(harness.elements.get("task").disabled, true);
+  assert.equal(harness.buttons.get("run").disabled, false);
 });

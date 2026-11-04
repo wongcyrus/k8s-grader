@@ -17,6 +17,7 @@ from common.handler import (
 )
 from common.database import get_user_data
 from common.exam_execution import EXAM_MUTATIONS, ExamExecutionGuard, current_exam_execution
+from common.exam_lifecycle import AUTO_CHAIN_EXAM_PHASES, lifecycle_payload
 from common.database.repositories import GameSourceRepository, GameAccessRepository
 from common.services.task_service import TaskService
 from common.services.exam_service import ExamService
@@ -31,7 +32,6 @@ from common.durable_invoker import invoke_durable_function
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-AUTO_CHAIN_EXAM_PHASES = {"setup": "ready"}
 
 setup_paths()
 
@@ -632,15 +632,7 @@ def exam_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if action in EXAM_MUTATIONS:
         if not game or not task_id:
             return error_response("Missing required parameters: game or task")
-        if action == 'run' and str(params.get('async', '')).lower() in ('1', 'true', 'yes'):
-            return handle_exam_run_async(email, exam_code, game, task_id)
-        handler = {'start': handle_exam_start, 'reset': handle_exam_reset, 'run': handle_exam_run}[action]
-        response = execution_guard_repo.execute(
-            action, email, exam_code, game, task_id,
-            lambda: handler(email, exam_code, game, task_id),
-        )
-        broadcast_exam_response(email, exam_code, game, task_id, action, response)
-        return response
+        return handle_exam_run_async(email, exam_code, game, task_id, action=action)
     if path.endswith('/status'):
         active = execution_guard_repo.get_active(email, game) if game else None
         if active:
@@ -659,26 +651,30 @@ def exam_lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     return error_response("Unknown exam endpoint")
 
 
-def handle_exam_run_async(email: str, exam_code: str, game: Optional[str], task_id: Optional[str]) -> Dict[str, Any]:
+def handle_exam_run_async(email: str, exam_code: str, game: Optional[str], task_id: Optional[str], *, action="run") -> Dict[str, Any]:
     if not game or not task_id:
         return error_response("Missing required parameters: game or task")
 
+    if execution_guard_repo.get_active(email, game):
+        return execution_guard_repo.busy_response(email, game)
     ok, error, _ = exam_service.authorize(email, exam_code, game, task_id)
     if not ok:
         return error_response(error)
 
     state = exam_service.task_repo.get(email, game, task_id)
-    if not state:
+    if not state and action != "start":
         return error_response("Task is not started. Click Start first.")
+    if state and state.status == TaskStatus.COMPLETED and action == "reset":
+        return error_response("Reset is not allowed after task completion.")
 
-    current_phase = state.current_phase_id
+    current_phase = state.current_phase_id if state else None
     current_phase_name = ''
     if current_phase:
         manifest = TaskManifest.load(game, task_id)
         phase_cfg = manifest.get_phase(current_phase)
         current_phase_name = phase_cfg.name if phase_cfg else ''
 
-    execution = execution_guard_repo.acquire(email, game, exam_code, task_id, 'run')
+    execution = execution_guard_repo.acquire(email, game, exam_code, task_id, action)
     if not execution:
         return {
             'statusCode': 200, 'headers': cors_headers(),
@@ -688,7 +684,7 @@ def handle_exam_run_async(email: str, exam_code: str, game: Optional[str], task_
         request_id = invoke_durable_function(
             os.getenv('ExamCommandDurableFunctionArn', ''),
             {
-                'action': 'run',
+                'action': action,
                 'email': email,
                 'exam_code': exam_code,
                 'game': game,
@@ -705,11 +701,11 @@ def handle_exam_run_async(email: str, exam_code: str, game: Optional[str], task_
         'task_id': task_id,
         'current_phase': current_phase,
         'phase_name': current_phase_name,
-        'message': 'Run accepted. Processing in background. Wait for WebSocket update.',
+        'message': 'Exam command accepted. Processing in background. Wait for WebSocket update.',
         'request_id': request_id,
         'active_execution': execution,
     }
-    broadcast_exam_update(email, exam_code, game, task_id, 'run', queued_payload)
+    broadcast_exam_update(email, exam_code, game, task_id, action, queued_payload)
 
     return {
         'statusCode': 200,
@@ -932,6 +928,8 @@ def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id:
                 'task_description': task_description,
                 'next_action': next_action,
                 'allowed_tasks': payload.get('allowed_tasks', []),
+                'active_environment': execution_guard_repo.get_environment(email, game),
+                'lifecycle': lifecycle_payload(state),
             }, cls=DecimalEncoder)
         }
     except ValueError as e:

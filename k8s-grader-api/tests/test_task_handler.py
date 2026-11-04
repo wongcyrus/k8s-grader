@@ -154,11 +154,11 @@ class TestLambdaHandler:
         assert body['exam_code'] == 'EXAM-001'
 
     @patch('app.get_email_from_event')
-    def test_exam_reset_route_dispatch(self, mock_get_email):
-        """Test that /exam/reset dispatches to reset handler."""
+    @pytest.mark.parametrize("action", ["start", "run", "reset"])
+    def test_exam_mutations_share_the_durable_lifecycle(self, mock_get_email, action):
         mock_get_email.return_value = 'student@example.com'
         event = {
-            'path': '/exam/reset',
+            'path': f'/exam/{action}',
             'queryStringParameters': {
                 'examCode': 'EXAM-001',
                 'game': 'game02',
@@ -167,10 +167,13 @@ class TestLambdaHandler:
             'headers': {'x-api-key': 'test-key'}
         }
 
-        with patch('app.handle_exam_reset', return_value=ok_response("reset ok")) as mock_reset:
+        with patch('app.handle_exam_run_async', return_value=ok_response("queued")) as mock_queue:
             response = lambda_handler(event, None)
 
-        assert mock_reset.call_count == 1
+        mock_queue.assert_called_once_with(
+            'student@example.com', 'EXAM-001', 'game02',
+            '087_kustomize_configuration', action=action,
+        )
         assert response['statusCode'] == 200
 
     @patch('app.get_email_from_event')
@@ -320,7 +323,8 @@ class TestLambdaHandler:
              patch('app.exam_service.task_repo.delete') as mock_delete, \
              patch('app.exam_service.task_service.start_exam_task', return_value=fresh_state) as mock_start_exam_task, \
              patch('app.exam_service.task_repo.save'):
-            response = lambda_handler(event, None)
+            from app import handle_exam_start
+            response = handle_exam_start('student@example.com', 'EXAM-001', 'game02', '087_kustomize_configuration')
 
         mock_delete.assert_called_once_with('student@example.com', 'game02', '087_kustomize_configuration')
         mock_start_exam_task.assert_called_once_with(

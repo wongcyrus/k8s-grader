@@ -14,12 +14,13 @@ from jinja2 import Environment
 
 from common.database import get_user_data
 from common.exam_execution import EXAM_MUTATIONS, ExamExecutionGuard, current_exam_execution
+from common.exam_lifecycle import AUTO_CHAIN_EXAM_PHASES, lifecycle_payload
 from common.file import clear_tmp_directory, write_k8s_access_files
 from common.google_spreadsheet import get_easter_egg_link
 from common.handler import extract_k8s_access_config, setup_paths
 from common.kubeconfig import session_data_from_access_config
 from common.models.task_manifest import TaskManifest
-from common.models.task_state import TaskStatus
+from common.models.task_state import TaskStatus, PhaseStatus
 from common.services.exam_service import ExamService
 from common.services.task_phase_estimate_service import TaskPhaseEstimateService
 from common.services.task_service import TaskService
@@ -29,7 +30,6 @@ logging.setLogRecordFactory(logging.LogRecord)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 DURABLE_HANDLER_REVISION = "2026-07-22-7"
-AUTO_CHAIN_EXAM_PHASES = {"setup": "ready"}
 
 setup_paths()
 
@@ -211,6 +211,7 @@ def task_started_response(state, manifest) -> Dict[str, Any]:
                 "message": phase_message,
                 "task_description": task_description,
                 "progress": 0.0,
+                "lifecycle": lifecycle_payload(state),
             },
             cls=DecimalEncoder,
         ),
@@ -369,8 +370,8 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
     current_phase = manifest.get_phase(updated_state.current_phase_id) if updated_state.current_phase_id else None
     next_phase = manifest.get_next_phase(updated_state.current_phase_id) if updated_state.current_phase_id else None
 
-    if next_phase:
-        next_phase_message = next_phase.description
+    if current_phase:
+        next_phase_message = current_phase.description
     else:
         from common.state_machine.task_state_machine import TaskStateMachine
 
@@ -397,6 +398,7 @@ def phase_passed_response(result, state, manifest) -> Dict[str, Any]:
                 "report_url": result["report_url"],
                 "progress": progress,
                 "points": updated_state.total_points,
+                "lifecycle": lifecycle_payload(updated_state),
             },
             cls=DecimalEncoder,
         ),
@@ -428,6 +430,7 @@ def phase_failed_response(result, state, manifest) -> Dict[str, Any]:
         "body": json.dumps(
             {
                 "status": "FAILED",
+                "lifecycle": lifecycle_payload(updated_state),
                 "current_phase": updated_state.current_phase_id,
                 "phase_name": current_phase.name if current_phase else "",
                 "next_phase": updated_state.current_phase_id,
@@ -469,6 +472,7 @@ def task_completed_response(completion_result, report_url) -> Dict[str, Any]:
                 "report_url": report_url,
                 "easter_egg_url": easter_egg or "",
                 "progress": 1.0,
+                "lifecycle": lifecycle_payload(state),
                 "total_points": state.total_points,
             },
             cls=DecimalEncoder,
@@ -495,6 +499,7 @@ def task_abandoned_response(abandon_result, report_url) -> Dict[str, Any]:
                 "report_url": report_url,
                 "easter_egg_url": easter_egg or "",
                 "progress": 0.0,
+                "lifecycle": lifecycle_payload(state),
                 "total_points": state.total_points,
             },
             cls=DecimalEncoder,
@@ -513,6 +518,7 @@ def publish_exam_progress(email, exam_code, game, task_id, phase):
         "task_id": task_id,
         "current_phase": phase,
         "active_execution": execution,
+        "lifecycle": lifecycle_payload(phase=phase, running=True),
     })
 
 
@@ -524,19 +530,19 @@ def cleanup_failed_response(result):
             "status": "FAILED",
             "current_phase": "cleanup",
             "cleanup_failed": True,
-            "message": "Cleanup failed. Click Run to retry cleanup before continuing.",
+            "lifecycle": lifecycle_payload(result["state"]),
+            "message": "Cleanup failed. Use Retry cleanup before continuing.",
             "report_url": result.get("report_url", ""),
         }),
     }
 
 
-def finish_exam_task(email, exam_code, game, task_id, state, reason=""):
-    from common.state_machine.task_state_machine import TaskStateMachine
-
-    manifest = TaskManifest.load(game, task_id)
-    reason = reason or state.session_data.get("$exam_cleanup_abandon_reason", "")
+def cleanup_exam_environment(email, exam_code, game, task_id, state, manifest):
     cleanup = manifest.get_phase("cleanup")
-    if cleanup and cleanup.auto_run:
+    if cleanup:
+        state.current_phase_id = "cleanup"
+        if get_exam_service().task_repo.save(state) is False:
+            raise RuntimeError("Could not save cleanup state; environment remains reserved.")
         publish_exam_progress(email, exam_code, game, task_id, "cleanup")
         phase_state = state.get_or_create_phase_state("cleanup")
         try:
@@ -549,20 +555,72 @@ def finish_exam_task(email, exam_code, game, task_id, state, reason=""):
         if test_result not in (TestResult.OK, TestResult.NO_TESTS_COLLECTED):
             phase_state.mark_failed(test_result.name, report_url, count_attempts=False)
             state.current_phase_id = "cleanup"
-            if reason:
-                state.session_data["$exam_cleanup_abandon_reason"] = reason
             get_exam_service().task_repo.save(state)
             return {"state": state, "cleanup_failed": True, "report_url": report_url}
         phase_state.mark_passed(report_url, 0)
         state.current_phase_id = None
+    return {"state": state}
+
+
+def finish_exam_task(email, exam_code, game, task_id, state, reason=""):
+    from common.state_machine.task_state_machine import TaskStateMachine
+
+    manifest = TaskManifest.load(game, task_id)
+    reason = reason or state.session_data.get("$exam_cleanup_abandon_reason", "")
+    if reason:
+        state.session_data["$exam_cleanup_abandon_reason"] = reason
+    if state.session_data.get("$exam_cleanup_action") == "reset":
+        return finish_exam_reset(email, exam_code, game, task_id, state, manifest)
+    cleanup = manifest.get_phase("cleanup")
+    if cleanup and cleanup.auto_run:
+        result = cleanup_exam_environment(email, exam_code, game, task_id, state, manifest)
+        if result.get("cleanup_failed"):
+            return result
 
     sm = TaskStateMachine(manifest, state)
     success, error = sm.fail_task(reason) if reason else sm.complete_task()
     if not success:
         raise ValueError(error)
     state.session_data.pop("$exam_cleanup_abandon_reason", None)
-    get_exam_service().task_repo.save(state)
+    if get_exam_service().task_repo.save(state) is False:
+        raise RuntimeError("Could not save the finished question; environment remains reserved.")
+    execution_guard_repo.release_environment(email, game, exam_code, task_id)
     return {"state": state, "total_points": state.total_points, "reason": reason}
+
+
+def finish_exam_reset(email, exam_code, game, task_id, state, manifest):
+    state.status = TaskStatus.IN_PROGRESS
+    state.session_data["$exam_cleanup_action"] = "reset"
+    get_exam_service().task_repo.save(state)
+    result = cleanup_exam_environment(email, exam_code, game, task_id, state, manifest)
+    if result.get("cleanup_failed"):
+        return result
+    if not get_exam_service().task_repo.delete(email, game, task_id):
+        raise RuntimeError("Could not reset the question; environment remains reserved.")
+    execution_guard_repo.release_environment(email, game, exam_code, task_id)
+    return {"state": state, "reset": True}
+
+
+def reset_response():
+    return {
+        "statusCode": 200,
+        "headers": cors_headers(),
+        "body": json.dumps({
+            "status": "RESET", "current_phase": None, "total_points": 0,
+            "message": "Question left after cleanup. Choose a question to start again. Attempt history is preserved.",
+            "lifecycle": lifecycle_payload(),
+        }),
+    }
+
+
+def require_exam_environment(email, exam_code, game, task_id):
+    if execution_guard_repo.claim_environment(email, game, exam_code, task_id):
+        return None
+    response = error_response("Another question owns your environment. Return to it and finish or leave it with cleanup first.")
+    payload = json.loads(response["body"])
+    payload["active_environment"] = execution_guard_repo.get_environment(email, game)
+    response["body"] = json.dumps(payload)
+    return response
 
 
 def handle_exam_start(email: str, exam_code: str, game: Optional[str], task_id: Optional[str]) -> Dict[str, Any]:
@@ -583,6 +641,9 @@ def handle_exam_start(email: str, exam_code: str, game: Optional[str], task_id: 
     if not endpoint or not access_config.get("kubeconfig"):
         return error_response("K8s credentials missing or incomplete")
 
+    blocked = require_exam_environment(email, exam_code, game, task_id)
+    if blocked:
+        return blocked
     clear_tmp_directory()
     write_k8s_access_files(access_config)
 
@@ -599,9 +660,10 @@ def handle_exam_start(email: str, exam_code: str, game: Optional[str], task_id: 
     exam_service.task_repo.save(state)
 
     if state.status == TaskStatus.COMPLETED:
+        execution_guard_repo.release_environment(email, game, exam_code, task_id)
         response = task_completed_response({"state": state}, state.get_phase_state(state.current_phase_id).report_url if state.current_phase_id else "")
     else:
-        response = task_started_response(state, manifest)
+        return handle_exam_run(email, exam_code, game, task_id, prepare_only=True)
     response = with_exam_overview(response, email, exam_code, game)
     broadcast_exam_response(email, exam_code, game, task_id, "start", response)
     return response
@@ -616,37 +678,35 @@ def handle_exam_reset(email: str, exam_code: str, game: Optional[str], task_id: 
     if not ok:
         return error_response(error)
 
-    existing = exam_service.task_repo.get(email, game, task_id)
+    existing = exam_service.task_repo.get(email, game, task_id, consistent=True)
     if not existing:
+        if execution_guard_repo.get_environment(email, game) == {"task_id": task_id, "exam_code": exam_code}:
+            execution_guard_repo.release_environment(email, game, exam_code, task_id)
+            return with_exam_overview(reset_response(), email, exam_code, game)
         return error_response("Task is not started yet. Click Start first.")
     if existing.status == TaskStatus.COMPLETED:
         return error_response("Reset is not allowed after task completion.")
     if existing.status not in (TaskStatus.IN_PROGRESS, TaskStatus.ABANDONED):
         return error_response(f"Reset is not allowed for status '{existing.status.value}'.")
 
-    exam_service.task_repo.delete(email, game, task_id)
-    response = {
-        "statusCode": 200,
-        "headers": cors_headers(),
-        "body": json.dumps(
-            {
-                "status": "RESET",
-                "task_id": task_id,
-                "current_phase": None,
-                "phase_name": "",
-                "message": "Task reset. Click Start to begin again. Attempt history remains in Records.",
-                "total_points": 0,
-                "progress": 0.0,
-            },
-            cls=DecimalEncoder,
-        ),
-    }
+    blocked = require_exam_environment(email, exam_code, game, task_id)
+    if blocked:
+        return blocked
+    access_config = extract_k8s_access_config(get_user_data(email) or {})
+    if not access_config.get("endpoint") or not access_config.get("kubeconfig"):
+        return error_response("K8s credentials missing or incomplete")
+    clear_tmp_directory()
+    write_k8s_access_files(access_config)
+    existing.session_data.update(session_data_from_access_config(access_config))
+    manifest = TaskManifest.load(game, task_id)
+    result = finish_exam_reset(email, exam_code, game, task_id, existing, manifest)
+    response = cleanup_failed_response(result) if result.get("cleanup_failed") else reset_response()
     response = with_exam_overview(response, email, exam_code, game)
     broadcast_exam_response(email, exam_code, game, task_id, "reset", response)
     return response
 
 
-def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Optional[str]) -> Dict[str, Any]:
+def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Optional[str], *, prepare_only=False) -> Dict[str, Any]:
     if not game or not task_id:
         return error_response("Missing required parameters: game or task")
 
@@ -655,10 +715,15 @@ def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Op
     if not ok:
         return error_response(error)
 
-    state = exam_service.task_repo.get(email, game, task_id)
+    state = exam_service.task_repo.get(email, game, task_id, consistent=True)
     if not state:
         return error_response("Task is not started. Click Start first.")
 
+    if state.status in (TaskStatus.COMPLETED, TaskStatus.ABANDONED):
+        return error_response("This question has finished. Refresh its status before continuing.")
+    blocked = require_exam_environment(email, exam_code, game, task_id)
+    if blocked:
+        return blocked
     user_data = get_user_data(email)
     if not user_data:
         return error_response("User account not found")
@@ -675,6 +740,8 @@ def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Op
     manifest = TaskManifest.load(game, task_id)
     if state.current_phase_id == "cleanup":
         completion_result = finish_exam_task(email, exam_code, game, task_id, state)
+        if completion_result.get("reset"):
+            return with_exam_overview(reset_response(), email, exam_code, game)
         return with_exam_overview(
             task_completed_response(completion_result, ""), email, exam_code, game
         )
@@ -702,11 +769,15 @@ def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Op
     if next_action["action"] not in ("execute_phase", "retry_phase"):
         return error_response(f"Invalid next action for run: {next_action['action']}. Click Start/Status.")
 
-    if state.status == TaskStatus.COMPLETED:
-        response = task_completed_response({"state": state}, state.get_phase_state(state.current_phase_id).report_url if state.current_phase_id else "")
-        response = with_exam_overview(response, email, exam_code, game)
-        broadcast_exam_response(email, exam_code, game, task_id, "run", response)
-        return response
+    if prepare_only and state.current_phase_id not in ("setup", "ready"):
+        return with_exam_overview(task_started_response(state, manifest), email, exam_code, game)
+
+    check_state = state.get_phase_state("check")
+    challenge = manifest.get_phase("challenge")
+    if state.current_phase_id == "check" and check_state and check_state.status == PhaseStatus.FAILED and challenge:
+        state.get_or_create_phase_state("challenge").status = PhaseStatus.PENDING
+        state.current_phase_id = "challenge"
+        exam_service.task_repo.save(state)
 
     executed_phases = []
     exam_service = get_exam_service()
@@ -740,6 +811,7 @@ def handle_exam_run(email: str, exam_code: str, game: Optional[str], task_id: Op
             broadcast_exam_response(email, exam_code, game, task_id, "run", response)
             return response
 
+        advance_exam_answer_phase(state, manifest, exam_service.task_repo)
         from common.state_machine.task_state_machine import TaskStateMachine
 
         sm = TaskStateMachine(manifest, state)
@@ -805,6 +877,8 @@ def handle_exam_status(email: str, exam_code: str, game: Optional[str], task_id:
                     "next_action": next_action,
                     "allowed_tasks": payload.get("allowed_tasks", []),
                     "active_execution": None,
+                    "active_environment": execution_guard_repo.get_environment(email, game),
+                    "lifecycle": lifecycle_payload(state),
                 },
                 cls=DecimalEncoder,
             ),

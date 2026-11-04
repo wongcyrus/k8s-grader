@@ -126,13 +126,17 @@ def _send_state_snapshot(event: Dict[str, Any], connection_id: str, email: str, 
         return
 
     table = dynamodb.Table(TASK_STATE_TABLE)
-    response = table.get_item(Key={"email": email, "gameTask": f"{game}#{task}"})
+    response = table.get_item(Key={"email": email, "gameTask": f"{game}#{task}"}, ConsistentRead=True)
     item = response.get("Item")
     if not item:
         _send_ws_message(event, connection_id, {
             "type": "exam_status",
             "source_action": "status",
-            "data": {"status": "NOT_STARTED", "game": game, "task_id": task, "active_execution": None},
+            "data": {
+                "status": "NOT_STARTED", "game": game, "task_id": task,
+                "active_execution": None,
+                "active_environment": execution_guard_repo.get_environment(email, game),
+            },
         })
         return
 
@@ -143,6 +147,7 @@ def _send_state_snapshot(event: Dict[str, Any], connection_id: str, email: str, 
         "current_phase": current_phase,
         "total_points": item.get("total_points", 0),
         "active_execution": None,
+        "active_environment": execution_guard_repo.get_environment(email, game),
     }
     _send_ws_message(event, connection_id, {
         "type": "exam_status",

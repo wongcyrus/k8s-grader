@@ -86,11 +86,12 @@
         <h2>Exam Flow & Usage</h2>
         <ol class="flow-list">
           <li>Wait for Connection: <strong>Connected</strong></li>
-          <li>Use the exam buttons in order: <strong>Start → Run</strong></li>
-          <li>Solve the task, then click <strong>Run</strong></li>
-          <li>Use <strong>Attempt History</strong> or <strong>Reset Task</strong> only when needed</li>
+          <li>Choose a task, click <strong>Start question</strong>, and wait for <strong>Your turn</strong></li>
+          <li>Solve the question in Kubernetes, then click <strong>Submit answer</strong> once</li>
+          <li>Wait for assessment and cleanup to finish; use <strong>Attempt History</strong> between operations</li>
+          <li>To change an unfinished question, use <strong>Leave question and clean up</strong> and wait for success</li>
         </ol>
-        <p class="flow-note">Exam buttons unlock in order after the exam session is connected. Wait for setup, testing, and cleanup to finish before changing questions or submitting another request. Click <strong>Reconnect Exam</strong> only if the connection banner shows disconnected; reconnecting does not cancel a running task.</p>
+        <p class="flow-note">Submit answer tests your live cluster; it is not a file upload. Your question owns the environment even while you work. Reset Saved Form Data only clears this page's browser data; it does not clean up Kubernetes resources. Click <strong>Reconnect Exam</strong> if the connection banner shows disconnected; reconnecting does not cancel a running task.</p>
       </section>
 
       <section id="examScope" class="card hidden">
@@ -108,8 +109,10 @@
         <p class="summary-line">
           <strong>Task status</strong>: <span id="taskStatusLabel" class="state-badge">NOT_STARTED</span>
           <span class="summary-separator">•</span>
-          <strong>Current phase</strong>: <span id="phaseStateLabel" class="state-badge">setup</span>
+          <strong>Stage</strong>: <span id="phaseStateLabel" class="state-badge">Not started</span>
         </p>
+        <p id="lifecycleSteps">Prepare environment / Your turn / Assess your work / Clean up</p>
+        <p id="lifecycleOutput" role="status" aria-live="polite">Start a question to prepare its environment.</p>
         <p id="nextStepOutput"><strong>Next step:</strong> Submit Kubernetes Login and verify an exam code to unlock the exam flow.</p>
         <p id="examPhaseEstimateRow" class="hidden"><strong>Expected wait for this run</strong>: <span id="examPhaseEstimateLabel">-</span></p>
         <p id="examTaskEstimateRow" class="hidden"><strong id="examTaskEstimateTitle">Remaining task time</strong>: <span id="examTaskEstimateLabel">-</span></p>
@@ -122,9 +125,9 @@
 
       <section class="card actions">
         <button data-action="reconnect" class="exam-action" disabled>Reconnect Exam</button>
-        <button data-action="start" class="exam-action" disabled>Start</button>
-        <button data-action="run" class="exam-action" disabled>Run</button>
-        <p class="flow-note">If a button is greyed out, the previous step has not been completed yet.</p>
+        <button data-action="start" class="exam-action" disabled>Start question</button>
+        <button data-action="run" class="exam-action" disabled>Submit answer</button>
+        <p class="flow-note">One question owns your environment until cleanup finishes. To change questions before passing, use Leave question and clean up.</p>
       </section>
 
       <section class="card">
@@ -136,7 +139,7 @@
         <h2>Exam Tools</h2>
         <div class="actions">
           <button data-action="records" class="exam-action secondary-btn" disabled>Attempt History</button>
-          <button data-action="reset" class="exam-action secondary-btn" disabled>Reset Task</button>
+          <button data-action="reset" class="exam-action secondary-btn" disabled>Leave question and clean up</button>
         </div>
       </section>
     </main>

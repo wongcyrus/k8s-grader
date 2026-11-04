@@ -101,7 +101,7 @@ class ExamService:
         return True, "", {"exam": exam, "session": session}
 
     def ensure_state(self, email: str, exam_code: str, game: str, task_id: str) -> TaskState:
-        state = self.task_repo.get(email, game, task_id)
+        state = self.task_repo.get(email, game, task_id, consistent=True)
         if state:
             if state.exam_code != exam_code and state.mode != "exam":
                 raise ValueError("Task already exists for a different mode")
@@ -112,7 +112,7 @@ class ExamService:
 
     def run_phase(self, email: str, exam_code: str, game: str, task_id: str, phase_id: Optional[str] = None) -> Dict[str, Any]:
         state = self.ensure_state(email, exam_code, game, task_id)
-        result = self.task_service.execute_phase(email, game, task_id, phase_id)
+        result = self.task_service.execute_phase(email, game, task_id, phase_id, consistent=True)
         return {
             "state": result.get("state", state),
             "manifest": result.get("manifest"),
@@ -126,7 +126,7 @@ class ExamService:
         ok, error, context = self.authorize(email, exam_code, game, task_id)
         if not ok:
             raise ValueError(error)
-        state = self.task_repo.get(email, game, task_id)
+        state = self.task_repo.get(email, game, task_id, consistent=True)
         manifest = TaskManifest.load(game, task_id)
         self.normalize_exam_points(state, manifest, persist=persist_points)
         overview = self.get_exam_overview(email, game, context["session"].get("allowedTasks", []), persist_points=persist_points)

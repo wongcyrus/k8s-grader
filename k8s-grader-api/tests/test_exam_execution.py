@@ -86,3 +86,30 @@ def test_guard_releases_on_exception_without_affecting_game_leases(guard):
     assert game_repo.table.get_item(Key={"scope_key": "game#student#game02#mutation"})[
         "Item"
     ]
+
+
+def test_environment_survives_execution_expiry_and_cannot_be_taken_by_another_question(guard):
+    with patch("common.exam_execution.time.time", return_value=100):
+        assert guard.claim_environment("student", "game02", "exam1", "task_a")
+        guard.acquire("student", "game02", "exam1", "task_a", "start")
+    with patch("common.exam_execution.time.time", return_value=100000):
+        assert guard.get_active("student", "game02") is None
+        assert guard.get_environment("student", "game02")["task_id"] == "task_a"
+        assert not guard.claim_environment("student", "game02", "exam2", "task_b")
+        assert not guard.release_environment("student", "game02", "exam2", "task_a")
+        assert guard.get_environment("student", "game02")["task_id"] == "task_a"
+
+
+def test_unfinished_legacy_question_is_adopted_before_another_can_start(guard):
+    from common.database import TaskStateRepository
+    from common.models.task_state import TaskState, TaskStatus
+
+    repository = TaskStateRepository()
+    repository.save(TaskState(
+        email="student", game="game02", task_id="old_question", npc="exam",
+        mode="exam", exam_code="exam1", status=TaskStatus.IN_PROGRESS,
+        current_phase_id="check",
+    ))
+    assert not guard.claim_environment("student", "game02", "exam1", "new_question")
+    assert guard.get_environment("student", "game02")["task_id"] == "old_question"
+    assert guard.claim_environment("student", "game02", "exam1", "old_question")

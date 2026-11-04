@@ -5,9 +5,9 @@ import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
 
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, Key
 
-from common.database import ExecutionGuardRepository
+from common.database import ExecutionGuardRepository, TaskStateRepository
 
 
 EXAM_MUTATIONS = {"start", "run", "reset"}
@@ -37,6 +37,60 @@ class ExamExecutionGuard:
         if item and int(item["expires_at"]) > int(time.time()):
             return item
         return None
+
+    def get_environment(self, email, game):
+        owner = self.table.get_item(
+            Key={"scope_key": f"exam#{email}#{game}#environment"},
+            ConsistentRead=True,
+        ).get("Item")
+        if owner:
+            return {"task_id": owner["task_id"], "exam_code": owner["exam_code"]}
+
+        # Adopt unfinished questions created before environment ownership existed.
+        repository = TaskStateRepository()
+        pages = repository.table.meta.client.get_paginator("query").paginate(
+            TableName=repository.table_name,
+            KeyConditionExpression=Key("email").eq(email)
+            & Key("gameTask").begins_with(f"{game}#"),
+            ConsistentRead=True,
+        )
+        for page in pages:
+            for item in page.get("Items", []):
+                if item.get("mode") == "exam" and item.get("status") == "in_progress":
+                    return {
+                        "task_id": item["task_id"],
+                        "exam_code": item["exam_code"],
+                    }
+        return None
+
+    def claim_environment(self, email, game, exam_code, task_id):
+        expected = {"task_id": task_id, "exam_code": exam_code}
+        owner = self.get_environment(email, game)
+        if owner and owner != expected:
+            return False
+        try:
+            self.table.put_item(
+                Item={
+                    "scope_key": f"exam#{email}#{game}#environment",
+                    **expected,
+                },
+                ConditionExpression=Attr("scope_key").not_exists()
+                | (Attr("task_id").eq(task_id) & Attr("exam_code").eq(exam_code)),
+            )
+        except self.table.meta.client.exceptions.ConditionalCheckFailedException:
+            return False
+        return True
+
+    def release_environment(self, email, game, exam_code, task_id):
+        try:
+            self.table.delete_item(
+                Key={"scope_key": f"exam#{email}#{game}#environment"},
+                ConditionExpression=Attr("task_id").eq(task_id)
+                & Attr("exam_code").eq(exam_code),
+            )
+        except self.table.meta.client.exceptions.ConditionalCheckFailedException:
+            return False
+        return True
 
     def acquire(self, email, game, exam_code, task_id, action, command_request_id=""):
         now = int(time.time())
@@ -94,6 +148,7 @@ class ExamExecutionGuard:
                 "Wait for setup, testing, and cleanup to finish."
             ),
             "active_execution": self.get_active(email, game),
+            "active_environment": self.get_environment(email, game),
         }
 
     def busy_response(self, email, game):
@@ -138,6 +193,7 @@ class ExamExecutionGuard:
             command_request_id=execution.get("command_request_id", ""),
             command_finished=True,
             active_execution=self.get_active(email, game),
+            active_environment=self.get_environment(email, game),
         )
         response["body"] = json.dumps(payload, default=int)
         return response
